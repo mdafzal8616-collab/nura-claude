@@ -474,6 +474,683 @@
     });
   }
 
+  // ---------- DUAS ----------
+
+  var duasState = { view: "categories", categoryId: null, duaId: null };
+
+  function getDuaFavorites() {
+    return readJSON("nc_dua_favorites", []);
+  }
+
+  function toggleDuaFavorite(duaId) {
+    var favs = getDuaFavorites();
+    var idx = favs.indexOf(duaId);
+    if (idx === -1) favs.push(duaId); else favs.splice(idx, 1);
+    writeJSON("nc_dua_favorites", favs);
+  }
+
+  function duasByCategory(categoryId) {
+    return window.NURA_DUAS.duas.filter(function (d) { return d.categoryId === categoryId; });
+  }
+
+  function setDuasView(view) {
+    duasState.view = view;
+    ["categories", "list", "detail"].forEach(function (v) {
+      document.getElementById("duas-" + v + "-view").classList.toggle("hidden", v !== view);
+    });
+    document.getElementById("duas-search-results-view").classList.add("hidden");
+    document.getElementById("duas-back-row").classList.toggle("hidden", view === "categories");
+  }
+
+  function renderDuaCategories() {
+    var grid = document.getElementById("dua-category-grid");
+    grid.innerHTML = "";
+    window.NURA_DUAS.categories.forEach(function (cat) {
+      var count = duasByCategory(cat.id).length;
+      var card = document.createElement("button");
+      card.className = "dua-category-card" + (count === 0 ? " empty" : "");
+      card.innerHTML = '<span class="cat-name">' + cat.name + '</span><span class="cat-count">' + (count === 0 ? "Pending verified content" : (count + (count === 1 ? " dua" : " duas"))) + '</span>';
+      card.addEventListener("click", function () {
+        duasState.categoryId = cat.id;
+        renderDuaList(cat.id);
+        setDuasView("list");
+      });
+      grid.appendChild(card);
+    });
+  }
+
+  function buildDuaListItem(dua) {
+    var favs = getDuaFavorites();
+    var item = document.createElement("button");
+    item.className = "dua-list-item";
+    var textWrap = document.createElement("span");
+    var title = document.createElement("span");
+    title.className = "dua-list-title";
+    title.textContent = dua.title;
+    var catName = (window.NURA_DUAS.categories.find(function (c) { return c.id === dua.categoryId; }) || {}).name || "";
+    var catLine = document.createElement("span");
+    catLine.className = "dua-list-cat";
+    catLine.textContent = catName;
+    textWrap.appendChild(title);
+    textWrap.appendChild(catLine);
+    var fav = document.createElement("span");
+    fav.className = "dua-list-fav";
+    fav.textContent = favs.indexOf(dua.id) !== -1 ? "★" : "☆";
+    item.appendChild(textWrap);
+    item.appendChild(fav);
+    item.addEventListener("click", function () {
+      duasState.duaId = dua.id;
+      renderDuaDetail(dua.id);
+      setDuasView("detail");
+    });
+    return item;
+  }
+
+  function renderDuaList(categoryId) {
+    var cat = window.NURA_DUAS.categories.find(function (c) { return c.id === categoryId; });
+    document.getElementById("duas-list-title").textContent = cat ? cat.name : "";
+    var list = document.getElementById("dua-list");
+    list.innerHTML = "";
+    var duas = duasByCategory(categoryId);
+    if (!duas.length) {
+      var empty = document.createElement("p");
+      empty.className = "dua-empty-state";
+      empty.textContent = "No verified duas in this category yet. The structure is ready — content will be added once a reliable source is verified.";
+      list.appendChild(empty);
+      return;
+    }
+    duas.forEach(function (d) { list.appendChild(buildDuaListItem(d)); });
+  }
+
+  function renderDuaDetail(duaId) {
+    var dua = window.NURA_DUAS.duas.find(function (d) { return d.id === duaId; });
+    if (!dua) return;
+    document.getElementById("dua-detail-source").textContent = dua.source;
+    document.getElementById("dua-detail-title").textContent = dua.title;
+    document.getElementById("dua-detail-arabic").textContent = dua.arabic;
+    document.getElementById("dua-detail-translit").textContent = dua.transliteration;
+    document.getElementById("dua-detail-meaning").textContent = dua.meaning;
+    var favBtn = document.getElementById("dua-detail-fav");
+    var isFav = getDuaFavorites().indexOf(dua.id) !== -1;
+    favBtn.classList.toggle("active", isFav);
+    favBtn.onclick = function () {
+      toggleDuaFavorite(dua.id);
+      renderDuaDetail(dua.id);
+    };
+    document.getElementById("dua-copy-btn").onclick = function () {
+      var text = dua.title + "\n\n" + dua.arabic + "\n\n" + dua.transliteration + "\n\n" + dua.meaning + "\n\nSource: " + dua.source;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          showToast("Copied");
+        }).catch(function () {
+          showToast("Couldn't copy on this device");
+        });
+      } else {
+        showToast("Copy not supported on this device");
+      }
+    };
+    document.getElementById("dua-share-btn").onclick = function () {
+      var text = dua.title + "\n\n" + dua.arabic + "\n\n" + dua.transliteration + "\n\n" + dua.meaning + "\n\nSource: " + dua.source;
+      if (navigator.share) {
+        navigator.share({ title: dua.title, text: text }).catch(function () {});
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { showToast("Sharing not available — copied instead"); });
+      } else {
+        showToast("Sharing not available on this device");
+      }
+    };
+  }
+
+  function renderDuaSearch(query) {
+    var favOnly = document.getElementById("duas-favorites-toggle").getAttribute("aria-pressed") === "true";
+    var favs = getDuaFavorites();
+    var q = query.trim().toLowerCase();
+    var results = window.NURA_DUAS.duas.filter(function (d) {
+      if (favOnly && favs.indexOf(d.id) === -1) return false;
+      if (!q) return favOnly;
+      var cat = window.NURA_DUAS.categories.find(function (c) { return c.id === d.categoryId; });
+      var hay = (d.title + " " + d.meaning + " " + d.transliteration + " " + (cat ? cat.name : "")).toLowerCase();
+      return hay.indexOf(q) !== -1;
+    });
+
+    document.getElementById("duas-categories-view").classList.add("hidden");
+    document.getElementById("duas-list-view").classList.add("hidden");
+    document.getElementById("duas-detail-view").classList.add("hidden");
+    document.getElementById("duas-back-row").classList.add("hidden");
+    document.getElementById("duas-search-results-view").classList.remove("hidden");
+
+    var wrap = document.getElementById("dua-search-results");
+    wrap.innerHTML = "";
+    if (!results.length) {
+      var empty = document.createElement("p");
+      empty.className = "dua-empty-state";
+      empty.textContent = favOnly && !q ? "No favorites yet — tap the star on any dua to save it here." : "No duas match your search.";
+      wrap.appendChild(empty);
+      return;
+    }
+    results.forEach(function (d) { wrap.appendChild(buildDuaListItem(d)); });
+  }
+
+  function initDuasUI() {
+    document.getElementById("duas-back-btn").addEventListener("click", function () {
+      var input = document.getElementById("duas-search-input");
+      input.value = "";
+      document.getElementById("duas-favorites-toggle").setAttribute("aria-pressed", "false");
+      if (duasState.view === "detail") {
+        renderDuaList(duasState.categoryId);
+        setDuasView("list");
+      } else {
+        renderDuaCategories();
+        setDuasView("categories");
+      }
+    });
+
+    var searchInput = document.getElementById("duas-search-input");
+    var favToggle = document.getElementById("duas-favorites-toggle");
+
+    function updateFromSearch() {
+      var q = searchInput.value;
+      var favOn = favToggle.getAttribute("aria-pressed") === "true";
+      if (q.trim() || favOn) {
+        renderDuaSearch(q);
+      } else {
+        renderDuaCategories();
+        setDuasView("categories");
+      }
+    }
+
+    searchInput.addEventListener("input", updateFromSearch);
+    favToggle.addEventListener("click", function () {
+      var pressed = favToggle.getAttribute("aria-pressed") === "true";
+      favToggle.setAttribute("aria-pressed", pressed ? "false" : "true");
+      updateFromSearch();
+    });
+
+    renderDuaCategories();
+  }
+
+  // ---------- VAULT ----------
+  // Real encryption: AES-GCM 256 via Web Crypto SubtleCrypto, key derived
+  // from the user's passphrase with PBKDF2 (150,000 iterations, SHA-256).
+  // The passphrase itself is never stored; the derived key lives only in
+  // memory for the current unlocked session (module-level var below), never
+  // in localStorage. Not independently security-audited — labeled as such
+  // in the Vault settings screen. See CLAUDE.md Section 9 / docs/decisions.md.
+
+  var VAULT_SECTIONS = [
+    { id: "hamdard", name: "Hamdard / Private Reflection" },
+    { id: "triggers", name: "Trigger & Struggle Notes" },
+    { id: "career", name: "Career Audit" },
+    { id: "principles", name: "My Personal Code / Principles" }
+  ];
+
+  var vaultKey = null;              // CryptoKey, memory-only
+  var vaultDecrypted = null;        // [{id, section, title, body, createdAt, updatedAt}], memory-only
+  var vaultState = { view: "checking", sectionId: null, entryId: null, editingId: null };
+
+  function hasWebCrypto() {
+    return !!(window.crypto && window.crypto.subtle);
+  }
+
+  function bufToBase64(buf) {
+    var bytes = new Uint8Array(buf);
+    var bin = "";
+    for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+
+  function base64ToBuf(b64) {
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+
+  function getVaultMeta() {
+    return readJSON("nc_vault_meta", null);
+  }
+
+  function getVaultEntriesRaw() {
+    return readJSON("nc_vault_entries", []);
+  }
+
+  function saveVaultEntriesRaw(entries) {
+    writeJSON("nc_vault_entries", entries);
+  }
+
+  function deriveVaultKey(passphrase, saltB64) {
+    var enc = new TextEncoder();
+    var salt = base64ToBuf(saltB64);
+    return window.crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"])
+      .then(function (keyMaterial) {
+        return window.crypto.subtle.deriveKey(
+          { name: "PBKDF2", salt: salt, iterations: 150000, hash: "SHA-256" },
+          keyMaterial,
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["encrypt", "decrypt"]
+        );
+      });
+  }
+
+  function vaultEncrypt(key, plaintext) {
+    var iv = window.crypto.getRandomValues(new Uint8Array(12));
+    var enc = new TextEncoder();
+    return window.crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, enc.encode(plaintext))
+      .then(function (cipherBuf) {
+        return { iv: bufToBase64(iv), data: bufToBase64(cipherBuf) };
+      });
+  }
+
+  function vaultDecrypt(key, ivB64, dataB64) {
+    var iv = base64ToBuf(ivB64);
+    var data = base64ToBuf(dataB64);
+    return window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, data)
+      .then(function (plainBuf) {
+        return new TextDecoder().decode(plainBuf);
+      });
+  }
+
+  function createVault(passphrase) {
+    var salt = window.crypto.getRandomValues(new Uint8Array(16));
+    var saltB64 = bufToBase64(salt);
+    return deriveVaultKey(passphrase, saltB64).then(function (key) {
+      return vaultEncrypt(key, "nura-vault-ok").then(function (check) {
+        writeJSON("nc_vault_meta", { salt: saltB64, checkIv: check.iv, checkData: check.data, createdAt: Date.now() });
+        vaultKey = key;
+        vaultDecrypted = [];
+        return true;
+      });
+    });
+  }
+
+  function unlockVault(passphrase) {
+    var meta = getVaultMeta();
+    if (!meta) return Promise.reject(new Error("no-vault"));
+    var derivedKey;
+    return deriveVaultKey(passphrase, meta.salt)
+      .then(function (key) {
+        derivedKey = key;
+        return vaultDecrypt(key, meta.checkIv, meta.checkData);
+      })
+      .catch(function () {
+        // Wrong passphrase produces an AES-GCM auth failure here — that's
+        // the only place a bad passphrase should be reported from. A later
+        // failure decrypting an individual entry is a different problem
+        // (e.g. leftover data from a different key) and must not be
+        // reported as "wrong passphrase" — see per-entry catch below.
+        throw new Error("wrong-passphrase");
+      })
+      .then(function (plain) {
+        if (plain !== "nura-vault-ok") throw new Error("wrong-passphrase");
+        vaultKey = derivedKey;
+        var raw = getVaultEntriesRaw();
+        return Promise.all(raw.map(function (e) {
+          return Promise.all([
+            vaultDecrypt(derivedKey, e.titleIv, e.titleData),
+            vaultDecrypt(derivedKey, e.bodyIv, e.bodyData)
+          ]).then(function (parts) {
+            return { id: e.id, section: e.section, title: parts[0], body: parts[1], createdAt: e.createdAt, updatedAt: e.updatedAt };
+          }).catch(function () {
+            return null; // skip an entry that can't be decrypted rather than failing the whole unlock
+          });
+        })).then(function (entries) {
+          vaultDecrypted = entries.filter(function (e) { return e !== null; });
+          return true;
+        });
+      });
+  }
+
+  function lockVault() {
+    vaultKey = null;
+    vaultDecrypted = null;
+  }
+
+  function saveVaultEntry(section, title, body, editingId) {
+    return Promise.all([vaultEncrypt(vaultKey, title || "Untitled"), vaultEncrypt(vaultKey, body)]).then(function (parts) {
+      var raw = getVaultEntriesRaw();
+      var now = Date.now();
+      if (editingId) {
+        raw = raw.map(function (e) {
+          if (e.id !== editingId) return e;
+          return { id: e.id, section: section, titleIv: parts[0].iv, titleData: parts[0].data, bodyIv: parts[1].iv, bodyData: parts[1].data, createdAt: e.createdAt, updatedAt: now };
+        });
+        vaultDecrypted = vaultDecrypted.map(function (e) {
+          if (e.id !== editingId) return e;
+          return { id: e.id, section: section, title: title || "Untitled", body: body, createdAt: e.createdAt, updatedAt: now };
+        });
+      } else {
+        var id = uid("v");
+        raw.push({ id: id, section: section, titleIv: parts[0].iv, titleData: parts[0].data, bodyIv: parts[1].iv, bodyData: parts[1].data, createdAt: now, updatedAt: now });
+        vaultDecrypted.push({ id: id, section: section, title: title || "Untitled", body: body, createdAt: now, updatedAt: now });
+      }
+      saveVaultEntriesRaw(raw);
+    });
+  }
+
+  function deleteVaultEntry(id) {
+    saveVaultEntriesRaw(getVaultEntriesRaw().filter(function (e) { return e.id !== id; }));
+    vaultDecrypted = vaultDecrypted.filter(function (e) { return e.id !== id; });
+  }
+
+  function clearVaultCompletely() {
+    localStorage.removeItem("nc_vault_meta");
+    localStorage.removeItem("nc_vault_entries");
+    vaultKey = null;
+    vaultDecrypted = null;
+  }
+
+  function vaultEntriesBySection(sectionId) {
+    return (vaultDecrypted || []).filter(function (e) { return e.section === sectionId; })
+      .sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+  }
+
+  function showVaultScreen(screenId) {
+    document.querySelectorAll(".vault-screen").forEach(function (el) { el.classList.add("hidden"); });
+    document.getElementById(screenId).classList.remove("hidden");
+  }
+
+  function renderVaultRoot() {
+    if (!hasWebCrypto()) {
+      showVaultScreen("vault-locked");
+      document.getElementById("vault-locked").innerHTML = '<section class="card"><p class="pending-note">This browser does not support the Web Crypto API needed for real encryption, so Vault cannot safely open here. Try a modern browser (recent Chrome, Firefox, Safari, or Edge).</p></section>';
+      return;
+    }
+    var meta = getVaultMeta();
+    if (!meta) {
+      vaultState.view = "setup";
+      showVaultScreen("vault-setup");
+    } else if (!vaultKey) {
+      vaultState.view = "locked";
+      showVaultScreen("vault-locked");
+      document.getElementById("vault-unlock-pass").value = "";
+      document.getElementById("vault-unlock-error").classList.add("hidden");
+    } else {
+      vaultState.view = "home";
+      renderVaultHome();
+      showVaultScreen("vault-home");
+    }
+  }
+
+  function renderVaultHome() {
+    document.getElementById("vault-search-input").value = "";
+    document.getElementById("vault-search-results-wrap").classList.add("hidden");
+    document.getElementById("vault-section-grid-wrap").classList.remove("hidden");
+    var grid = document.getElementById("vault-section-grid");
+    grid.innerHTML = "";
+    VAULT_SECTIONS.forEach(function (sec) {
+      var count = vaultEntriesBySection(sec.id).length;
+      var card = document.createElement("button");
+      card.className = "dua-category-card";
+      card.innerHTML = '<span class="cat-name">' + sec.name + '</span><span class="cat-count">' + count + (count === 1 ? " entry" : " entries") + '</span>';
+      card.addEventListener("click", function () {
+        vaultState.sectionId = sec.id;
+        renderVaultSection(sec.id);
+        showVaultScreen("vault-section-view");
+      });
+      grid.appendChild(card);
+    });
+  }
+
+  function buildVaultEntryItem(entry) {
+    var sec = VAULT_SECTIONS.find(function (s) { return s.id === entry.section; });
+    var item = document.createElement("button");
+    item.className = "dua-list-item";
+    var textWrap = document.createElement("span");
+    var title = document.createElement("span");
+    title.className = "dua-list-title";
+    title.textContent = entry.title;
+    var preview = document.createElement("span");
+    preview.className = "vault-entry-preview";
+    preview.textContent = (entry.body || "").slice(0, 60) + (entry.body && entry.body.length > 60 ? "…" : "");
+    var dateLine = document.createElement("span");
+    dateLine.className = "vault-entry-date";
+    dateLine.textContent = new Date(entry.updatedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + (sec && vaultState.view !== "section" ? " · " + sec.name : "");
+    textWrap.appendChild(title);
+    textWrap.appendChild(preview);
+    textWrap.appendChild(document.createElement("br"));
+    textWrap.appendChild(dateLine);
+    item.appendChild(textWrap);
+    item.addEventListener("click", function () {
+      vaultState.entryId = entry.id;
+      renderVaultDetail(entry.id);
+      showVaultScreen("vault-entry-detail");
+    });
+    return item;
+  }
+
+  function renderVaultSection(sectionId) {
+    var sec = VAULT_SECTIONS.find(function (s) { return s.id === sectionId; });
+    document.getElementById("vault-section-title").textContent = sec ? sec.name : "";
+    var list = document.getElementById("vault-entry-list");
+    list.innerHTML = "";
+    var entries = vaultEntriesBySection(sectionId);
+    if (!entries.length) {
+      var empty = document.createElement("p");
+      empty.className = "dua-empty-state";
+      empty.textContent = "No entries yet. Tap “+ New” to write your first one.";
+      list.appendChild(empty);
+      return;
+    }
+    entries.forEach(function (e) { list.appendChild(buildVaultEntryItem(e)); });
+  }
+
+  function renderVaultDetail(entryId) {
+    var entry = (vaultDecrypted || []).find(function (e) { return e.id === entryId; });
+    if (!entry) return;
+    document.getElementById("vault-detail-title").textContent = entry.title;
+    document.getElementById("vault-detail-body").textContent = entry.body;
+    var updated = new Date(entry.updatedAt).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    document.getElementById("vault-detail-date").textContent = "Last updated " + updated;
+  }
+
+  function openVaultEntryForm(sectionId, editingEntry) {
+    vaultState.editingId = editingEntry ? editingEntry.id : null;
+    document.getElementById("vault-entry-title-input").value = editingEntry ? editingEntry.title : "";
+    document.getElementById("vault-entry-body-input").value = editingEntry ? editingEntry.body : "";
+    vaultState.sectionId = sectionId;
+    showVaultScreen("vault-entry-form");
+  }
+
+  function initVault() {
+    document.getElementById("vault-setup-create").addEventListener("click", function () {
+      var pass = document.getElementById("vault-setup-pass").value;
+      var confirm = document.getElementById("vault-setup-confirm").value;
+      var errEl = document.getElementById("vault-setup-error");
+      errEl.classList.add("hidden");
+      if (!pass || pass.length < 4) {
+        errEl.textContent = "Passphrase must be at least 4 characters.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+      if (pass !== confirm) {
+        errEl.textContent = "Passphrases don't match.";
+        errEl.classList.remove("hidden");
+        return;
+      }
+      createVault(pass).then(function () {
+        document.getElementById("vault-setup-pass").value = "";
+        document.getElementById("vault-setup-confirm").value = "";
+        renderVaultRoot();
+        showToast("Vault created");
+      });
+    });
+
+    document.getElementById("vault-unlock-btn").addEventListener("click", function () {
+      var pass = document.getElementById("vault-unlock-pass").value;
+      var errEl = document.getElementById("vault-unlock-error");
+      errEl.classList.add("hidden");
+      unlockVault(pass).then(function () {
+        renderVaultRoot();
+      }).catch(function () {
+        errEl.textContent = "Incorrect passphrase.";
+        errEl.classList.remove("hidden");
+      });
+    });
+
+    document.getElementById("vault-forgot-btn").addEventListener("click", function () {
+      showVaultScreen("vault-forgot");
+    });
+    document.getElementById("vault-forgot-back-btn").addEventListener("click", function () {
+      showVaultScreen("vault-locked");
+    });
+    document.getElementById("vault-forgot-erase-btn").addEventListener("click", function () {
+      var confirmed = window.confirm("This permanently erases your Vault and every entry inside it. This cannot be undone. Continue?");
+      if (!confirmed) return;
+      clearVaultCompletely();
+      renderVaultRoot();
+      showToast("Vault erased");
+    });
+
+    document.getElementById("vault-lock-btn").addEventListener("click", function () {
+      lockVault();
+      renderVaultRoot();
+    });
+
+    document.getElementById("vault-section-back").addEventListener("click", function () {
+      renderVaultHome();
+      showVaultScreen("vault-home");
+    });
+
+    document.getElementById("vault-new-entry-btn").addEventListener("click", function () {
+      openVaultEntryForm(vaultState.sectionId, null);
+    });
+
+    document.getElementById("vault-form-back").addEventListener("click", function () {
+      if (vaultState.sectionId) {
+        renderVaultSection(vaultState.sectionId);
+        showVaultScreen("vault-section-view");
+      } else {
+        renderVaultHome();
+        showVaultScreen("vault-home");
+      }
+    });
+
+    document.getElementById("vault-entry-save-btn").addEventListener("click", function () {
+      var title = document.getElementById("vault-entry-title-input").value.trim();
+      var body = document.getElementById("vault-entry-body-input").value;
+      if (!body.trim()) {
+        showToast("Write something before saving");
+        return;
+      }
+      saveVaultEntry(vaultState.sectionId, title, body, vaultState.editingId).then(function () {
+        vaultState.editingId = null;
+        renderVaultSection(vaultState.sectionId);
+        showVaultScreen("vault-section-view");
+        showToast("Saved");
+      });
+    });
+
+    document.getElementById("vault-detail-back").addEventListener("click", function () {
+      renderVaultSection(vaultState.sectionId);
+      showVaultScreen("vault-section-view");
+    });
+
+    document.getElementById("vault-detail-edit").addEventListener("click", function () {
+      var entry = (vaultDecrypted || []).find(function (e) { return e.id === vaultState.entryId; });
+      if (entry) openVaultEntryForm(entry.section, entry);
+    });
+
+    document.getElementById("vault-detail-delete").addEventListener("click", function () {
+      var confirmed = window.confirm("Delete this entry? This cannot be undone.");
+      if (!confirmed) return;
+      deleteVaultEntry(vaultState.entryId);
+      renderVaultSection(vaultState.sectionId);
+      showVaultScreen("vault-section-view");
+      showToast("Entry deleted");
+    });
+
+    document.getElementById("vault-settings-open-btn").addEventListener("click", function () {
+      document.getElementById("vault-change-current").value = "";
+      document.getElementById("vault-change-new").value = "";
+      document.getElementById("vault-change-confirm").value = "";
+      document.getElementById("vault-change-error").classList.add("hidden");
+      showVaultScreen("vault-settings-view");
+    });
+    document.getElementById("vault-settings-back").addEventListener("click", function () {
+      renderVaultHome();
+      showVaultScreen("vault-home");
+    });
+
+    document.getElementById("vault-change-btn").addEventListener("click", function () {
+      var current = document.getElementById("vault-change-current").value;
+      var next = document.getElementById("vault-change-new").value;
+      var confirmNew = document.getElementById("vault-change-confirm").value;
+      var errEl = document.getElementById("vault-change-error");
+      errEl.classList.add("hidden");
+
+      unlockVault(current).then(function () {
+        if (!next || next.length < 4) {
+          errEl.textContent = "New passphrase must be at least 4 characters.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        if (next !== confirmNew) {
+          errEl.textContent = "New passphrases don't match.";
+          errEl.classList.remove("hidden");
+          return;
+        }
+        var entriesToReencrypt = vaultDecrypted.slice();
+        return createVault(next).then(function () {
+          // Old ciphertext was encrypted under the old key/salt and can
+          // never be decrypted with the new key — clear it before writing
+          // fresh entries, and do so one at a time (not Promise.all) since
+          // saveVaultEntry does a read-modify-write on localStorage that
+          // would race and drop entries if run in parallel.
+          saveVaultEntriesRaw([]);
+          var chain = Promise.resolve();
+          entriesToReencrypt.forEach(function (e) {
+            chain = chain.then(function () {
+              return saveVaultEntry(e.section, e.title, e.body, null);
+            });
+          });
+          return chain;
+        }).then(function () {
+          showToast("Passphrase changed");
+          renderVaultRoot();
+        });
+      }).catch(function () {
+        errEl.textContent = "Current passphrase is incorrect.";
+        errEl.classList.remove("hidden");
+      });
+    });
+
+    document.getElementById("vault-clear-btn").addEventListener("click", function () {
+      var confirmed = window.confirm("This permanently deletes your passphrase and every Vault entry on this device. This cannot be undone. Continue?");
+      if (!confirmed) return;
+      clearVaultCompletely();
+      renderVaultRoot();
+      showToast("Vault cleared");
+    });
+
+    var vaultSearchInput = document.getElementById("vault-search-input");
+    vaultSearchInput.addEventListener("input", function () {
+      var q = vaultSearchInput.value.trim().toLowerCase();
+      var resultsWrap = document.getElementById("vault-search-results-wrap");
+      var gridWrap = document.getElementById("vault-section-grid-wrap");
+      if (!q) {
+        resultsWrap.classList.add("hidden");
+        gridWrap.classList.remove("hidden");
+        return;
+      }
+      gridWrap.classList.add("hidden");
+      resultsWrap.classList.remove("hidden");
+      var results = (vaultDecrypted || []).filter(function (e) {
+        return (e.title + " " + e.body).toLowerCase().indexOf(q) !== -1;
+      }).sort(function (a, b) { return b.updatedAt - a.updatedAt; });
+      var list = document.getElementById("vault-search-results");
+      list.innerHTML = "";
+      if (!results.length) {
+        var empty = document.createElement("p");
+        empty.className = "dua-empty-state";
+        empty.textContent = "No entries match your search.";
+        list.appendChild(empty);
+        return;
+      }
+      results.forEach(function (e) { list.appendChild(buildVaultEntryItem(e)); });
+    });
+  }
+
   // ---------- QURAN VERSE OF THE DAY ----------
   // Arabic text: verbatim from the Tanzil Project (tanzil.net), CC BY 3.0 —
   // attribution required, text must not be altered. No translation shown yet.
@@ -855,8 +1532,9 @@
       btn.classList.toggle("active", btn.dataset.nav === name);
     });
     if (name === "home") renderHome();
-    if (name === "sunnah") { renderRoutine(); renderAkhlaq(); renderVerseOfDay(); renderHadith(); }
+    if (name === "sunnah") { renderRoutine(); renderAkhlaq(); renderVerseOfDay(); renderHadith(); renderDuaCategories(); }
     if (name === "chat") renderChatOptions();
+    if (name === "vault") renderVaultRoot();
     if (name === "more") renderMore();
   }
 
@@ -908,6 +1586,8 @@
     initTaskForm();
     initFocusTimer();
     initSunnahSubtabs();
+    initDuasUI();
+    initVault();
     initShield();
     initMore();
     renderHome();

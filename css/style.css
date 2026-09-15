@@ -363,6 +363,82 @@ html, body {
 .verse-arabic { margin: 0 0 10px; font-size: 21px; line-height: 2; color: var(--text); direction: rtl; unicode-bidi: isolate; font-family: "Traditional Arabic", "Scheherazade New", "Noto Naskh Arabic", serif; }
 .verse-source { margin: 0; font-size: 11px; color: var(--muted); }
 
+/* DUAS */
+.duas-search-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+.duas-search-row .text-input { margin-bottom: 0; flex: 1; }
+
+.chip-toggle {
+  background: var(--surface-2);
+  border: 1.5px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 11px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.chip-toggle[aria-pressed="true"] { background: var(--mint); color: #06251A; border-color: var(--mint); }
+
+.duas-back-row { margin-bottom: 10px; }
+
+.dua-category-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.dua-category-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+}
+.dua-category-card .cat-name { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.dua-category-card .cat-count { font-size: 11.5px; color: var(--muted); }
+.dua-category-card.empty .cat-count { color: var(--muted); }
+
+.dua-list { display: flex; flex-direction: column; gap: 8px; }
+.dua-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 13px 14px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+  text-align: left;
+  width: 100%;
+}
+.dua-list-item .dua-list-title { font-size: 14px; font-weight: 600; }
+.dua-list-item .dua-list-cat { font-size: 11.5px; color: var(--muted); display: block; margin-top: 2px; }
+.dua-list-fav { color: var(--mint); font-size: 16px; background: none; border: none; cursor: pointer; padding: 4px; }
+
+.dua-detail-card { border-color: var(--mint); }
+.dua-fav-btn { font-size: 20px; color: var(--muted); background: none; border: none; cursor: pointer; }
+.dua-fav-btn.active { color: var(--mint); }
+.dua-arabic { font-size: 26px; line-height: 2.1; color: var(--text); direction: rtl; unicode-bidi: isolate; text-align: right; font-family: "Traditional Arabic", "Scheherazade New", "Noto Naskh Arabic", serif; margin: 10px 0 14px; }
+.dua-translit { font-size: 13.5px; color: var(--mint-soft); font-style: italic; margin: 0 0 12px; line-height: 1.6; }
+.dua-meaning { font-size: 14.5px; line-height: 1.6; margin: 0 0 16px; }
+.dua-detail-actions { display: flex; gap: 8px; }
+.dua-detail-actions .btn { flex: 1; margin-bottom: 0; }
+
+.dua-empty-state { color: var(--muted); font-size: 13px; background: var(--surface-2); border: 1px dashed var(--border); border-radius: 12px; padding: 16px; text-align: center; }
+
+/* VAULT */
+.vault-textarea { min-height: 160px; resize: vertical; line-height: 1.6; font-family: inherit; }
+.vault-body-text { white-space: pre-wrap; }
+.vault-entry-preview { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.vault-entry-date { color: var(--muted); font-size: 11px; }
+
 /* HADITH */
 .hadith-source { margin: 0 0 10px; font-size: 12px; color: var(--mint); font-weight: 600; }
 .hadith-arabic { margin: 0 0 10px; font-size: 19px; line-height: 1.9; color: var(--text); direction: rtl; unicode-bidi: isolate; font-family: "Traditional Arabic", "Scheherazade New", "Noto Naskh Arabic", serif; }

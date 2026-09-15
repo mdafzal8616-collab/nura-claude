@@ -89,10 +89,40 @@
     </div>
 
     <div id="sunnah-panel-duas" class="sunnah-panel hidden">
-      <section class="card">
-        <h2>Duas</h2>
-        <p class="pending-note">Content pending verification — no reviewed dua text (Arabic, meaning, and source) exists in this project yet. This section will only show real dua text once a verified source is added, not before.</p>
-      </section>
+      <div id="duas-search-row" class="duas-search-row">
+        <input type="text" id="duas-search-input" class="text-input" placeholder="Search duas">
+        <button class="chip-toggle" id="duas-favorites-toggle" aria-pressed="false">&#9733; Favorites</button>
+      </div>
+      <div id="duas-back-row" class="duas-back-row hidden">
+        <button class="icon-btn" id="duas-back-btn">&#8592; Back</button>
+      </div>
+      <div id="duas-categories-view">
+        <div class="dua-category-grid" id="dua-category-grid"></div>
+      </div>
+      <div id="duas-list-view" class="hidden">
+        <h2 id="duas-list-title"></h2>
+        <div class="dua-list" id="dua-list"></div>
+      </div>
+      <div id="duas-detail-view" class="hidden">
+        <section class="card dua-detail-card">
+          <div class="modal-header-row">
+            <p class="hadith-source" id="dua-detail-source"></p>
+            <button class="icon-btn dua-fav-btn" id="dua-detail-fav" aria-label="Toggle favorite">&#9733;</button>
+          </div>
+          <h2 id="dua-detail-title"></h2>
+          <p class="dua-arabic" id="dua-detail-arabic" dir="rtl" lang="ar"></p>
+          <p class="dua-translit" id="dua-detail-translit"></p>
+          <p class="dua-meaning" id="dua-detail-meaning"></p>
+          <div class="dua-detail-actions">
+            <button class="btn btn-outline" id="dua-copy-btn">Copy</button>
+            <button class="btn btn-outline" id="dua-share-btn">Share</button>
+          </div>
+        </section>
+      </div>
+      <div id="duas-search-results-view" class="hidden">
+        <h2>Search results</h2>
+        <div class="dua-list" id="dua-search-results"></div>
+      </div>
     </div>
 
     <div id="sunnah-panel-quran" class="sunnah-panel hidden">
@@ -147,9 +177,111 @@
         <h1>Hamdard</h1>
       </div>
     </header>
-    <section class="card">
-      <p class="pending-note">Vault is planned, not built. Real encryption needs to be actually implemented and independently tested before this app will claim anything is private or secure — a padlock icon with nothing behind it would be a false claim. Nothing is stored here yet.</p>
-    </section>
+
+    <!-- SETUP: no passphrase yet -->
+    <div id="vault-setup" class="vault-screen hidden">
+      <section class="card">
+        <p class="muted-line">Your Vault is a private space on this device for reflection, struggle notes, a career audit, and your personal principles. Set a passphrase to protect it — nothing here is ever sent anywhere.</p>
+      </section>
+      <section class="card">
+        <h2>Create a Vault passphrase</h2>
+        <input type="password" id="vault-setup-pass" class="text-input" placeholder="Choose a passphrase" autocomplete="new-password">
+        <input type="password" id="vault-setup-confirm" class="text-input" placeholder="Confirm passphrase" autocomplete="new-password">
+        <p class="quiz-feedback hidden" id="vault-setup-error"></p>
+        <p class="pending-note">If you lose this passphrase, your entries cannot be recovered — there is no reset. Clearing your browser or app storage will also permanently delete everything here.</p>
+        <button class="btn btn-primary btn-full" id="vault-setup-create">Create Vault</button>
+      </section>
+    </div>
+
+    <!-- LOCKED -->
+    <div id="vault-locked" class="vault-screen hidden">
+      <section class="card">
+        <h2>Vault is locked</h2>
+        <p class="muted-line">Enter your passphrase to unlock.</p>
+        <input type="password" id="vault-unlock-pass" class="text-input" placeholder="Passphrase" autocomplete="current-password">
+        <p class="quiz-feedback hidden" id="vault-unlock-error"></p>
+        <button class="btn btn-primary btn-full" id="vault-unlock-btn">Unlock</button>
+        <button class="btn btn-outline btn-full" id="vault-forgot-btn">Forgot passphrase?</button>
+      </section>
+    </div>
+
+    <!-- FORGOT PASSPHRASE -->
+    <div id="vault-forgot" class="vault-screen hidden">
+      <section class="card">
+        <h2>Forgot your passphrase?</h2>
+        <p class="pending-note">There is no way to recover a lost Vault passphrase — it is never stored anywhere, even by this app. The only option is to permanently erase this Vault and start a new one. Everything currently inside it will be lost.</p>
+        <button class="btn btn-outline btn-full btn-danger" id="vault-forgot-erase-btn">Erase this Vault and start over</button>
+        <button class="btn btn-outline btn-full" id="vault-forgot-back-btn">Go back</button>
+      </section>
+    </div>
+
+    <!-- HOME (unlocked) -->
+    <div id="vault-home" class="vault-screen hidden">
+      <section class="card">
+        <div class="card-row"><h2>Your Private Space</h2><button class="icon-btn" id="vault-lock-btn">Lock</button></div>
+        <input type="text" id="vault-search-input" class="text-input" placeholder="Search your entries">
+      </section>
+      <div id="vault-search-results-wrap" class="hidden">
+        <div class="dua-list" id="vault-search-results"></div>
+      </div>
+      <div id="vault-section-grid-wrap">
+        <div class="dua-category-grid" id="vault-section-grid"></div>
+      </div>
+      <button class="btn btn-outline btn-full" id="vault-settings-open-btn">Vault settings</button>
+    </div>
+
+    <!-- SECTION LIST -->
+    <div id="vault-section-view" class="vault-screen hidden">
+      <div class="duas-back-row"><button class="icon-btn" id="vault-section-back">&#8592; Back</button></div>
+      <div class="card-row"><h2 id="vault-section-title"></h2><button class="btn btn-primary" id="vault-new-entry-btn">+ New</button></div>
+      <div class="dua-list" id="vault-entry-list"></div>
+    </div>
+
+    <!-- ENTRY FORM -->
+    <div id="vault-entry-form" class="vault-screen hidden">
+      <div class="duas-back-row"><button class="icon-btn" id="vault-form-back">&#8592; Cancel</button></div>
+      <section class="card">
+        <input type="text" id="vault-entry-title-input" class="text-input" placeholder="Title (optional)">
+        <textarea id="vault-entry-body-input" class="text-input vault-textarea" placeholder="Write freely — this is private." rows="10"></textarea>
+        <button class="btn btn-primary btn-full" id="vault-entry-save-btn">Save entry</button>
+      </section>
+    </div>
+
+    <!-- ENTRY DETAIL -->
+    <div id="vault-entry-detail" class="vault-screen hidden">
+      <div class="duas-back-row"><button class="icon-btn" id="vault-detail-back">&#8592; Back</button></div>
+      <section class="card">
+        <p class="hadith-source" id="vault-detail-date"></p>
+        <h2 id="vault-detail-title"></h2>
+        <p class="dua-meaning vault-body-text" id="vault-detail-body"></p>
+        <div class="dua-detail-actions">
+          <button class="btn btn-outline" id="vault-detail-edit">Edit</button>
+          <button class="btn btn-outline btn-danger" id="vault-detail-delete">Delete</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- SETTINGS -->
+    <div id="vault-settings-view" class="vault-screen hidden">
+      <div class="duas-back-row"><button class="icon-btn" id="vault-settings-back">&#8592; Back</button></div>
+      <section class="card">
+        <h2>Change passphrase</h2>
+        <input type="password" id="vault-change-current" class="text-input" placeholder="Current passphrase">
+        <input type="password" id="vault-change-new" class="text-input" placeholder="New passphrase">
+        <input type="password" id="vault-change-confirm" class="text-input" placeholder="Confirm new passphrase">
+        <p class="quiz-feedback hidden" id="vault-change-error"></p>
+        <button class="btn btn-primary btn-full" id="vault-change-btn">Change passphrase</button>
+      </section>
+      <section class="card">
+        <h2>Clear Vault</h2>
+        <p class="pending-note">This permanently deletes your passphrase and every entry on this device. This cannot be undone.</p>
+        <button class="btn btn-outline btn-full btn-danger" id="vault-clear-btn">Clear Vault permanently</button>
+      </section>
+      <section class="card">
+        <h2>Encryption</h2>
+        <p class="muted-line">Entries are encrypted with AES-GCM (256-bit) using the browser's built-in Web Crypto API. The key is derived from your passphrase with PBKDF2 (150,000 iterations) and is never stored — only held in memory while unlocked, and only on this device. This has not been independently security-audited.</p>
+      </section>
+    </div>
   </main>
 
   <!-- MORE -->
@@ -258,6 +390,7 @@
 <!-- SIMPLE TOAST -->
 <div class="toast hidden" id="toast"></div>
 
+<script src="js/duas-data.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

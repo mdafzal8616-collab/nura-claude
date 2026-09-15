@@ -2,6 +2,22 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-15 — Vault module built (real encryption)
+
+Full feature: 4 sections (Hamdard/Private Reflection, Trigger & Struggle Notes, Career Audit, My Personal Code/Principles), create/open/edit/delete entries, search across decrypted entries, entry previews with date/time, proper empty states, working back navigation, lock/unlock, change passphrase, clear vault, forgot-passphrase (erase-and-restart, since recovery is genuinely impossible by design).
+
+Encryption is real, not simulated: AES-GCM 256 via the browser's native Web Crypto SubtleCrypto API, key derived from the passphrase with PBKDF2 (150,000 iterations, SHA-256). The passphrase is never stored; the derived key lives only in memory for the unlocked session and is gone on lock or reload — verified directly (confirmed Vault re-locks itself on every page reload and correctly rejects a wrong passphrase). Verified entries are genuinely encrypted at rest by inspecting raw localStorage content directly (no plaintext present). Vault settings screen states plainly this has not been independently security-audited — no "military-grade" or "100% secure" language anywhere.
+
+Two real bugs were found during testing and fixed before shipping:
+1. Changing the passphrase re-encrypted entries as brand-new records instead of replacing the originals, leaving the old entries (still encrypted under the old key) orphaned in storage.
+2. That orphaned data then caused the *next* unlock attempt to fail and misreport "Incorrect passphrase" even when the passphrase was correct, because one entry's decryption failure was short-circuiting the whole unlock. Fixed by isolating the passphrase-check failure from individual entry-decrypt failures, and by clearing old ciphertext (sequentially, not in parallel, to avoid a read-modify-write race) before re-encrypting under the new key.
+
+Tested end-to-end: setup, wrong-passphrase rejection, correct unlock, create/edit/delete entries, decrypted data survives a real page reload requiring the passphrase again, search, change-passphrase (old passphrase correctly stops working, new one correctly works, data intact, no duplication), forgot-passphrase erase flow, and no regressions to Home/Sunnah/Duas/AI Chat/More.
+
+## 2026-09-15 — Duas module built (Sunnah → Duas)
+
+Full feature: 11 categories, search, favorites (persisted), category → list → detail navigation, large-Arabic detail view, copy/share. Content: 6 duas verified against named citations before use (cross-checked via search against sunnah.com/standard hadith numbering, not generated from memory) — Sayyidul Istighfar (Bukhari 6306), anxiety/sorrow dua (Bukhari 6369), waking-up and before-sleep duas (Hisnul Muslim), before/after eating (Abu Dawud/Tirmidhi). Remaining 7 categories (Morning, Evening, Salah, Protection, Travel, Daily Life) intentionally left empty with an honest "pending verified content" state — structure is ready, content was not rushed. Tested: category grid, list, detail, Arabic rendering, favorite toggle + persistence, search (text and favorites-only), copy button (no crash; real clipboard write untestable headless but error-handled), no regressions to Home/Sunnah other tabs/More.
+
 ## 2026-09-15 — Project started: independent Claude build, separate from Codex's NURA
 
 Md Afzal gave a full master prompt establishing this as an independent build of NURA, separate from an existing, more advanced Codex-built version (elsewhere on this machine, not read or copied from). Full original prompt text preserved below verbatim for exact wording (CLAUDE.md summarizes it but defers to this on any conflict).
