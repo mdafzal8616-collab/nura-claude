@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>NURA</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- HOME -->
+  <main class="view" id="view-home" data-view="home">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow" id="home-date"></p>
+        <h1 id="home-greeting">Assalamu Alaikum</h1>
+      </div>
+      <button class="avatar-btn" id="open-more-from-home" aria-label="Profile">
+        <span id="avatar-initial">N</span>
+      </button>
+    </header>
+
+    <section class="card next-action-card">
+      <p class="eyebrow">Next up</p>
+      <p class="next-action-text" id="next-action-text">Nothing scheduled yet — add your first task below.</p>
+    </section>
+
+    <section class="card">
+      <div class="card-row">
+        <h2>Today</h2>
+        <span class="count-badge" id="tasks-count-badge">0 of 0</span>
+      </div>
+      <div class="task-list" id="task-list"></div>
+      <div class="add-task-row">
+        <input type="text" id="task-input" class="text-input" placeholder="Add a task for today" maxlength="60">
+        <button class="btn btn-primary" id="add-task-btn">Add</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-row">
+        <h2>Focus Timer</h2>
+        <span class="count-badge" id="focus-status-badge">Ready</span>
+      </div>
+      <p class="muted-line" id="focus-target-line">Pick a task above, then start a focus session.</p>
+      <p class="focus-clock" id="focus-clock">20:00</p>
+      <div class="focus-controls">
+        <button class="btn btn-primary btn-full" id="focus-start-btn">Start 20 min focus</button>
+        <button class="btn btn-outline btn-full hidden" id="focus-pause-btn">Pause</button>
+        <button class="btn btn-outline btn-full hidden" id="focus-stop-btn">Stop</button>
+      </div>
+    </section>
+
+    <button class="btn btn-shield btn-full" id="open-shield">Need a pause? Open Shield</button>
+  </main>
+
+  <!-- SUNNAH -->
+  <main class="view hidden" id="view-sunnah" data-view="sunnah">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow" id="sunnah-date"></p>
+        <h1>Sunnah</h1>
+      </div>
+    </header>
+
+    <div class="subtab-row" id="sunnah-subtabs">
+      <button class="subtab active" data-subtab="routine">Routine</button>
+      <button class="subtab" data-subtab="akhlaq">Akhlaq</button>
+      <button class="subtab" data-subtab="duas">Duas</button>
+      <button class="subtab" data-subtab="quran">Quran</button>
+      <button class="subtab" data-subtab="hadith">Hadith &amp; Quiz</button>
+    </div>
+
+    <div id="sunnah-panel-routine" class="sunnah-panel">
+      <section class="card">
+        <p class="muted-line">Obligatory prayers and their nearby Sunnah/remembrance, organized by time. Tap to expand a section, then mark what you did.</p>
+      </section>
+      <div id="routine-sections"></div>
+    </div>
+
+    <div id="sunnah-panel-akhlaq" class="sunnah-panel hidden">
+      <section class="card">
+        <h2>Character (Akhlaq)</h2>
+        <p class="muted-line">Practical daily character actions — not a ranking, just a personal check.</p>
+        <div class="habit-list" id="akhlaq-list"></div>
+      </section>
+    </div>
+
+    <div id="sunnah-panel-duas" class="sunnah-panel hidden">
+      <section class="card">
+        <h2>Duas</h2>
+        <p class="pending-note">Content pending verification — no reviewed dua text (Arabic, meaning, and source) exists in this project yet. This section will only show real dua text once a verified source is added, not before.</p>
+      </section>
+    </div>
+
+    <div id="sunnah-panel-quran" class="sunnah-panel hidden">
+      <section class="card">
+        <h2>Today's Verse</h2>
+        <div class="verse-box hidden" id="verse-box">
+          <p class="verse-ref" id="verse-ref"></p>
+          <p class="verse-arabic" id="verse-arabic" dir="rtl" lang="ar"></p>
+          <p class="verse-source">Source: Tanzil Project &middot; tanzil.net</p>
+        </div>
+        <p class="pending-note">Full Quran reading (all 114 surahs, search, licensed translation, audio, offline) is not built yet — this is a small, verified proof of concept only, one ayah per day.</p>
+      </section>
+    </div>
+
+    <div id="sunnah-panel-hadith" class="sunnah-panel hidden">
+      <section class="card" id="hadith-card">
+        <h2>Hadith of the Day</h2>
+        <p class="hadith-source" id="hadith-source"></p>
+        <p class="hadith-arabic" id="hadith-arabic" dir="rtl" lang="ar"></p>
+        <p class="hadith-text" id="hadith-text"></p>
+        <p class="hadith-explain" id="hadith-explain"></p>
+        <div id="quiz-area"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- AI CHAT -->
+  <main class="view hidden" id="view-chat" data-view="chat">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow">AI Chat</p>
+        <h1>Bhai</h1>
+      </div>
+    </header>
+    <section class="card">
+      <p class="pending-note">This is scripted guided support, not a live AI model. Real on-device AI is planned but unbuilt — see More &rarr; Feature Status.</p>
+    </section>
+    <section class="card">
+      <h2>What's going on?</h2>
+      <div class="chat-options" id="chat-options"></div>
+    </section>
+    <section class="card hidden" id="chat-response-card">
+      <div id="chat-response"></div>
+    </section>
+  </main>
+
+  <!-- VAULT -->
+  <main class="view hidden" id="view-vault" data-view="vault">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow">Vault</p>
+        <h1>Hamdard</h1>
+      </div>
+    </header>
+    <section class="card">
+      <p class="pending-note">Vault is planned, not built. Real encryption needs to be actually implemented and independently tested before this app will claim anything is private or secure — a padlock icon with nothing behind it would be a false claim. Nothing is stored here yet.</p>
+    </section>
+  </main>
+
+  <!-- MORE -->
+  <main class="view hidden" id="view-more" data-view="more">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow">More</p>
+        <h1>Profile &amp; Settings</h1>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>Profile</h2>
+      <p class="muted-line" id="more-name-display"></p>
+      <button class="btn btn-outline btn-full" id="edit-name-btn">Change name</button>
+    </section>
+
+    <section class="card">
+      <h2>Today's Coins</h2>
+      <p class="coins-line"><span id="coins-count">0</span> learning coins</p>
+      <p class="pending-note">Redemption, monetary value, and partnerships are undecided — these are a learning tracker only, not currency.</p>
+    </section>
+
+    <section class="card">
+      <h2>Your Data</h2>
+      <button class="btn btn-outline btn-full" id="export-data-btn">Export my data (JSON)</button>
+      <button class="btn btn-outline btn-full btn-danger" id="clear-data-btn">Delete all my data</button>
+    </section>
+
+    <section class="card">
+      <h2>Feature Status</h2>
+      <ul class="status-list" id="feature-status-list"></ul>
+    </section>
+  </main>
+
+  <!-- BOTTOM NAV -->
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-nav="home" aria-label="Home">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3z"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="nav-btn" data-nav="sunnah" aria-label="Sunnah">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 4h14v16l-7-4-7 4z"/></svg>
+      <span>Sunnah</span>
+    </button>
+    <button class="nav-btn" data-nav="chat" aria-label="AI Chat">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 4h16v12H7l-3 3z"/></svg>
+      <span>AI Chat</span>
+    </button>
+    <button class="nav-btn" data-nav="vault" aria-label="Vault">
+      <svg viewBox="0 0 24 24" width="22" height="22"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+      <span>Vault</span>
+    </button>
+    <button class="nav-btn" data-nav="more" aria-label="More">
+      <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
+      <span>More</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- NAME MODAL -->
+<div class="modal-overlay hidden" id="modal-name">
+  <div class="modal-sheet">
+    <h2>Welcome to NURA</h2>
+    <p class="modal-sub">What should we call you?</p>
+    <input type="text" id="name-input" class="text-input" placeholder="Your name" maxlength="30">
+    <button class="btn btn-primary btn-full" id="name-save">Continue</button>
+  </div>
+</div>
+
+<!-- FOCUS HONEST-COMPLETION MODAL -->
+<div class="modal-overlay hidden" id="modal-focus-check">
+  <div class="modal-sheet">
+    <h2>Session ended</h2>
+    <p class="modal-sub" id="focus-check-text">Did you actually finish the task, or just the timer?</p>
+    <button class="btn btn-primary btn-full" id="focus-check-done">Yes, I finished it</button>
+    <button class="btn btn-outline btn-full" id="focus-check-notdone">No, still working on it</button>
+  </div>
+</div>
+
+<!-- SHIELD MODAL -->
+<div class="modal-overlay hidden" id="modal-shield">
+  <div class="modal-sheet">
+    <div class="modal-header-row">
+      <h2>Shield</h2>
+      <button class="icon-btn" id="shield-close" aria-label="Close">&#10005;</button>
+    </div>
+    <p class="pending-note">Prototype: a manual pause you choose to start. This does not detect, block, or monitor anything on your phone.</p>
+    <div id="shield-step-start">
+      <p class="modal-sub">Take 30 seconds before you decide.</p>
+      <p class="shield-clock" id="shield-clock">0:30</p>
+      <button class="btn btn-primary btn-full" id="shield-begin-btn">Start the pause</button>
+    </div>
+    <div id="shield-step-reason" class="hidden">
+      <p class="modal-sub">What's one reason this matters to you right now?</p>
+      <input type="text" id="shield-reason-input" class="text-input" placeholder="Write a short reason" maxlength="80">
+      <p class="modal-sub">A small grounding step:</p>
+      <p class="shield-grounding">Take three slow breaths. Unclench your jaw and shoulders. Notice one thing you can see, hear, and feel right now.</p>
+      <button class="btn btn-primary btn-full" id="shield-done-btn">I'm okay, close this</button>
+      <button class="btn btn-outline btn-full" id="shield-goal-btn">Take me to today's tasks</button>
+    </div>
+  </div>
+</div>
+
+<!-- SIMPLE TOAST -->
+<div class="toast hidden" id="toast"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>
