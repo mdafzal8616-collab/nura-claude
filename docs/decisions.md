@@ -2,6 +2,14 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — Ruku numbers added to every ayah shown in the app
+
+Ruku (ركوع) is the standard 558-section division marked in the margin of virtually every printed Mushaf. Built a verified boundary table (new `js/ruku-data.js`, 558 [surah, ayah] entries) by fetching `ruku_number` per verse from Quran Foundation's API for all 114 chapters and extracting exactly where each ruku begins — not estimated or invented. Sanity-checked: exactly 558 boundaries came out (the correct standard count), 1:1 → ruku 1, 114:6 → ruku 558, and several mid-Quran spot checks landed exactly where expected.
+
+Wired into every place an ayah reference is shown: the daily Quran verse (now shows "Surah X:Y · Ruku N"), all three Ayat al-Kursi citations (Before Sleep, Morning Adhkar, after-salah dhikr — all pointing at the same shared data, one source of truth), and the Al-Baqarah 285–286 citation.
+
+Tested: daily verse shows correct ruku (Surah 7:36 → Ruku 125, checked against the boundary table by hand — correctly falls between ruku 125's start at 7:32 and ruku 126's start at 7:40), all three Ayat al-Kursi instances consistently show Ruku 35, Al-Baqarah 285–286 shows Ruku 41, everything persists across a real reload, no regressions, zero console errors.
+
 ## 2026-09-16 — First real Quran translation added (Al-Baqarah 2:285–286)
 
 The "last two verses of Al-Baqarah" item now shows an actual English translation alongside the Arabic, not a placeholder. Pulled directly from Quran Foundation's public API (api.quran.com, no key needed, confirmed CORS-open, confirmed same 6,236-verse count as Tanzil) — Saheeh International translation, a widely used and respected English rendering. Fetched via curl and hardcoded into this one item (not yet a live API integration for the whole app); clearly attributed to both the Arabic source (Tanzil) and the translation source (Saheeh International / api.quran.com) separately, so it's clear which part comes from where.
