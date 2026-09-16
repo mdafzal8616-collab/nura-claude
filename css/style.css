@@ -493,6 +493,14 @@ html, body {
   margin-top: -1px;
 }
 .sunnah-item-detail.hidden { display: none; }
+.sunnah-item-ruku {
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  color: var(--mint);
+  font-weight: 600;
+  text-align: right;
+}
+
 .sunnah-item-arabic {
   font-size: 20px;
   line-height: 1.9;

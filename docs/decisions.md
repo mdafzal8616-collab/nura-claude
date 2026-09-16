@@ -2,6 +2,12 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — Ruku badge moved onto the Arabic text itself
+
+Follow-up to the ruku feature: the ruku number was initially only mentioned inside the English "meaning" caption below the Arabic, which wasn't prominent enough. Moved it to its own small badge ("Ruku N") directly above the Arabic block, right-aligned to match the RTL flow — same visual treatment across all three Ayat al-Kursi instances (Ruku 35) and Al-Baqarah 285–286 (Ruku 41). The daily Quran verse already showed ruku next to its Surah:Ayah reference directly above the Arabic, so that one was already correct.
+
+Tested: badge renders correctly positioned for all citations, reload persistence, no regressions, zero console errors.
+
 ## 2026-09-16 — Ruku numbers added to every ayah shown in the app
 
 Ruku (ركوع) is the standard 558-section division marked in the margin of virtually every printed Mushaf. Built a verified boundary table (new `js/ruku-data.js`, 558 [surah, ayah] entries) by fetching `ruku_number` per verse from Quran Foundation's API for all 114 chapters and extracting exactly where each ruku begins — not estimated or invented. Sanity-checked: exactly 558 boundaries came out (the correct standard count), 1:1 → ruku 1, 114:6 → ruku 558, and several mid-Quran spot checks landed exactly where expected.
