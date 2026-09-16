@@ -2,6 +2,12 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — Source and hadith added to "Recite the last two verses of Al-Baqarah" (Before Sleep)
+
+Added an expandable "Source" panel to this Routine item, same pattern as the other dhikr items: (1) the hadith on its virtue — "Whoever recites the last two verses of Surat al-Baqarah on a night, they will be sufficient for him" (Sahih al-Bukhari 5009, Sahih Muslim 807, narrated by Abu Mas'ud), and (2) the actual verse text, Al-Baqarah 2:285–286, pulled directly from the already-verified Tanzil file (not re-typed) since the item is specifically about reciting them.
+
+Tested: expands correctly showing both the hadith and the verse text with correct sources, checkbox still works independently, no regressions elsewhere, zero console errors.
+
 ## 2026-09-16 — Customizable focus timer duration
 
 Home's focus timer was fixed at 20 minutes. Added a duration picker (chips for 5/10/15/20/25/30/45/60 min, plus a custom number input for 1-180 min) shown above the clock. Choice persists (`nc_focus_duration`) and is used for every future session until changed. Locked (chips and custom input disabled, with a toast if someone tries anyway) while a session is running or paused, to avoid corrupting an in-progress timer — only changeable when the timer is at Ready/full duration.
