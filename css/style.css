@@ -439,6 +439,41 @@ html, body {
 .vault-entry-preview { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .vault-entry-date { color: var(--muted); font-size: 11px; }
 
+.sunnah-item-wrap { display: flex; flex-direction: column; gap: 0; }
+.sunnah-item-expand-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--mint);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+.sunnah-item-detail {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  padding: 14px;
+  margin-top: -1px;
+}
+.sunnah-item-detail.hidden { display: none; }
+.sunnah-item-arabic {
+  font-size: 20px;
+  line-height: 1.9;
+  color: var(--text);
+  direction: rtl;
+  unicode-bidi: isolate;
+  text-align: right;
+  font-family: "Traditional Arabic", "Scheherazade New", "Noto Naskh Arabic", serif;
+  margin: 0 0 8px;
+}
+.sunnah-item-divider { border-top: 1px dashed var(--border); margin: 12px 0; }
+
 /* HADITH */
 .hadith-source { margin: 0 0 10px; font-size: 12px; color: var(--mint); font-weight: 600; }
 .hadith-arabic { margin: 0 0 10px; font-size: 19px; line-height: 1.9; color: var(--text); direction: rtl; unicode-bidi: isolate; font-family: "Traditional Arabic", "Scheherazade New", "Noto Naskh Arabic", serif; }

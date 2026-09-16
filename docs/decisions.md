@@ -2,6 +2,17 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — Hadith citations added to after-salah, morning, and evening dhikr in Routine
+
+Enriched Routine items with real, cited dhikr content (expandable "Source" panel under each item, Arabic + transliteration + meaning + citation) rather than just a bare label:
+- "Dhikr after salah" added to all 5 prayer sections (Fajr, Dhuhr, Asr, Maghrib, Isha) — a 3-part set: "Allahumma antas-salam..." (Sahih Muslim 592), the 33/33/33 tasbih + completion phrase (Sahih Muslim 597a), and reciting Ayat al-Kursi after each prayer (An-Nasa'i, Al-Kubra 9848, graded sahih by An-Nasa'i and Ibn Hibban).
+- Morning Adhkar's "Morning dhikr" enriched with "Asbahna wa asbahal mulku lillah..." (Sahih Muslim 2723); Evening Adhkar's "Evening dhikr" with its "Amsayna..." counterpart (same hadith, evening wording — not a separately-verified citation, noted honestly as such rather than invented).
+- Ayat al-Kursi items (Before Sleep, Morning Adhkar, Evening Adhkar, and inside the after-salah set) use the verse text pulled directly from the already-verified Tanzil file (2:255), not re-typed from memory. No translation of the full verse is included yet — same known gap as the Quran module generally.
+
+All content cross-checked via web search against named hadith numbers before use, same process as the earlier Duas/Hadith verification. Tested: expand/collapse per item, checkbox still works independently of the expand state, state persists across re-render and a real page reload, all 5 prayer sections show the new item, no regressions to Akhlaq/Duas/Quran/Hadith/Home, zero console errors.
+
+Not yet done (next, per the user's own ordering): hadith under each Akhlaq item + more self-improvement items; remaining Duas categories; more Hadith & Quiz lessons; fuller Quran section.
+
 ## 2026-09-15 — Vault module built (real encryption)
 
 Full feature: 4 sections (Hamdard/Private Reflection, Trigger & Struggle Notes, Career Audit, My Personal Code/Principles), create/open/edit/delete entries, search across decrypted entries, entry previews with date/time, proper empty states, working back navigation, lock/unlock, change passphrase, clear vault, forgot-passphrase (erase-and-restart, since recovery is genuinely impossible by design).

@@ -292,10 +292,56 @@
 
   // ---------- SUNNAH: ROUTINE ----------
 
+  // Dhikr citations below were cross-checked against sunnah.com/named
+  // hadith numbering before use (see docs/decisions.md), not generated
+  // from memory. Ayat al-Kursi's Arabic is pulled directly from the
+  // already-verified Tanzil Quran file (Surah 2:255), not re-typed.
+  var AFTER_SALAH_DHIKR_ITEMS = [
+    {
+      arabic: "اللَّهُمَّ أَنْتَ السَّلَامُ وَمِنْكَ السَّلَامُ، تَبَارَكْتَ يَا ذَا الْجَلَالِ وَالْإِكْرَامِ",
+      transliteration: "Allahumma antas-salamu wa minkas-salam, tabarakta ya dhal-jalali wal-ikram",
+      meaning: "O Allah, You are Peace and from You comes peace. Blessed are You, Owner of majesty and honor.",
+      source: "Sahih Muslim 592, narrated by A’ishah"
+    },
+    {
+      arabic: "سُبْحَانَ اللَّهِ (٣٣) الْحَمْدُ لِلَّهِ (٣٣) اللَّهُ أَكْبَرُ (٣٣) لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
+      transliteration: "SubhanAllah (x33), Alhamdulillah (x33), Allahu Akbar (x33), then: La ilaha illallah, wahdahu la sharika lah, lahul-mulku wa lahul-hamd, wa huwa 'ala kulli shay'in qadir",
+      meaning: "Glory be to Allah (33x), praise be to Allah (33x), Allah is Greatest (33x), then: There is no god but Allah, alone, without partner; His is the dominion and His is the praise, and He is capable of all things.",
+      source: "Sahih Muslim 597a, narrated by Abu Hurairah"
+    },
+    {
+      arabic: "ٱللَّهُ لَآ إِلَٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ لَا تَأْخُذُهُۥ سِنَةٌ وَلَا نَوْمٌ لَّهُۥ مَا فِى ٱلسَّمَٰوَٰتِ وَمَا فِى ٱلْأَرْضِ مَن ذَا ٱلَّذِى يَشْفَعُ عِندَهُۥٓ إِلَّا بِإِذْنِهِۦ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ وَلَا يُحِيطُونَ بِشَىْءٍ مِّنْ عِلْمِهِۦٓ إِلَّا بِمَا شَآءَ وَسِعَ كُرْسِيُّهُ ٱلسَّمَٰوَٰتِ وَٱلْأَرْضَ وَلَا يَـُٔودُهُۥ حِفْظُهُمَا وَهُوَ ٱلْعَلِىُّ ٱلْعَظِيمُ",
+      transliteration: null,
+      meaning: "Ayat al-Kursi (Surah Al-Baqarah 2:255). Translation not yet added — see Sunnah → Quran for the verified Arabic source.",
+      source: "Reciting it after each prescribed prayer: An-Nasa’i, Al-Kubra 9848, graded sahih by An-Nasa’i and Ibn Hibban, narrated by Abu Umamah. Verse text: Tanzil Project (Qur’an 2:255)."
+    }
+  ];
+
+  var MORNING_DHIKR_ITEMS = [{
+    arabic: "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ",
+    transliteration: "Asbahna wa asbahal mulku lillah, wal-hamdu lillah, la ilaha illallahu wahdahu la sharika lah, lahul-mulku wa lahul-hamd, wa huwa 'ala kulli shay'in qadir",
+    meaning: "We have entered the morning, and with it all dominion belongs to Allah, and praise is for Allah. There is no god but Allah, alone, without partner. His is the dominion and His is the praise, and He is capable of all things.",
+    source: "Sahih Muslim 2723"
+  }];
+
+  var EVENING_DHIKR_ITEMS = [{
+    arabic: "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ",
+    transliteration: "Amsayna wa amsal mulku lillah, wal-hamdu lillah, la ilaha illallahu wahdahu la sharika lah, lahul-mulku wa lahul-hamd, wa huwa 'ala kulli shay'in qadir",
+    meaning: "We have entered the evening, and with it all dominion belongs to Allah, and praise is for Allah. There is no god but Allah, alone, without partner. His is the dominion and His is the praise, and He is capable of all things.",
+    source: "Sahih Muslim 2723 (evening form — recited with ‘Amsayna’ in place of ‘Asbahna’)"
+  }];
+
+  var AYATKURSI_ITEMS = [{
+    arabic: "ٱللَّهُ لَآ إِلَٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ لَا تَأْخُذُهُۥ سِنَةٌ وَلَا نَوْمٌ لَّهُۥ مَا فِى ٱلسَّمَٰوَٰتِ وَمَا فِى ٱلْأَرْضِ مَن ذَا ٱلَّذِى يَشْفَعُ عِندَهُۥٓ إِلَّا بِإِذْنِهِۦ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ وَلَا يُحِيطُونَ بِشَىْءٍ مِّنْ عِلْمِهِۦٓ إِلَّا بِمَا شَآءَ وَسِعَ كُرْسِيُّهُ ٱلسَّمَٰوَٰتِ وَٱلْأَرْضَ وَلَا يَـُٔودُهُۥ حِفْظُهُمَا وَهُوَ ٱلْعَلِىُّ ٱلْعَظِيمُ",
+    transliteration: null,
+    meaning: "Ayat al-Kursi (Surah Al-Baqarah 2:255). Translation not yet added — see Sunnah → Quran for the verified Arabic source.",
+    source: "Tanzil Project (Qur’an 2:255)"
+  }];
+
   var ROUTINE_SECTIONS = [
     { id: "before-sleep", title: "Before Sleep", actions: [
       { id: "bs-wudu", name: "Make wudu before sleeping" },
-      { id: "bs-ayatkursi", name: "Recite Ayat al-Kursi" },
+      { id: "bs-ayatkursi", name: "Recite Ayat al-Kursi", items: AYATKURSI_ITEMS },
       { id: "bs-lasttwo", name: "Recite the last two verses of Al-Baqarah" },
       { id: "bs-tasbih", name: "Tasbih before sleep" },
       { id: "bs-dua", name: "Make a short dua before sleeping" }
@@ -307,11 +353,11 @@
     { id: "fajr", title: "Fajr", actions: [
       { id: "fj-sunnah-before", name: "Pray Sunnah before Fajr (2 rakah)" },
       { id: "fj-pray", name: "Pray Fajr on time" },
-      { id: "fj-dhikr", name: "Sit for dhikr after Fajr" }
+      { id: "fj-dhikr", name: "Dhikr after salah", items: AFTER_SALAH_DHIKR_ITEMS }
     ]},
     { id: "morning-adhkar", title: "Morning Adhkar", actions: [
-      { id: "ma-ayatkursi", name: "Ayat al-Kursi" },
-      { id: "ma-dhikr", name: "Morning dhikr" },
+      { id: "ma-ayatkursi", name: "Ayat al-Kursi", items: AYATKURSI_ITEMS },
+      { id: "ma-dhikr", name: "Morning dhikr (Asbahna...)", items: MORNING_DHIKR_ITEMS },
       { id: "ma-quran", name: "Read a portion of Qur'an" }
     ]},
     { id: "ishraq-duha", title: "Ishraq / Duha", actions: [
@@ -321,21 +367,25 @@
     { id: "dhuhr", title: "Dhuhr", actions: [
       { id: "dh-before", name: "Sunnah before Dhuhr" },
       { id: "dh-pray", name: "Pray Dhuhr on time" },
+      { id: "dh-dhikr", name: "Dhikr after salah", items: AFTER_SALAH_DHIKR_ITEMS },
       { id: "dh-after", name: "Sunnah after Dhuhr" }
     ]},
     { id: "asr", title: "Asr", actions: [
-      { id: "as-pray", name: "Pray Asr on time" }
+      { id: "as-pray", name: "Pray Asr on time" },
+      { id: "as-dhikr", name: "Dhikr after salah", items: AFTER_SALAH_DHIKR_ITEMS }
     ]},
     { id: "maghrib", title: "Maghrib", actions: [
       { id: "mg-pray", name: "Pray Maghrib on time" },
-      { id: "mg-dhikr", name: "Begin evening dhikr" }
+      { id: "mg-dhikr", name: "Dhikr after salah", items: AFTER_SALAH_DHIKR_ITEMS },
+      { id: "mg-evening", name: "Begin evening adhkar" }
     ]},
     { id: "evening-adhkar", title: "Evening Adhkar", actions: [
-      { id: "ea-ayatkursi", name: "Ayat al-Kursi" },
-      { id: "ea-dhikr", name: "Evening dhikr" }
+      { id: "ea-ayatkursi", name: "Ayat al-Kursi", items: AYATKURSI_ITEMS },
+      { id: "ea-dhikr", name: "Evening dhikr (Amsayna...)", items: EVENING_DHIKR_ITEMS }
     ]},
     { id: "isha", title: "Isha", actions: [
-      { id: "is-pray", name: "Pray Isha on time" }
+      { id: "is-pray", name: "Pray Isha on time" },
+      { id: "is-dhikr", name: "Dhikr after salah", items: AFTER_SALAH_DHIKR_ITEMS }
     ]},
     { id: "witr", title: "Witr", actions: [
       { id: "wt-pray", name: "Pray Witr" }
@@ -377,7 +427,47 @@
     setDaySunnahLog(key, log);
   }
 
+  var sunnahItemExpandState = {};
+
+  function buildSunnahItemDetail(items) {
+    var detail = document.createElement("div");
+    detail.className = "sunnah-item-detail hidden";
+    items.forEach(function (entry, idx) {
+      if (idx > 0) {
+        var divider = document.createElement("div");
+        divider.className = "sunnah-item-divider";
+        detail.appendChild(divider);
+      }
+      var arabic = document.createElement("p");
+      arabic.className = "sunnah-item-arabic";
+      arabic.dir = "rtl";
+      arabic.lang = "ar";
+      arabic.textContent = entry.arabic;
+      detail.appendChild(arabic);
+
+      if (entry.transliteration) {
+        var translit = document.createElement("p");
+        translit.className = "dua-translit";
+        translit.textContent = entry.transliteration;
+        detail.appendChild(translit);
+      }
+      var meaning = document.createElement("p");
+      meaning.className = "dua-meaning";
+      meaning.textContent = entry.meaning;
+      detail.appendChild(meaning);
+
+      var source = document.createElement("p");
+      source.className = "hadith-source";
+      source.textContent = "Source: " + entry.source;
+      detail.appendChild(source);
+    });
+    return detail;
+  }
+
   function buildSunnahItem(action, log) {
+    var wrap = document.createElement("div");
+    wrap.className = "sunnah-item-wrap";
+
     var item = document.createElement("div");
     item.className = "habit-item";
     var name = document.createElement("span");
@@ -393,8 +483,30 @@
       renderAkhlaq();
     });
     item.appendChild(name);
+
+    if (action.items && action.items.length) {
+      var expandBtn = document.createElement("button");
+      expandBtn.className = "sunnah-item-expand-btn";
+      var isOpen = !!sunnahItemExpandState[action.id];
+      expandBtn.textContent = isOpen ? "Hide" : "Source";
+      expandBtn.addEventListener("click", function () {
+        sunnahItemExpandState[action.id] = !sunnahItemExpandState[action.id];
+        renderRoutine();
+        renderAkhlaq();
+      });
+      item.appendChild(expandBtn);
+    }
+
     item.appendChild(toggle);
-    return item;
+    wrap.appendChild(item);
+
+    if (action.items && action.items.length) {
+      var detail = buildSunnahItemDetail(action.items);
+      if (sunnahItemExpandState[action.id]) detail.classList.remove("hidden");
+      wrap.appendChild(detail);
+    }
+
+    return wrap;
   }
 
   function buildRoutineSection(section, log) {
