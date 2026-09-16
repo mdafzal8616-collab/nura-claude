@@ -2,6 +2,12 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — Daily-life dua batch (8 new, verified)
+
+Md Afzal asked for "24 hours life duas" / "a2z duas" — a full Hisnul Muslim-style compilation (~268 duas). Flagged honestly that verifying every one properly (the same process used throughout) isn't realistic in one pass, and did a solid batch of the most common daily situations instead: entering/leaving the bathroom (Bukhari 142/Muslim 375; Abu Dawud 30), wearing new clothes (Abu Dawud/Tirmidhi, hasan), entering home (Abu Dawud 5096), calming anger (Bukhari/Muslim, agreed upon), the sneezing exchange (sneezer/listener/reply, Sahih al-Bukhari), seeing something pleasing (Ibn Majah, Hisn al-Muslim 218), and a second Stress/Anxiety entry for general distress (Bukhari/Muslim, narrated by Ibn ‘Abbas). Daily Life category went from 1 dua to 8; Stress/Anxiety from 1 to 2.
+
+This is still not the full ~268-dua compilation — more can be added the same way (bathroom-adjacent etiquette, weather duas, illness/visiting the sick, marketplace, marriage, etc.) whenever wanted. Tested: all 8 render and expand correctly in the Daily Life category, sneezing's 3-part exchange displays correctly, everything persists across reload, no regressions, zero console errors.
+
 ## 2026-09-16 — All remaining Duas categories filled
 
 The 6 categories that were "structure ready, pending verified content" now each have a real, cited dua: Morning (Asbahna..., Sahih Muslim 2723 — same content already used in Routine's Morning Adhkar, cross-referenced not duplicated effort), Evening (Amsayna..., same hadith), Salah (dua after hearing the adhan, Sahih al-Bukhari 614), Protection (seeking refuge in Allah's perfect words, Sahih Muslim 2708a), Travel (the setting-out dua, Sahih Muslim 1342, itself echoing Qur'an 43:13-14), Daily Life (leaving home, Sunan Abi Dawud 5095 / Tirmidhi 3426, graded hasan by at-Tirmidhi — noted as such). All 11 Duas categories now show real content; none read "Pending" anymore.

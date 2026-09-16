@@ -129,6 +129,78 @@
       transliteration: "Bismillahi tawakkaltu 'alallahi wa la hawla wa la quwwata illa billah",
       meaning: "In the name of Allah, I place my trust in Allah, and there is no power or strength except with Allah.",
       source: "Sunan Abi Dawud 5095, Jami' at-Tirmidhi 3426 (graded hasan by at-Tirmidhi), narrated by Anas ibn Malik"
+    },
+    {
+      id: "stress-anxiety-2",
+      categoryId: "stress-anxiety",
+      title: "In Times of Distress",
+      arabic: "لَا إِلَهَ إِلَّا اللَّهُ الْعَظِيمُ الْحَلِيمُ، لَا إِلَهَ إِلَّا اللَّهُ رَبُّ الْعَرْشِ الْعَظِيمِ، لَا إِلَهَ إِلَّا اللَّهُ رَبُّ السَّمَاوَاتِ وَرَبُّ الْأَرْضِ وَرَبُّ الْعَرْشِ الْكَرِيمِ",
+      transliteration: "La ilaha illallahul-'Azimul-Halim, la ilaha illallahu Rabbul-'Arshil-'Azim, la ilaha illallahu Rabbus-samawati wa Rabbul-ardi wa Rabbul-'Arshil-Karim",
+      meaning: "There is no god but Allah, the Mighty, the Forbearing. There is no god but Allah, Lord of the Mighty Throne. There is no god but Allah, Lord of the heavens, Lord of the earth, and Lord of the Noble Throne.",
+      source: "Sahih al-Bukhari and Sahih Muslim, narrated by Ibn ‘Abbas"
+    },
+    {
+      id: "daily-life-2",
+      categoryId: "daily-life",
+      title: "Entering the Bathroom",
+      arabic: "اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْخُبُثِ وَالْخَبَائِثِ",
+      transliteration: "Allahumma inni a'udhu bika minal-khubthi wal-khaba'ith",
+      meaning: "O Allah, I seek refuge in You from male and female unclean spirits.",
+      source: "Sahih al-Bukhari 142, Sahih Muslim 375"
+    },
+    {
+      id: "daily-life-3",
+      categoryId: "daily-life",
+      title: "Leaving the Bathroom",
+      arabic: "غُفْرَانَكَ",
+      transliteration: "Ghufranak",
+      meaning: "I ask You (Allah) for forgiveness.",
+      source: "Sunan Abi Dawud 30, narrated by ‘A’ishah, authenticated by at-Tirmidhi"
+    },
+    {
+      id: "daily-life-4",
+      categoryId: "daily-life",
+      title: "Wearing New Clothes",
+      arabic: "اللَّهُمَّ لَكَ الْحَمْدُ أَنْتَ كَسَوْتَنِيهِ، أَسْأَلُكَ مِنْ خَيْرِهِ وَخَيْرِ مَا صُنِعَ لَهُ، وَأَعُوذُ بِكَ مِنْ شَرِّهِ وَشَرِّ مَا صُنِعَ لَهُ",
+      transliteration: "Allahumma lakal-hamdu anta kasawtanihi, as'aluka khayrahu wa khayra ma suni'a lah, wa a'udhu bika min sharrihi wa sharri ma suni'a lah",
+      meaning: "O Allah, to You belongs all praise. You have clothed me with this. I ask You for its goodness and the goodness of what it was made for, and I seek refuge in You from its evil and the evil of what it was made for.",
+      source: "Sunan Abi Dawud, Jami’ at-Tirmidhi (graded hasan by at-Tirmidhi), An-Nasa’i"
+    },
+    {
+      id: "daily-life-5",
+      categoryId: "daily-life",
+      title: "Entering Home",
+      arabic: "بِسْمِ اللَّهِ وَلَجْنَا، وَبِسْمِ اللَّهِ خَرَجْنَا، وَعَلَى اللَّهِ رَبِّنَا تَوَكَّلْنَا",
+      transliteration: "Bismillahi walajna, wa bismillahi kharajna, wa 'alallahi Rabbina tawakkalna",
+      meaning: "In the name of Allah we enter, and in the name of Allah we leave, and upon Allah our Lord we place our trust.",
+      source: "Sunan Abi Dawud, Book 43, Hadith 5096"
+    },
+    {
+      id: "daily-life-6",
+      categoryId: "daily-life",
+      title: "Calming Anger",
+      arabic: "أَعُوذُ بِاللَّهِ مِنَ الشَّيْطَانِ الرَّجِيمِ",
+      transliteration: "A'udhu billahi minash-shaytanir-rajim",
+      meaning: "I seek refuge in Allah from Satan, the accursed.",
+      source: "Sahih al-Bukhari and Sahih Muslim (agreed upon)"
+    },
+    {
+      id: "daily-life-7",
+      categoryId: "daily-life",
+      title: "Sneezing and Replying",
+      arabic: "(الْعَاطِسُ) الْحَمْدُ لِلَّهِ — (الْمُجِيبُ) يَرْحَمُكَ اللَّهُ — (الْعَاطِسُ) يَهْدِيكُمُ اللَّهُ وَيُصْلِحُ بَالَكُمْ",
+      transliteration: "(Sneezer) Alhamdulillah — (Listener replies) Yarhamukallah — (Sneezer replies) Yahdikumullahu wa yuslihu balakum",
+      meaning: "The one who sneezes says “Praise be to Allah.” Whoever hears it replies “May Allah have mercy on you.” The sneezer then replies “May Allah guide you and set your affairs right.”",
+      source: "Sahih al-Bukhari, Book of Good Manners (Al-Adab)"
+    },
+    {
+      id: "daily-life-8",
+      categoryId: "daily-life",
+      title: "Seeing Something Pleasing",
+      arabic: "الْحَمْدُ لِلَّهِ الَّذِي بِنِعْمَتِهِ تَتِمُّ الصَّالِحَاتُ",
+      transliteration: "Alhamdulillahil-ladhi bini'matihi tatimmus-salihat",
+      meaning: "Praise is for Allah, by Whose grace good things are completed.",
+      source: "Sunan Ibn Majah; compiled in Hisn al-Muslim 218"
     }
   ];
 
