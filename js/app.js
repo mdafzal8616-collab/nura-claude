@@ -175,8 +175,22 @@
 
   // ---------- FOCUS TIMER ----------
 
-  var FOCUS_SECONDS = 20 * 60;
-  var focusState = { remaining: FOCUS_SECONDS, running: false, intervalId: null, linkedTaskId: null };
+  var DURATION_PRESETS = [5, 10, 15, 20, 25, 30, 45, 60];
+
+  function getFocusDurationMinutes() {
+    var stored = Number(localStorage.getItem("nc_focus_duration"));
+    return stored > 0 ? stored : 20;
+  }
+
+  function setFocusDurationMinutes(mins) {
+    localStorage.setItem("nc_focus_duration", String(mins));
+  }
+
+  function focusSecondsTotal() {
+    return getFocusDurationMinutes() * 60;
+  }
+
+  var focusState = { remaining: focusSecondsTotal(), running: false, intervalId: null, linkedTaskId: null };
 
   function formatClock(seconds) {
     var m = Math.floor(seconds / 60);
@@ -195,14 +209,32 @@
   }
 
   function updateFocusUI() {
+    var total = focusSecondsTotal();
     document.getElementById("focus-clock").textContent = formatClock(focusState.remaining);
-    document.getElementById("focus-status-badge").textContent = focusState.running ? "Running" : (focusState.remaining < FOCUS_SECONDS ? "Paused" : "Ready");
-    document.getElementById("focus-start-btn").classList.toggle("hidden", focusState.running || focusState.remaining < FOCUS_SECONDS);
+    document.getElementById("focus-status-badge").textContent = focusState.running ? "Running" : (focusState.remaining < total ? "Paused" : "Ready");
+    document.getElementById("focus-start-btn").classList.toggle("hidden", focusState.running || focusState.remaining < total);
     document.getElementById("focus-pause-btn").classList.toggle("hidden", !focusState.running);
-    document.getElementById("focus-stop-btn").classList.toggle("hidden", focusState.remaining === FOCUS_SECONDS && !focusState.running);
-    var resumeShown = !focusState.running && focusState.remaining > 0 && focusState.remaining < FOCUS_SECONDS;
-    document.getElementById("focus-start-btn").textContent = resumeShown ? "Resume" : "Start 20 min focus";
+    document.getElementById("focus-stop-btn").classList.toggle("hidden", focusState.remaining === total && !focusState.running);
+    var resumeShown = !focusState.running && focusState.remaining > 0 && focusState.remaining < total;
+    document.getElementById("focus-start-btn").textContent = resumeShown ? "Resume" : ("Start " + getFocusDurationMinutes() + " min focus");
     document.getElementById("focus-start-btn").classList.toggle("hidden", focusState.running);
+    renderFocusDurationUI();
+  }
+
+  function renderFocusDurationUI() {
+    var total = focusSecondsTotal();
+    var lockedIn = focusState.running || focusState.remaining !== total;
+    var mins = getFocusDurationMinutes();
+    document.querySelectorAll(".duration-chip").forEach(function (chip) {
+      var chipMins = Number(chip.dataset.minutes);
+      chip.classList.toggle("active", chipMins === mins);
+      chip.disabled = lockedIn;
+    });
+    var customInput = document.getElementById("focus-duration-custom");
+    customInput.disabled = lockedIn;
+    if (document.activeElement !== customInput) {
+      customInput.value = DURATION_PRESETS.indexOf(mins) === -1 ? mins : "";
+    }
   }
 
   function tickFocus() {
@@ -245,7 +277,7 @@
   function stopFocus() {
     focusState.running = false;
     stopFocusInterval();
-    focusState.remaining = FOCUS_SECONDS;
+    focusState.remaining = focusSecondsTotal();
     focusState.linkedTaskId = null;
     renderFocusTargetLine();
     updateFocusUI();
@@ -259,10 +291,38 @@
     document.getElementById("modal-focus-check").classList.remove("hidden");
   }
 
+  function selectFocusDuration(mins) {
+    var total = focusSecondsTotal();
+    if (focusState.running || focusState.remaining !== total) {
+      showToast("Finish or stop the current session before changing the length");
+      return;
+    }
+    setFocusDurationMinutes(mins);
+    focusState.remaining = focusSecondsTotal();
+    updateFocusUI();
+  }
+
   function initFocusTimer() {
     document.getElementById("focus-start-btn").addEventListener("click", startFocus);
     document.getElementById("focus-pause-btn").addEventListener("click", pauseFocus);
     document.getElementById("focus-stop-btn").addEventListener("click", stopFocus);
+
+    document.querySelectorAll(".duration-chip").forEach(function (chip) {
+      chip.addEventListener("click", function () {
+        selectFocusDuration(Number(chip.dataset.minutes));
+      });
+    });
+
+    var customInput = document.getElementById("focus-duration-custom");
+    customInput.addEventListener("change", function () {
+      var val = Math.round(Number(customInput.value));
+      if (val > 0 && val <= 180) {
+        selectFocusDuration(val);
+      } else {
+        showToast("Enter a number of minutes between 1 and 180");
+        renderFocusDurationUI();
+      }
+    });
 
     document.getElementById("focus-check-done").addEventListener("click", function () {
       if (focusState.linkedTaskId) {

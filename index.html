@@ -45,6 +45,17 @@
         <span class="count-badge" id="focus-status-badge">Ready</span>
       </div>
       <p class="muted-line" id="focus-target-line">Pick a task above, then start a focus session.</p>
+      <div class="focus-duration-row" id="focus-duration-row">
+        <button class="duration-chip" data-minutes="5">5</button>
+        <button class="duration-chip" data-minutes="10">10</button>
+        <button class="duration-chip" data-minutes="15">15</button>
+        <button class="duration-chip" data-minutes="20">20</button>
+        <button class="duration-chip" data-minutes="25">25</button>
+        <button class="duration-chip" data-minutes="30">30</button>
+        <button class="duration-chip" data-minutes="45">45</button>
+        <button class="duration-chip" data-minutes="60">60</button>
+        <input type="number" id="focus-duration-custom" class="duration-custom-input" placeholder="Custom" min="1" max="180">
+      </div>
       <p class="focus-clock" id="focus-clock">20:00</p>
       <div class="focus-controls">
         <button class="btn btn-primary btn-full" id="focus-start-btn">Start 20 min focus</button>

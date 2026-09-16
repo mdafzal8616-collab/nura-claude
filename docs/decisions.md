@@ -2,6 +2,12 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — Customizable focus timer duration
+
+Home's focus timer was fixed at 20 minutes. Added a duration picker (chips for 5/10/15/20/25/30/45/60 min, plus a custom number input for 1-180 min) shown above the clock. Choice persists (`nc_focus_duration`) and is used for every future session until changed. Locked (chips and custom input disabled, with a toast if someone tries anyway) while a session is running or paused, to avoid corrupting an in-progress timer — only changeable when the timer is at Ready/full duration.
+
+Tested: default 20 min correct on first load, preset selection updates clock/button/storage together, custom input works and correctly shows no preset as falsely active, both are disabled mid-session and stay at the chosen duration through pause/resume/stop, the chosen duration persists across a real reload, no regressions to any other screen, zero console errors.
+
 ## 2026-09-16 — Hadith & Quiz: continuous "Next lesson" flow + 4 more lessons (8 total)
 
 Per feedback: after answering a quiz, a "Next lesson →" button now appears below the feedback so lessons chain together instead of requiring Back → pick next item each time. On the last lesson it shows "Back to lessons" instead of looping or dead-ending.
