@@ -2,6 +2,14 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — First real Quran translation added (Al-Baqarah 2:285–286)
+
+The "last two verses of Al-Baqarah" item now shows an actual English translation alongside the Arabic, not a placeholder. Pulled directly from Quran Foundation's public API (api.quran.com, no key needed, confirmed CORS-open, confirmed same 6,236-verse count as Tanzil) — Saheeh International translation, a widely used and respected English rendering. Fetched via curl and hardcoded into this one item (not yet a live API integration for the whole app); clearly attributed to both the Arabic source (Tanzil) and the translation source (Saheeh International / api.quran.com) separately, so it's clear which part comes from where.
+
+This is the first real translation anywhere in the app — the Ayat al-Kursi items (Before Sleep, Morning/Evening Adhkar, after-salah dhikr) still say "translation not yet added" and are natural next candidates using the same process.
+
+Tested: translation displays correctly under the Arabic and transliteration, correct attribution shown, no regressions to any other Sunnah tab or nav destination, zero console errors.
+
 ## 2026-09-16 — Source and hadith added to "Recite the last two verses of Al-Baqarah" (Before Sleep)
 
 Added an expandable "Source" panel to this Routine item, same pattern as the other dhikr items: (1) the hadith on its virtue — "Whoever recites the last two verses of Surat al-Baqarah on a night, they will be sufficient for him" (Sahih al-Bukhari 5009, Sahih Muslim 807, narrated by Abu Mas'ud), and (2) the actual verse text, Al-Baqarah 2:285–286, pulled directly from the already-verified Tanzil file (not re-typed) since the item is specifically about reciting them.
