@@ -2,6 +2,14 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — Hadith & Quiz: continuous "Next lesson" flow + 4 more lessons (8 total)
+
+Per feedback: after answering a quiz, a "Next lesson →" button now appears below the feedback so lessons chain together instead of requiring Back → pick next item each time. On the last lesson it shows "Back to lessons" instead of looping or dead-ending.
+
+Added 4 more verified lessons: "Wanting for Others What You Want for Yourself" (Bukhari 13, Muslim 45), "Small and Steady Beats Big and Occasional" (Bukhari 6464), "Gentleness Is Not Optional" (Sahih Muslim 2592), "What Real Richness Is" (Bukhari 6446, Muslim 1051) — 8 lessons total now, each independently verified, none overlapping with hadith already used in Akhlaq/Duas citations.
+
+Tested: full chain-through of all 8 lessons via Next, correct/wrong answers both handled properly (confirmed by testing a case where the same click sequence produced one wrong answer — no coins awarded for that lesson, checkmark still shown as completed), "Back to lessons" on the last one returns to the list, checkmarks and coin total (70, matching 7 correct × 10) persist across a real reload, no regressions, zero console errors.
+
 ## 2026-09-16 — Hadith & Quiz expanded to 4 lessons
 
 Converted the single hardcoded hadith into a browsable list (Sunnah → Hadith now shows a list of lessons, tap one for the full lesson + quiz, back button returns to the list; completed lessons show a checkmark). Added 3 new lessons, each verified before use: "The Believer's Affair Is All Good" (Sahih Muslim 2999 — gratitude in ease, patience in hardship), "The Company You Keep" (Bukhari 2101/5534, Muslim 2628 — the musk-seller/blacksmith comparison), "Faith Includes the Small Things" (Sahih Muslim 35 — faith's branches, from the declaration of belief down to clearing harm off a road).

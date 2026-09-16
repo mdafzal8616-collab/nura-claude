@@ -1447,6 +1447,78 @@
         correctIndex: 1,
         feedback: "Right — even a small, practical act like clearing something harmful off a path counts as a branch of faith."
       }
+    },
+    {
+      id: "hadith-5",
+      title: "Wanting for Others What You Want for Yourself",
+      source: "Sahih al-Bukhari 13, Sahih Muslim 45",
+      arabic: "لَا يُؤْمِنُ أَحَدُكُمْ حَتَّى يُحِبَّ لِأَخِيهِ مَا يُحِبُّ لِنَفْسِهِ",
+      text: "None of you truly believes until he loves for his brother what he loves for himself.",
+      explain: "This hadith sets a personal, practical test rather than an abstract rule: before acting, ask whether you'd want the same treatment if the roles were reversed. It's simple to say and genuinely hard to live by consistently.",
+      quiz: {
+        question: "According to this hadith, what does complete faith require toward other people?",
+        options: [
+          "Agreeing with them on everything",
+          "Wanting for them what you want for yourself",
+          "Giving them money regularly"
+        ],
+        correctIndex: 1,
+        feedback: "Right — it's about wanting the same good for others that you want for yourself, not agreement or charity specifically."
+      }
+    },
+    {
+      id: "hadith-6",
+      title: "Small and Steady Beats Big and Occasional",
+      source: "Sahih al-Bukhari 6464, narrated by 'Aishah",
+      arabic: "سَدِّدُوا وَقَارِبُوا، وَاعْلَمُوا أَنْ لَنْ يُدْخِلَ أَحَدَكُمْ عَمَلُهُ الْجَنَّةَ، وَأَنَّ أَحَبَّ الأَعْمَالِ أَدْوَمُهَا إِلَى اللَّهِ، وَإِنْ قَلَّ",
+      text: "Aim straight, and stay close to what is right. Know that none of you will enter Paradise by his deeds alone, and the most beloved of deeds to Allah are those done most consistently, even if small.",
+      explain: "This directly pushes back on the idea that a good habit only counts if it's big or impressive. A small action repeated steadily is described as more beloved than an intense burst that doesn't last — useful to remember when a task on Home or a Sunnah item feels too small to bother with.",
+      quiz: {
+        question: "According to this hadith, which kind of deed does Allah love most?",
+        options: [
+          "The biggest, most impressive one",
+          "One done consistently, even if small",
+          "One done only once, done perfectly"
+        ],
+        correctIndex: 1,
+        feedback: "Right — consistency is valued over size or intensity."
+      }
+    },
+    {
+      id: "hadith-7",
+      title: "Gentleness Is Not Optional",
+      source: "Sahih Muslim 2592, narrated by Jarir",
+      arabic: "مَنْ يُحْرَمِ الرِّفْقَ يُحْرَمِ الْخَيْرَ",
+      text: "Whoever is deprived of gentleness is deprived of goodness.",
+      explain: "Gentleness here isn't framed as a nice extra — it's tied directly to goodness itself. Someone who never approaches things gently, with people or with themselves, is missing something real, not just being 'a bit harsh.'",
+      quiz: {
+        question: "According to this hadith, what happens to someone who lacks gentleness?",
+        options: [
+          "They become more respected",
+          "They are deprived of goodness",
+          "Nothing — gentleness doesn't matter much"
+        ],
+        correctIndex: 1,
+        feedback: "Right — the hadith ties gentleness directly to goodness, not as a minor virtue."
+      }
+    },
+    {
+      id: "hadith-8",
+      title: "What Real Richness Is",
+      source: "Sahih al-Bukhari 6446, Sahih Muslim 1051, narrated by Abu Hurairah",
+      arabic: "لَيْسَ الْغِنَى عَنْ كَثْرَةِ الْعَرَضِ، وَلَكِنَّ الْغِنَى غِنَى النَّفْسِ",
+      text: "Richness is not about having many possessions; real richness is the richness of the soul.",
+      explain: "This separates two things people often mix up: how much someone owns, and whether they're actually content. It doesn't say money is bad — it says money alone doesn't make someone rich in any way that matters if the person inside is never satisfied.",
+      quiz: {
+        question: "According to this hadith, what is true richness?",
+        options: [
+          "Having a lot of possessions",
+          "Being well known",
+          "Contentment of the soul"
+        ],
+        correctIndex: 2,
+        feedback: "Right — the hadith defines real richness as contentment, not the amount you own."
+      }
     }
   ];
 
@@ -1553,6 +1625,27 @@
       feedback.textContent = h.quiz.feedback + (state.coinsAwarded ? (" +" + state.coinsAwarded + " coins.") : " (Coins only awarded once per lesson.)");
     }
     quizArea.appendChild(feedback);
+
+    if (state && state.answered) {
+      var currentIndex = HADITH_LIST.findIndex(function (item) { return item.id === h.id; });
+      var nextHadith = HADITH_LIST[currentIndex + 1];
+      var nextBtn = document.createElement("button");
+      nextBtn.className = "btn btn-primary btn-full";
+      if (nextHadith) {
+        nextBtn.textContent = "Next lesson →";
+        nextBtn.addEventListener("click", function () {
+          hadithState.currentId = nextHadith.id;
+          renderHadithDetail();
+        });
+      } else {
+        nextBtn.textContent = "Back to lessons";
+        nextBtn.addEventListener("click", function () {
+          renderHadithList();
+        });
+      }
+      nextBtn.style.marginTop = "12px";
+      quizArea.appendChild(nextBtn);
+    }
   }
 
   function answerQuiz(idx) {
