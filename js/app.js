@@ -1370,13 +1370,15 @@
   }
 
   // ---------- HADITH & QUIZ ----------
-  // Source verified against sunnah.com before use (Sahih al-Bukhari 1 /
-  // Sahih Muslim 1907 / 40 Hadith Nawawi 1), narrated by Umar ibn al-Khattab.
-  // This is the only hadith in this build — expanding the library needs a
-  // named content reviewer first (see CLAUDE.md Section 15 / docs/decisions.md).
+  // Every hadith below was cross-checked against sunnah.com / named hadith
+  // numbers before use (see docs/decisions.md) — none generated from memory.
+  // Expanding this library further still needs a named content reviewer
+  // before it ships widely (see CLAUDE.md Section 15).
 
-  var HADITH = {
+  var HADITH_LIST = [
+    {
     id: "hadith-1",
+    title: "Actions Are Judged by Intentions",
     source: "Sahih al-Bukhari 1 · Sahih Muslim 1907 · 40 Hadith Nawawi 1 · narrated by Umar ibn al-Khattab",
     arabic: "إِنَّمَا الأَعْمَالُ بِالنِّيَّاتِ",
     text: "Actions are judged by intentions, and every person will get what they intended.",
@@ -1391,7 +1393,64 @@
       correctIndex: 1,
       feedback: "Right — the hadith says actions are judged by intentions, not by size or visibility."
     }
-  };
+    },
+    {
+      id: "hadith-2",
+      title: "The Believer's Affair Is All Good",
+      source: "Sahih Muslim 2999, narrated by Suhayb",
+      arabic: "عَجَبًا لأَمْرِ الْمُؤْمِنِ إِنَّ أَمْرَهُ كُلَّهُ خَيْرٌ وَلَيْسَ ذَاكَ لأَحَدٍ إِلاَّ لِلْمُؤْمِنِ إِنْ أَصَابَتْهُ سَرَّاءُ شَكَرَ فَكَانَ خَيْرًا لَهُ وَإِنْ أَصَابَتْهُ ضَرَّاءُ صَبَرَ فَكَانَ خَيْرًا لَهُ",
+      text: "How wonderful is the affair of the believer — all of it is good, and this is for no one except the believer. If something good happens to him, he is grateful, and that is good for him. If something bad happens to him, he is patient, and that is good for him.",
+      explain: "This hadith describes a mindset, not a magic escape from hardship. The believer still feels the good and the bad — the difference is what they do with each one: gratitude when things go well, patience when they don't. Both responses are framed as genuinely good for the person, not just a consolation.",
+      quiz: {
+        question: "According to this hadith, what makes a believer's affairs 'all good'?",
+        options: [
+          "Nothing bad ever happens to them",
+          "They respond with gratitude in ease and patience in hardship",
+          "They never feel sad or upset"
+        ],
+        correctIndex: 1,
+        feedback: "Right — it's not the absence of hardship, it's the response: gratitude when things go well, patience when they don't."
+      }
+    },
+    {
+      id: "hadith-3",
+      title: "The Company You Keep",
+      source: "Sahih al-Bukhari 2101 / 5534, Sahih Muslim 2628, narrated by Abu Musa",
+      arabic: "مَثَلُ الْجَلِيسِ الصَّالِحِ وَالْجَلِيسِ السَّوْءِ كَمَثَلِ صَاحِبِ الْمِسْكِ، وَكِيرِ الْحَدَّادِ، لاَ يَعْدَمُكَ مِنْ صَاحِبِ الْمِسْكِ إِمَّا تَشْتَرِيهِ، أَوْ تَجِدُ رِيحَهُ، وَكِيرُ الْحَدَّادِ يُحْرِقُ بَدَنَكَ أَوْ ثَوْبَكَ أَوْ تَجِدُ مِنْهُ رِيحًا خَبِيثَةً",
+      text: "The example of a good companion and a bad companion is like a musk seller and a blacksmith's bellows: from the musk seller, you either buy some or at least catch its good scent; from the blacksmith's bellows, you either burn your clothes or at least catch a foul smell.",
+      explain: "This is a practical, non-judgmental way to think about who you spend time with — not that bad people are worthless, but that closeness rubs off on you either way, for better or worse, even without meaning to.",
+      quiz: {
+        question: "In this hadith, what does a good companion get compared to?",
+        options: [
+          "A teacher",
+          "A musk seller",
+          "A blacksmith's bellows"
+        ],
+        correctIndex: 1,
+        feedback: "Right — a good companion is compared to a musk seller, who leaves you better off just by being near them."
+      }
+    },
+    {
+      id: "hadith-4",
+      title: "Faith Includes the Small Things",
+      source: "Sahih Muslim 35, narrated by Abu Hurairah",
+      arabic: "الْإِيمَانُ بِضْعٌ وَسَبْعُونَ أَوْ بِضْعٌ وَسِتُّونَ شُعْبَةً فَأَفْضَلُهَا قَوْلُ لَا إِلَهَ إِلَّا اللَّهُ وَأَدْنَاهَا إِمَاطَةُ الْأَذَى عَنِ الطَّرِيقِ",
+      text: "Faith has sixty-some or seventy-some branches. The best of them is saying 'there is no god but Allah,' and the least of them is removing something harmful from the road.",
+      explain: "This hadith places the biggest statement of belief and a small act of everyday courtesy on the same scale — both count as faith. It pushes back on the idea that only big, visible acts of worship matter; small, practical good is part of the same thing.",
+      quiz: {
+        question: "According to this hadith, what is given as an example of the least (smallest) branch of faith?",
+        options: [
+          "Fasting extra days",
+          "Removing something harmful from the road",
+          "Praying extra prayers at night"
+        ],
+        correctIndex: 1,
+        feedback: "Right — even a small, practical act like clearing something harmful off a path counts as a branch of faith."
+      }
+    }
+  ];
+
+  var hadithState = { currentId: null };
 
   function getHadithProgress() {
     return readJSON("nc_hadith_progress", {});
@@ -1409,30 +1468,76 @@
     writeJSON("nc_coins", getCoins() + n);
   }
 
-  function renderHadith() {
-    document.getElementById("hadith-source").textContent = HADITH.source;
-    document.getElementById("hadith-arabic").textContent = HADITH.arabic;
-    document.getElementById("hadith-text").textContent = HADITH.text;
-    document.getElementById("hadith-explain").textContent = HADITH.explain;
+  function currentHadith() {
+    return HADITH_LIST.find(function (h) { return h.id === hadithState.currentId; });
+  }
+
+  function buildHadithListItem(h) {
+    var progress = getHadithProgress();
+    var done = progress[h.id] && progress[h.id].answered;
+    var item = document.createElement("button");
+    item.className = "dua-list-item";
+    var textWrap = document.createElement("span");
+    var title = document.createElement("span");
+    title.className = "dua-list-title";
+    title.textContent = h.title;
+    var srcLine = document.createElement("span");
+    srcLine.className = "dua-list-cat";
+    srcLine.textContent = h.source;
+    textWrap.appendChild(title);
+    textWrap.appendChild(srcLine);
+    item.appendChild(textWrap);
+    if (done) {
+      var check = document.createElement("span");
+      check.className = "dua-list-fav";
+      check.textContent = "✓";
+      item.appendChild(check);
+    }
+    item.addEventListener("click", function () {
+      hadithState.currentId = h.id;
+      renderHadithDetail();
+      document.getElementById("hadith-list-view").classList.add("hidden");
+      document.getElementById("hadith-detail-view").classList.remove("hidden");
+    });
+    return item;
+  }
+
+  function renderHadithList() {
+    var list = document.getElementById("hadith-list");
+    list.innerHTML = "";
+    HADITH_LIST.forEach(function (h) {
+      list.appendChild(buildHadithListItem(h));
+    });
+    document.getElementById("hadith-list-view").classList.remove("hidden");
+    document.getElementById("hadith-detail-view").classList.add("hidden");
+  }
+
+  function renderHadithDetail() {
+    var h = currentHadith();
+    if (!h) return;
+    document.getElementById("hadith-source").textContent = h.source;
+    document.getElementById("hadith-arabic").textContent = h.arabic;
+    document.getElementById("hadith-text").textContent = h.text;
+    document.getElementById("hadith-explain").textContent = h.explain;
 
     var progress = getHadithProgress();
-    var state = progress[HADITH.id];
+    var state = progress[h.id];
     var quizArea = document.getElementById("quiz-area");
     quizArea.innerHTML = "";
 
     var qTitle = document.createElement("p");
     qTitle.className = "hadith-text";
     qTitle.style.fontWeight = "600";
-    qTitle.textContent = HADITH.quiz.question;
+    qTitle.textContent = h.quiz.question;
     quizArea.appendChild(qTitle);
 
-    HADITH.quiz.options.forEach(function (opt, idx) {
+    h.quiz.options.forEach(function (opt, idx) {
       var btn = document.createElement("button");
       btn.className = "quiz-option";
       btn.textContent = opt;
       if (state && state.answered) {
         btn.disabled = true;
-        if (idx === HADITH.quiz.correctIndex) btn.classList.add("correct");
+        if (idx === h.quiz.correctIndex) btn.classList.add("correct");
         else if (idx === state.pickedIndex) btn.classList.add("wrong");
       } else {
         btn.addEventListener("click", function () {
@@ -1445,26 +1550,34 @@
     var feedback = document.createElement("p");
     feedback.className = "quiz-feedback";
     if (state && state.answered) {
-      feedback.textContent = HADITH.quiz.feedback + (state.coinsAwarded ? (" +" + state.coinsAwarded + " coins.") : " (Coins only awarded once per lesson.)");
+      feedback.textContent = h.quiz.feedback + (state.coinsAwarded ? (" +" + state.coinsAwarded + " coins.") : " (Coins only awarded once per lesson.)");
     }
     quizArea.appendChild(feedback);
   }
 
   function answerQuiz(idx) {
+    var h = currentHadith();
+    if (!h) return;
     var progress = getHadithProgress();
-    var already = progress[HADITH.id] && progress[HADITH.id].answered;
-    var correct = idx === HADITH.quiz.correctIndex;
+    var already = progress[h.id] && progress[h.id].answered;
+    var correct = idx === h.quiz.correctIndex;
     var coinsAwarded = 0;
     if (!already && correct) {
       coinsAwarded = 10;
       addCoins(coinsAwarded);
     }
-    progress[HADITH.id] = { answered: true, pickedIndex: idx, correct: correct, coinsAwarded: already ? 0 : coinsAwarded };
+    progress[h.id] = { answered: true, pickedIndex: idx, correct: correct, coinsAwarded: already ? 0 : coinsAwarded };
     saveHadithProgress(progress);
-    renderHadith();
+    renderHadithDetail();
     renderMore();
     if (!already && correct) showToast("Correct! +" + coinsAwarded + " coins");
     else if (!already) showToast("Not quite — see the highlighted answer");
+  }
+
+  function initHadithUI() {
+    document.getElementById("hadith-back-btn").addEventListener("click", function () {
+      renderHadithList();
+    });
   }
 
   // ---------- AI CHAT (guided support, scripted) ----------
@@ -1706,7 +1819,7 @@
       btn.classList.toggle("active", btn.dataset.nav === name);
     });
     if (name === "home") renderHome();
-    if (name === "sunnah") { renderRoutine(); renderAkhlaq(); renderVerseOfDay(); renderHadith(); renderDuaCategories(); }
+    if (name === "sunnah") { renderRoutine(); renderAkhlaq(); renderVerseOfDay(); renderHadithList(); renderDuaCategories(); }
     if (name === "chat") renderChatOptions();
     if (name === "vault") renderVaultRoot();
     if (name === "more") renderMore();
@@ -1761,6 +1874,7 @@
     initFocusTimer();
     initSunnahSubtabs();
     initDuasUI();
+    initHadithUI();
     initVault();
     initShield();
     initMore();

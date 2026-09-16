@@ -2,6 +2,12 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — Hadith & Quiz expanded to 4 lessons
+
+Converted the single hardcoded hadith into a browsable list (Sunnah → Hadith now shows a list of lessons, tap one for the full lesson + quiz, back button returns to the list; completed lessons show a checkmark). Added 3 new lessons, each verified before use: "The Believer's Affair Is All Good" (Sahih Muslim 2999 — gratitude in ease, patience in hardship), "The Company You Keep" (Bukhari 2101/5534, Muslim 2628 — the musk-seller/blacksmith comparison), "Faith Includes the Small Things" (Sahih Muslim 35 — faith's branches, from the declaration of belief down to clearing harm off a road).
+
+Tested: all 4 lessons list and open correctly, each shows correct Arabic/text/explanation/quiz, answering awards coins once only (re-clicking an answered quiz does not re-award — confirmed directly), back navigation works, completed-lesson checkmarks and coin total both persist across a real reload, no regressions to Routine/Akhlaq/Duas/Quran/Vault/Home, zero console errors.
+
 ## 2026-09-16 — Daily-life dua batch (8 new, verified)
 
 Md Afzal asked for "24 hours life duas" / "a2z duas" — a full Hisnul Muslim-style compilation (~268 duas). Flagged honestly that verifying every one properly (the same process used throughout) isn't realistic in one pass, and did a solid batch of the most common daily situations instead: entering/leaving the bathroom (Bukhari 142/Muslim 375; Abu Dawud 30), wearing new clothes (Abu Dawud/Tirmidhi, hasan), entering home (Abu Dawud 5096), calming anger (Bukhari/Muslim, agreed upon), the sneezing exchange (sneezer/listener/reply, Sahih al-Bukhari), seeing something pleasing (Ibn Majah, Hisn al-Muslim 218), and a second Stress/Anxiety entry for general distress (Bukhari/Muslim, narrated by Ibn ‘Abbas). Daily Life category went from 1 dua to 8; Stress/Anxiety from 1 to 2.

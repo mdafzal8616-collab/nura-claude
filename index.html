@@ -138,14 +138,22 @@
     </div>
 
     <div id="sunnah-panel-hadith" class="sunnah-panel hidden">
-      <section class="card" id="hadith-card">
-        <h2>Hadith of the Day</h2>
-        <p class="hadith-source" id="hadith-source"></p>
-        <p class="hadith-arabic" id="hadith-arabic" dir="rtl" lang="ar"></p>
-        <p class="hadith-text" id="hadith-text"></p>
-        <p class="hadith-explain" id="hadith-explain"></p>
-        <div id="quiz-area"></div>
-      </section>
+      <div id="hadith-list-view">
+        <section class="card">
+          <p class="muted-line">Short, sourced lessons — tap one to read it and take the quiz.</p>
+        </section>
+        <div class="dua-list" id="hadith-list"></div>
+      </div>
+      <div id="hadith-detail-view" class="hidden">
+        <div class="duas-back-row"><button class="icon-btn" id="hadith-back-btn">&#8592; Back</button></div>
+        <section class="card" id="hadith-card">
+          <p class="hadith-source" id="hadith-source"></p>
+          <p class="hadith-arabic" id="hadith-arabic" dir="rtl" lang="ar"></p>
+          <p class="hadith-text" id="hadith-text"></p>
+          <p class="hadith-explain" id="hadith-explain"></p>
+          <div id="quiz-area"></div>
+        </section>
+      </div>
     </div>
   </main>
 
