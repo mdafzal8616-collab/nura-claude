@@ -392,15 +392,77 @@
     ]}
   ];
 
+  // Citations cross-checked against sunnah.com / named hadith numbers
+  // before use (see docs/decisions.md). Where a hadith's authenticity
+  // grading wasn't independently confirmed, only the source (collection +
+  // number) is given, not a grading claim.
   var AKHLAQ_ITEMS = [
-    { id: "ch-gaze", name: "Lower your gaze" },
-    { id: "ch-speech", name: "Speak kindly, avoid backbiting" },
-    { id: "ch-charity", name: "Give charity, even something small" },
-    { id: "ch-help", name: "Help someone today" },
-    { id: "ch-anger", name: "Keep your anger in check" },
-    { id: "ch-salam", name: "Smile and give salam" },
-    { id: "ch-gratitude", name: "Take one moment of gratitude" },
-    { id: "ch-tongue", name: "Guard your tongue" }
+    { id: "ch-gaze", name: "Lower your gaze", items: [{
+      arabic: "يَا عَلِيُّ لاَ تُتْبِعِ النَّظْرَةَ النَّظْرَةَ فَإِنَّ لَكَ الأُولَى وَلَيْسَتْ لَكَ الآخِرَةُ",
+      transliteration: "Ya Ali, la tutbi'in-nazrata an-nazrah, fa inna laka al-ula wa laysat laka al-akhirah",
+      meaning: "O Ali, do not follow one glance with another — the first is forgiven, but not the second.",
+      source: "Sunan Abi Dawud 2149, the Prophet speaking to Ali"
+    }]},
+    { id: "ch-speech", name: "Speak kindly, avoid backbiting", items: [{
+      arabic: "مَنْ كَانَ يُؤْمِنُ بِاللَّهِ وَالْيَوْمِ الآخِرِ فَلْيَقُلْ خَيْرًا أَوْ لِيَصْمُتْ",
+      transliteration: "Man kana yu'minu billahi wal-yawmil-akhiri falyaqul khayran aw liyasmut",
+      meaning: "Whoever believes in Allah and the Last Day should speak what is good or remain silent.",
+      source: "Sahih al-Bukhari 6136 / 6475, Sahih Muslim 47, narrated by Abu Hurairah"
+    }]},
+    { id: "ch-charity", name: "Give charity, even something small", items: [{
+      arabic: "اتَّقُوا النَّارَ وَلَوْ بِشِقِّ تَمْرَةٍ",
+      transliteration: "Ittaqun-nara wa law bi-shiqqi tamrah",
+      meaning: "Protect yourself from the Fire, even with half a date given in charity.",
+      source: "Sahih al-Bukhari 6540, Sahih Muslim 1016, narrated by ‘Adi ibn Hatim"
+    }]},
+    { id: "ch-help", name: "Help someone today", items: [{
+      arabic: "وَاللَّهُ فِي عَوْنِ الْعَبْدِ مَا كَانَ الْعَبْدُ فِي عَوْنِ أَخِيهِ",
+      transliteration: "Wallahu fi 'awnil-'abdi ma kanal-'abdu fi 'awni akhih",
+      meaning: "Allah helps His servant for as long as the servant helps his brother.",
+      source: "Sahih Muslim 2699a, narrated by Abu Hurairah"
+    }]},
+    { id: "ch-anger", name: "Keep your anger in check", items: [{
+      arabic: "لَيْسَ الشَّدِيدُ بِالصُّرَعَةِ، إِنَّمَا الشَّدِيدُ الَّذِي يَمْلِكُ نَفْسَهُ عِنْدَ الْغَضَبِ",
+      transliteration: "Laysash-shadidu bis-su'rah, innamash-shadidul-ladhi yamliku nafsahu 'indal-ghadab",
+      meaning: "The strong one is not the one who overpowers others; the strong one is the one who controls himself when angry.",
+      source: "Sahih al-Bukhari 6114, Sahih Muslim 2609, narrated by Abu Hurairah"
+    }]},
+    { id: "ch-salam", name: "Smile and give salam", items: [{
+      arabic: "تَبَسُّمُكَ فِي وَجْهِ أَخِيكَ لَكَ صَدَقَةٌ",
+      transliteration: "Tabassumuka fi wajhi akhika laka sadaqah",
+      meaning: "Your smiling in the face of your brother is charity.",
+      source: "Jami’ at-Tirmidhi 1956, narrated by Abu Dharr (graded hasan gharib by at-Tirmidhi)"
+    }]},
+    { id: "ch-gratitude", name: "Take one moment of gratitude", items: [{
+      arabic: "لاَ يَشْكُرُ اللَّهَ مَنْ لاَ يَشْكُرُ النَّاسَ",
+      transliteration: "La yashkurullaha man la yashkurun-nas",
+      meaning: "Whoever does not thank people has not thanked Allah.",
+      source: "Sunan Abi Dawud 4811, narrated by Abu Hurairah (graded sahih by Al-Albani)"
+    }]},
+    { id: "ch-tongue", name: "Guard your tongue", items: [{
+      arabic: "مَنْ يَضْمَنْ لِي مَا بَيْنَ لَحْيَيْهِ وَمَا بَيْنَ رِجْلَيْهِ أَضْمَنْ لَهُ الْجَنَّةَ",
+      transliteration: "Man yadman li ma bayna lahyayhi wa ma bayna rijlayhi adman lahul-jannah",
+      meaning: "Whoever guarantees me what is between his jaws (his tongue) and what is between his legs, I guarantee him Paradise.",
+      source: "Sahih al-Bukhari 6474, narrated by Sahl ibn Sa’d"
+    }]},
+    { id: "ch-knowledge", name: "Seek a little knowledge today", items: [{
+      arabic: "مَنْ سَلَكَ طَرِيقًا يَلْتَمِسُ فِيهِ عِلْمًا سَهَّلَ اللَّهُ لَهُ بِهِ طَرِيقًا إِلَى الْجَنَّةِ",
+      transliteration: "Man salaka tariqan yaltamisu fihi 'ilman sahhalallahu lahu bihi tariqan ilal-jannah",
+      meaning: "Whoever takes a path seeking knowledge, Allah makes easy for him a path to Paradise.",
+      source: "Sahih Muslim 2699a — the same hadith as “Help someone today” above, narrated by Abu Hurairah"
+    }]},
+    { id: "ch-character", name: "Aim for good character, not just correct actions", items: [{
+      arabic: "إِنَّ مِنْ خِيَارِكُمْ أَحْسَنَكُمْ أَخْلاَقًا",
+      transliteration: "Inna min khiyarikum ahsanakum akhlaqan",
+      meaning: "Indeed, among the best of you are those with the best character.",
+      source: "Sahih al-Bukhari 3559, narrated by ‘Abdullah ibn ‘Amr"
+    }]},
+    { id: "ch-neighbor", name: "Make sure your neighbor is safe from your harm", items: [{
+      arabic: "لَا يَدْخُلُ الْجَنَّةَ مَنْ لَا يَأْمَنُ جَارُهُ بَوَائِقَهُ",
+      transliteration: "La yadkhulul-jannata man la ya'manu jaruhu bawa'iqah",
+      meaning: "He will not enter Paradise whose neighbor is not safe from his harm.",
+      source: "Sahih Muslim 46, narrated by Abu Hurairah"
+    }]}
   ];
 
   var sunnahSectionOpenState = {};

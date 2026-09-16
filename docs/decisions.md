@@ -2,6 +2,14 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — Hadith citations added to Akhlaq, plus 3 new self-improvement items
+
+Same expandable "Source" pattern as the Routine dhikr work: all 8 existing Akhlaq items now have a real citation (Arabic, transliteration, meaning, hadith reference) instead of being a bare label. Added 3 new items for self-improvement, each also cited: "Seek a little knowledge today" and "Help someone today" (both from the same hadith, Sahih Muslim 2699a — noted honestly as the same source rather than presented as two separate ahadith), "Aim for good character, not just correct actions" (Bukhari 3559), "Make sure your neighbor is safe from your harm" (Sahih Muslim 46). 11 items total now.
+
+Citations verified via web search against sunnah.com/named hadith numbers before use: Bukhari 6136/6475 & Muslim 47 (speak good or silent), Bukhari 6540 & Muslim 1016 (charity even half a date), Muslim 2699a (helping others / seeking knowledge), Bukhari 6114 & Muslim 2609 (anger), Tirmidhi 1956 (smiling is charity, graded hasan gharib by at-Tirmidhi — noted as such, not claimed sahih), Abu Dawud 4811 (gratitude), Bukhari 6474 (guarding the tongue), Abu Dawud 2149 (lowering the gaze — cited without an authenticity-grading claim, since one wasn't independently confirmed), Bukhari 3559 (character), Muslim 46 (neighbor's safety).
+
+Tested: all 11 render, citations expand/collapse correctly with real content, checkbox works independently of expand state, state and completion persist across a real reload, no regressions to Routine/Duas/Quran/Hadith/Vault/Home, zero console errors.
+
 ## 2026-09-16 — Hadith citations added to after-salah, morning, and evening dhikr in Routine
 
 Enriched Routine items with real, cited dhikr content (expandable "Source" panel under each item, Arabic + transliteration + meaning + citation) rather than just a bare label:
