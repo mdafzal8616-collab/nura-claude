@@ -2,6 +2,12 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-16 — All remaining Duas categories filled
+
+The 6 categories that were "structure ready, pending verified content" now each have a real, cited dua: Morning (Asbahna..., Sahih Muslim 2723 — same content already used in Routine's Morning Adhkar, cross-referenced not duplicated effort), Evening (Amsayna..., same hadith), Salah (dua after hearing the adhan, Sahih al-Bukhari 614), Protection (seeking refuge in Allah's perfect words, Sahih Muslim 2708a), Travel (the setting-out dua, Sahih Muslim 1342, itself echoing Qur'an 43:13-14), Daily Life (leaving home, Sunan Abi Dawud 5095 / Tirmidhi 3426, graded hasan by at-Tirmidhi — noted as such). All 11 Duas categories now show real content; none read "Pending" anymore.
+
+Tested: category grid shows correct counts for all 11, each new category's detail view renders Arabic/transliteration/meaning/source correctly, search finds the new content, everything persists across a real reload, no regressions to Routine/Akhlaq/Quran/Hadith/Vault/AI Chat/Home, zero console errors.
+
 ## 2026-09-16 — Hadith citations added to Akhlaq, plus 3 new self-improvement items
 
 Same expandable "Source" pattern as the Routine dhikr work: all 8 existing Akhlaq items now have a real citation (Arabic, transliteration, meaning, hadith reference) instead of being a bare label. Added 3 new items for self-improvement, each also cited: "Seek a little knowledge today" and "Help someone today" (both from the same hadith, Sahih Muslim 2699a — noted honestly as the same source rather than presented as two separate ahadith), "Aim for good character, not just correct actions" (Bukhari 3559), "Make sure your neighbor is safe from your harm" (Sahih Muslim 46). 11 items total now.

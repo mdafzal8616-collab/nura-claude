@@ -75,6 +75,60 @@
       transliteration: "Alhamdu lillahil-ladhi at'amana wa saqana wa ja'alana Muslimeen",
       meaning: "All praise is for Allah, who fed us, gave us drink, and made us Muslims.",
       source: "Sunan Abi Dawud 3850; Jami' at-Tirmidhi 3457"
+    },
+    {
+      id: "morning-1",
+      categoryId: "morning",
+      title: "Morning Declaration",
+      arabic: "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ",
+      transliteration: "Asbahna wa asbahal mulku lillah, wal-hamdu lillah, la ilaha illallahu wahdahu la sharika lah, lahul-mulku wa lahul-hamd, wa huwa 'ala kulli shay'in qadir",
+      meaning: "We have entered the morning, and with it all dominion belongs to Allah, and praise is for Allah. There is no god but Allah, alone, without partner. His is the dominion and His is the praise, and He is capable of all things.",
+      source: "Sahih Muslim 2723"
+    },
+    {
+      id: "evening-1",
+      categoryId: "evening",
+      title: "Evening Declaration",
+      arabic: "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ",
+      transliteration: "Amsayna wa amsal mulku lillah, wal-hamdu lillah, la ilaha illallahu wahdahu la sharika lah, lahul-mulku wa lahul-hamd, wa huwa 'ala kulli shay'in qadir",
+      meaning: "We have entered the evening, and with it all dominion belongs to Allah, and praise is for Allah. There is no god but Allah, alone, without partner. His is the dominion and His is the praise, and He is capable of all things.",
+      source: "Sahih Muslim 2723 (evening form — recited with 'Amsayna' in place of 'Asbahna')"
+    },
+    {
+      id: "salah-1",
+      categoryId: "salah",
+      title: "After Hearing the Adhan",
+      arabic: "اللَّهُمَّ رَبَّ هَذِهِ الدَّعْوَةِ التَّامَّةِ، وَالصَّلَاةِ الْقَائِمَةِ، آتِ مُحَمَّدًا الْوَسِيلَةَ وَالْفَضِيلَةَ، وَابْعَثْهُ مَقَامًا مَحْمُودًا الَّذِي وَعَدْتَهُ، إِنَّكَ لَا تُخْلِفُ الْمِيعَادَ",
+      transliteration: "Allahumma Rabba hadhihid-da'watit-tammati was-salatil-qa'imah, ati Muhammadanil-wasilata wal-fadilah, wab'athhu maqaman mahmudan-alladhi wa'adtah, innaka la tukhliful-mi'ad",
+      meaning: "O Allah, Lord of this perfect call and the prayer about to be established, grant Muhammad the intercession and favor, and raise him to the praised station You have promised him. You do not break Your promise.",
+      source: "Sahih al-Bukhari 614, narrated by Jabir ibn ‘Abdullah"
+    },
+    {
+      id: "protection-1",
+      categoryId: "protection",
+      title: "Seeking Refuge from Harm",
+      arabic: "أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ",
+      transliteration: "A'udhu bikalimatillahi at-tammati min sharri ma khalaq",
+      meaning: "I seek refuge in the perfect words of Allah from the evil of what He has created.",
+      source: "Sahih Muslim 2708a, narrated by Khawlah bint Hakim"
+    },
+    {
+      id: "travel-1",
+      categoryId: "travel",
+      title: "Setting Out on a Journey",
+      arabic: "سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ",
+      transliteration: "Subhanal-ladhi sakhkhara lana hadha wa ma kunna lahu muqrinin, wa inna ila rabbina lamunqalibun",
+      meaning: "Glory be to Him who has made this subject to us, and we could never have done it by ourselves. And indeed, to our Lord we will return.",
+      source: "Sahih Muslim 1342, narrated by Ibn ‘Umar (echoing Qur’an 43:13–14)"
+    },
+    {
+      id: "daily-life-1",
+      categoryId: "daily-life",
+      title: "Leaving Home",
+      arabic: "بِسْمِ اللَّهِ تَوَكَّلْتُ عَلَى اللَّهِ وَلَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللَّهِ",
+      transliteration: "Bismillahi tawakkaltu 'alallahi wa la hawla wa la quwwata illa billah",
+      meaning: "In the name of Allah, I place my trust in Allah, and there is no power or strength except with Allah.",
+      source: "Sunan Abi Dawud 5095, Jami' at-Tirmidhi 3426 (graded hasan by at-Tirmidhi), narrated by Anas ibn Malik"
     }
   ];
 
