@@ -145,6 +145,7 @@ html, body {
   text-align: center;
 }
 .preset-plan-chip:active { border-color: var(--mint); color: var(--mint); }
+.preset-plan-chip.active-chip { border-color: var(--mint); color: var(--mint); background: rgba(27, 94, 63, 0.08); }
 
 .priority-custom-row { display: flex; gap: 8px; }
 .priority-custom-row .text-input { margin-bottom: 0; flex: 1; }
