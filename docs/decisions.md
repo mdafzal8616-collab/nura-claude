@@ -2,6 +2,12 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — Tasbih counters now only appear where the real repeat count is 32+
+
+New rule going forward: a tasbih counter only belongs on a dhikr with a real, hadith-specified repeat count of 32 or more — not on every dhikr just because it has Arabic text. Removed the "free" tap counter from every single-recitation item it had been added to: Allahumma antas-salam, both Ayat al-Kursi citations (after-salah and before-sleep), morning dhikr, evening dhikr, the last two ayat of Al-Baqarah, and the Jumu'ah salawat item. Kept the two counters with a genuine 32+ count: the after-salah tasbih (33/33/33) and the before-sleep Fatimah tasbih (33/33/34) — those are unchanged.
+
+Tested: exactly those two phase-mode counters remain across Routine, everything else shows citation with no counter, zero regressions, zero console errors.
+
 ## 2026-09-17 — Jumu'ah (Friday) added as its own Routine section
 
 Read "jumman special thing" as Jumu'ah (Friday) — the app had no Friday-specific content at all, and Friday genuinely has a distinct set of sunnahs beyond a normal Dhuhr. Added a new "Jumu'ah (Friday)" section (id `jumuah`) between Dhuhr and Asr, with 7 actions, each hadith verified live on sunnah.com before being added:
