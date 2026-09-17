@@ -144,8 +144,24 @@
           <p class="verse-arabic" id="verse-arabic" dir="rtl" lang="ar"></p>
           <p class="verse-source">Source: Tanzil Project &middot; tanzil.net</p>
         </div>
-        <p class="pending-note">Full Quran reading (all 114 surahs, search, licensed translation, audio, offline) is not built yet — this is a small, verified proof of concept only, one ayah per day.</p>
       </section>
+
+      <div id="quran-surah-list-view">
+        <section class="card">
+          <h2>Read the Full Quran</h2>
+          <p class="panel-subnote">Arabic: Tanzil Project. English: Saheeh International. Urdu: Maulana Muhammad Junagarhi — both via the Quran Foundation API (api.quran.com). Translations load per surah and need an internet connection.</p>
+          <input type="text" id="quran-surah-search" class="quran-surah-search" placeholder="Search surah name...">
+        </section>
+        <div class="dua-list" id="quran-surah-list"></div>
+      </div>
+
+      <div id="quran-surah-detail-view" class="hidden">
+        <div class="duas-back-row">
+          <button class="icon-btn" id="quran-surah-back-btn">&larr; All Surahs</button>
+        </div>
+        <section class="card" id="quran-surah-header"></section>
+        <div id="quran-ayah-list"></div>
+      </div>
     </div>
 
     <div id="sunnah-panel-hadith" class="sunnah-panel hidden">
@@ -411,6 +427,7 @@
 
 <script src="js/duas-data.js"></script>
 <script src="js/ruku-data.js"></script>
+<script src="js/quran-meta.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

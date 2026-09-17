@@ -487,7 +487,15 @@
       { id: "is-dhikr", name: "Dhikr after salah", items: AFTER_SALAH_DHIKR_ITEMS }
     ]},
     { id: "witr", title: "Witr", actions: [
-      { id: "wt-pray", name: "Pray Witr" }
+      { id: "wt-pray", name: "Pray Witr", items: [
+        {
+          arabic: "اللَّهُمَّ اهْدِنِي فِيمَنْ هَدَيْتَ، وَعَافِنِي فِيمَنْ عَافَيْتَ، وَتَوَلَّنِي فِيمَنْ تَوَلَّيْتَ، وَبَارِكْ لِي فِيمَا أَعْطَيْتَ، وَقِنِي شَرَّ مَا قَضَيْتَ، فَإِنَّكَ تَقْضِي وَلَا يُقْضَى عَلَيْكَ، وَإِنَّهُ لَا يَذِلُّ مَنْ وَالَيْتَ، تَبَارَكْتَ رَبَّنَا وَتَعَالَيْتَ",
+          transliteration: "Allahummahdini fiman hadayt, wa 'afini fiman 'afayt, wa tawallani fiman tawallayt, wa barik li fima a'tayt, wa qini sharra ma qadayt, fa innaka taqdi wa la yuqda 'alayk, wa innahu la yadhillu man walayt, tabarakta Rabbana wa ta'alayt",
+          meaning: "O Allah, guide me among those You have guided, pardon me among those You have pardoned, befriend me among those You have befriended, bless me in what You have granted, and save me from the evil that You have decreed. Indeed You decree, and none can pass decree upon You. He is not humiliated whom You have befriended. Blessed are You, our Lord, and Exalted.",
+          source: "Jami' at-Tirmidhi 464, graded Sahih (Darussalam), narrated by Al-Hasan ibn Ali — Dua al-Qunoot, taught to him by the Prophet ﷺ to recite in Witr",
+          tasbih: { mode: "free" }
+        }
+      ] }
     ]}
   ];
 
@@ -1617,6 +1625,140 @@
     });
   }
 
+  // ---------- FULL QURAN (surah browsing) ----------
+  // Arabic: local, already-verified Tanzil file (loadQuranVerses above).
+  // English (Saheeh International, resource 20) and Urdu (Maulana Muhammad
+  // Junagarhi, resource 54) are fetched live per-surah from the Quran
+  // Foundation's public, keyless legacy API (api.quran.com) — the same
+  // source already verified and used for the Al-Baqarah 285-286 translation
+  // and for ruku numbers. Translations are not bundled/stored in this repo;
+  // they're fetched on demand each time a surah is opened, and need internet.
+
+  var QURAN_TRANSLATION_RESOURCES = { en: 20, ur: 54 };
+  var quranTranslationCache = {}; // "resourceId-surahNumber" -> array of strings
+  var quranState = { view: "list", surahNumber: null };
+
+  function stripTranslationMarkup(text) {
+    return text.replace(/<sup[^>]*>.*?<\/sup>/gi, "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  }
+
+  function fetchQuranTranslation(resourceId, surahNumber) {
+    var key = resourceId + "-" + surahNumber;
+    if (quranTranslationCache[key]) return Promise.resolve(quranTranslationCache[key]);
+    return fetch("https://api.quran.com/api/v4/quran/translations/" + resourceId + "?chapter_number=" + surahNumber)
+      .then(function (res) {
+        if (!res.ok) throw new Error("translation fetch failed");
+        return res.json();
+      })
+      .then(function (data) {
+        var texts = (data.translations || []).map(function (t) { return stripTranslationMarkup(t.text); });
+        quranTranslationCache[key] = texts;
+        return texts;
+      });
+  }
+
+  function renderQuranSurahList(filterText) {
+    var list = document.getElementById("quran-surah-list");
+    list.innerHTML = "";
+    var filter = (filterText || "").trim().toLowerCase();
+    var surahs = window.NURA_QURAN_SURAHS || [];
+    surahs.filter(function (s) {
+      if (!filter) return true;
+      return s.nameSimple.toLowerCase().indexOf(filter) !== -1 ||
+        s.nameTranslated.toLowerCase().indexOf(filter) !== -1 ||
+        String(s.number) === filter;
+    }).forEach(function (s) {
+      var row = document.createElement("button");
+      row.type = "button";
+      row.className = "dua-list-item";
+      row.innerHTML =
+        '<span class="quran-surah-row">' +
+          '<span class="quran-surah-num">' + s.number + '</span>' +
+          '<span class="quran-surah-names">' +
+            '<span class="dua-list-title">' + s.nameSimple + '</span>' +
+            '<span class="dua-list-cat">' + s.nameTranslated + ' &middot; ' + s.versesCount + ' ayahs</span>' +
+          '</span>' +
+        '</span>' +
+        '<span class="quran-surah-arabic-name">' + s.nameArabic + '</span>';
+      row.addEventListener("click", function () { openQuranSurah(s.number); });
+      list.appendChild(row);
+    });
+  }
+
+  function openQuranSurah(number) {
+    quranState.view = "detail";
+    quranState.surahNumber = number;
+    document.getElementById("quran-surah-list-view").classList.add("hidden");
+    document.getElementById("quran-surah-detail-view").classList.remove("hidden");
+    renderQuranSurahDetail();
+    document.getElementById("quran-surah-detail-view").scrollIntoView({ block: "start" });
+  }
+
+  function closeQuranSurah() {
+    quranState.view = "list";
+    quranState.surahNumber = null;
+    document.getElementById("quran-surah-detail-view").classList.add("hidden");
+    document.getElementById("quran-surah-list-view").classList.remove("hidden");
+  }
+
+  function renderQuranSurahDetail() {
+    var number = quranState.surahNumber;
+    var meta = (window.NURA_QURAN_SURAHS || []).find(function (s) { return s.number === number; });
+    var header = document.getElementById("quran-surah-header");
+    var ayahList = document.getElementById("quran-ayah-list");
+    if (!meta) return;
+
+    header.innerHTML =
+      '<div class="quran-surah-header-inner">' +
+        '<div class="quran-surah-header-arabic">' + meta.nameArabic + '</div>' +
+        '<h2 style="margin:2px 0;">' + meta.nameSimple + ' — ' + meta.nameTranslated + '</h2>' +
+        '<div class="quran-surah-header-meta">Surah ' + meta.number + ' &middot; ' + meta.versesCount + ' ayahs &middot; ' + (meta.revelationPlace === "makkah" ? "Makki" : "Madani") + '</div>' +
+      '</div>';
+
+    ayahList.innerHTML = '<p class="quran-loading-note">Loading ayat and translations…</p>';
+
+    Promise.all([
+      loadQuranVerses(),
+      fetchQuranTranslation(QURAN_TRANSLATION_RESOURCES.en, number),
+      fetchQuranTranslation(QURAN_TRANSLATION_RESOURCES.ur, number)
+    ]).then(function (results) {
+      if (quranState.surahNumber !== number) return; // user navigated away before this resolved
+      var allVerses = results[0];
+      var enTexts = results[1];
+      var urTexts = results[2];
+      var surahVerses = allVerses.filter(function (v) { return v.surah === number; });
+
+      ayahList.innerHTML = "";
+      surahVerses.forEach(function (v, idx) {
+        var rukuText = (window.NURA_RUKU && window.NURA_RUKU.getRukuNumber)
+          ? "Ruku " + window.NURA_RUKU.getRukuNumber(v.surah, v.ayah)
+          : "";
+        var card = document.createElement("div");
+        card.className = "quran-ayah-card";
+        card.innerHTML =
+          '<div class="quran-ayah-top">' +
+            '<span class="quran-ayah-num">Ayah ' + v.ayah + '</span>' +
+            '<span class="quran-ayah-ruku">' + rukuText + '</span>' +
+          '</div>' +
+          '<p class="quran-ayah-arabic">' + v.text + '</p>' +
+          (enTexts[idx] ? '<p class="quran-ayah-translation"><span class="quran-ayah-translation-label">EN</span>' + enTexts[idx] + '</p>' : '') +
+          (urTexts[idx] ? '<p class="quran-ayah-translation quran-ayah-urdu"><span class="quran-ayah-translation-label" style="direction:ltr;display:inline-block;">UR</span> ' + urTexts[idx] + '</p>' : '');
+        ayahList.appendChild(card);
+      });
+    }).catch(function () {
+      if (quranState.surahNumber !== number) return;
+      ayahList.innerHTML = '<p class="quran-error-note">Could not load this surah. Check your internet connection and try again.</p>';
+    });
+  }
+
+  function initQuranUI() {
+    renderQuranSurahList("");
+    document.getElementById("quran-surah-search").addEventListener("input", function (e) {
+      renderQuranSurahList(e.target.value);
+    });
+    document.getElementById("quran-surah-back-btn").addEventListener("click", closeQuranSurah);
+  }
+
   // ---------- HADITH & QUIZ ----------
   // Every hadith below was cross-checked against sunnah.com / named hadith
   // numbers before use (see docs/decisions.md) — none generated from memory.
@@ -2216,6 +2358,7 @@
     initSunnahSubtabs();
     initDuasUI();
     initHadithUI();
+    initQuranUI();
     initVault();
     initShield();
     initMore();

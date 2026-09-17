@@ -2,6 +2,19 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — Full Quran (114 surahs) with English + Urdu translation, and Witr's Dua Qunoot added
+
+**Full Quran browsing.** The Quran tab was a single daily-verse proof of concept; it now also has a full surah list (searchable) → surah detail view with every ayah. Data sourcing, kept consistent with how the rest of this app sources Islamic content:
+- **Arabic**: the same already-verified local Tanzil Uthmani text used everywhere else in the app (`assets/quran/quran-uthmani.txt`) — no new source, no network needed for Arabic.
+- **Surah names/counts**: fetched once from the Quran Foundation's chapters API and saved as a small verified static file (`js/quran-meta.js`, 114 entries) — just bibliographic facts (names, ayah counts, Makki/Madani), not translated text.
+- **English** (Saheeh International, resource 20) and **Urdu** (Maulana Muhammad Junagarhi, resource 54): fetched live per-surah from the same keyless Quran Foundation API (api.quran.com) already used and verified earlier for ruku numbers and the Al-Baqarah 285–286 translation. Deliberately **not bundled into the repo** — full translated text is a copyrighted literary work in its own right, so it's fetched fresh on demand each time a surah is opened (same intended use as any Quran app built on this public API) rather than stored/redistributed statically. Trade-off: reading the full Quran needs an internet connection; this is stated directly in the UI.
+
+Junagarhi was picked as the Urdu translation because it's the same one used as the default Urdu translation on Quran.com itself — a reasonable, widely-recognized default rather than an arbitrary pick.
+
+**Witr dua.** "Pray Witr" had no citation at all. Added the actual Dua al-Qunoot — verified by reading the live sunnah.com page directly (browser tool, since WebFetch to sunnah.com 403s): Jami' at-Tirmidhi 464, graded Sahih (Darussalam), narrated by Al-Hasan ibn Ali.
+
+Tested: 114 surahs load, search filtering works, opening a small surah (Al-Ikhlas, 4 ayat) and a large one (Al-Baqarah, 286 ayat) both render Arabic + both translations correctly, footnote markup from the API is stripped cleanly, back button and re-navigation work, Witr dua displays with its counter and citation, zero regressions across Akhlaq/Hadith/Home, zero console errors.
+
 ## 2026-09-17 — "Read a portion of Qur'an" now links directly to the Quran tab
 
 That Morning Adhkar item ("ma-quran") was a bare toggle with no way to actually go read anything. Added a generic `action.link = { subtab, label }` config (`buildSunnahItem` in `js/app.js`) that renders an "Open Quran" button next to it; tapping it switches Sunnah to the Quran subtab via a new shared `switchSunnahSubtab()` function (factored out of the existing subtab click handler, so both paths stay in sync) and scrolls it into view. Generic by design — any future Routine/Akhlaq item can link to any subtab the same way.

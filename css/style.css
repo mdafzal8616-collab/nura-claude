@@ -462,6 +462,60 @@ html, body {
 .dua-detail-actions { display: flex; gap: 8px; }
 .dua-detail-actions .btn { flex: 1; margin-bottom: 0; }
 
+/* FULL QURAN */
+.panel-subnote { color: var(--muted); font-size: 11.5px; line-height: 1.5; margin: 4px 0 12px; }
+.quran-surah-search {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+}
+.quran-surah-search::placeholder { color: var(--muted); }
+.quran-surah-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--mint);
+  color: var(--mint);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-right: 10px;
+}
+.quran-surah-row { display: flex; align-items: center; }
+.quran-surah-names { flex: 1; }
+.quran-surah-arabic-name { font-size: 15px; direction: rtl; font-family: "Traditional Arabic", "Scheherazade New", "Noto Naskh Arabic", serif; }
+
+.quran-surah-header-inner { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; }
+.quran-surah-header-arabic { font-size: 24px; font-family: "Traditional Arabic", "Scheherazade New", "Noto Naskh Arabic", serif; color: var(--mint-soft); }
+.quran-surah-header-meta { font-size: 12px; color: var(--muted); }
+
+.quran-ayah-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.quran-ayah-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.quran-ayah-num { font-size: 11.5px; color: var(--mint); font-weight: 700; }
+.quran-ayah-ruku { font-size: 11px; color: var(--muted); }
+.quran-ayah-arabic { font-size: 21px; line-height: 2; color: var(--text); direction: rtl; unicode-bidi: isolate; text-align: right; font-family: "Traditional Arabic", "Scheherazade New", "Noto Naskh Arabic", serif; margin: 0 0 10px; }
+.quran-ayah-translation { font-size: 13.5px; line-height: 1.6; margin: 0 0 6px; }
+.quran-ayah-translation-label { color: var(--mint); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
+.quran-ayah-urdu { direction: rtl; unicode-bidi: isolate; text-align: right; font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", serif; font-size: 15.5px; }
+.quran-loading-note, .quran-error-note { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 10px; }
+.quran-error-note { color: var(--danger); }
+
 .dua-empty-state { color: var(--muted); font-size: 13px; background: var(--surface-2); border: 1px dashed var(--border); border-radius: 12px; padding: 16px; text-align: center; }
 
 /* VAULT */
