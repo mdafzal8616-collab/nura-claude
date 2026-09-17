@@ -361,20 +361,27 @@
       arabic: "اللَّهُمَّ أَنْتَ السَّلَامُ وَمِنْكَ السَّلَامُ، تَبَارَكْتَ يَا ذَا الْجَلَالِ وَالْإِكْرَامِ",
       transliteration: "Allahumma antas-salamu wa minkas-salam, tabarakta ya dhal-jalali wal-ikram",
       meaning: "O Allah, You are Peace and from You comes peace. Blessed are You, Owner of majesty and honor.",
-      source: "Sahih Muslim 592, narrated by A’ishah"
+      source: "Sahih Muslim 592, narrated by A’ishah",
+      tasbih: { mode: "free" }
     },
     {
       arabic: "سُبْحَانَ اللَّهِ (٣٣) الْحَمْدُ لِلَّهِ (٣٣) اللَّهُ أَكْبَرُ (٣٣) لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ",
       transliteration: "SubhanAllah (x33), Alhamdulillah (x33), Allahu Akbar (x33), then: La ilaha illallah, wahdahu la sharika lah, lahul-mulku wa lahul-hamd, wa huwa 'ala kulli shay'in qadir",
       meaning: "Glory be to Allah (33x), praise be to Allah (33x), Allah is Greatest (33x), then: There is no god but Allah, alone, without partner; His is the dominion and His is the praise, and He is capable of all things.",
-      source: "Sahih Muslim 597a, narrated by Abu Hurairah"
+      source: "Sahih Muslim 597a, narrated by Abu Hurairah",
+      tasbih: { mode: "phases", phases: [
+        { label: "SubhanAllah", arabic: "سُبْحَانَ اللَّهِ", target: 33 },
+        { label: "Alhamdulillah", arabic: "الْحَمْدُ لِلَّهِ", target: 33 },
+        { label: "Allahu Akbar", arabic: "اللَّهُ أَكْبَرُ", target: 33 }
+      ] }
     },
     {
       arabic: "ٱللَّهُ لَآ إِلَٰهَ إِلَّا هُوَ ٱلْحَىُّ ٱلْقَيُّومُ لَا تَأْخُذُهُۥ سِنَةٌ وَلَا نَوْمٌ لَّهُۥ مَا فِى ٱلسَّمَٰوَٰتِ وَمَا فِى ٱلْأَرْضِ مَن ذَا ٱلَّذِى يَشْفَعُ عِندَهُۥٓ إِلَّا بِإِذْنِهِۦ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ وَلَا يُحِيطُونَ بِشَىْءٍ مِّنْ عِلْمِهِۦٓ إِلَّا بِمَا شَآءَ وَسِعَ كُرْسِيُّهُ ٱلسَّمَٰوَٰتِ وَٱلْأَرْضَ وَلَا يَـُٔودُهُۥ حِفْظُهُمَا وَهُوَ ٱلْعَلِىُّ ٱلْعَظِيمُ",
       ruku: 35,
       transliteration: null,
       meaning: "Ayat al-Kursi (Surah Al-Baqarah 2:255). Translation not yet added — see Sunnah → Quran for the verified Arabic source.",
-      source: "Reciting it after each prescribed prayer: An-Nasa’i, Al-Kubra 9848, graded sahih by An-Nasa’i and Ibn Hibban, narrated by Abu Umamah. Verse text: Tanzil Project (Qur’an 2:255). Ruku number from Quran Foundation (api.quran.com)."
+      source: "Reciting it after each prescribed prayer: An-Nasa’i, Al-Kubra 9848, graded sahih by An-Nasa’i and Ibn Hibban, narrated by Abu Umamah. Verse text: Tanzil Project (Qur’an 2:255). Ruku number from Quran Foundation (api.quran.com).",
+      tasbih: { mode: "free" }
     }
   ];
 
@@ -382,14 +389,16 @@
     arabic: "أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ",
     transliteration: "Asbahna wa asbahal mulku lillah, wal-hamdu lillah, la ilaha illallahu wahdahu la sharika lah, lahul-mulku wa lahul-hamd, wa huwa 'ala kulli shay'in qadir",
     meaning: "We have entered the morning, and with it all dominion belongs to Allah, and praise is for Allah. There is no god but Allah, alone, without partner. His is the dominion and His is the praise, and He is capable of all things.",
-    source: "Sahih Muslim 2723"
+    source: "Sahih Muslim 2723",
+    tasbih: { mode: "free" }
   }];
 
   var EVENING_DHIKR_ITEMS = [{
     arabic: "أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَٰهَ إِلَّا اللهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَىٰ كُلِّ شَيْءٍ قَدِيرٌ",
     transliteration: "Amsayna wa amsal mulku lillah, wal-hamdu lillah, la ilaha illallahu wahdahu la sharika lah, lahul-mulku wa lahul-hamd, wa huwa 'ala kulli shay'in qadir",
     meaning: "We have entered the evening, and with it all dominion belongs to Allah, and praise is for Allah. There is no god but Allah, alone, without partner. His is the dominion and His is the praise, and He is capable of all things.",
-    source: "Sahih Muslim 2723 (evening form — recited with ‘Amsayna’ in place of ‘Asbahna’)"
+    source: "Sahih Muslim 2723 (evening form — recited with ‘Amsayna’ in place of ‘Asbahna’)",
+    tasbih: { mode: "free" }
   }];
 
   var AYATKURSI_ITEMS = [{
@@ -397,7 +406,8 @@
     ruku: 35,
     transliteration: null,
     meaning: "Ayat al-Kursi (Surah Al-Baqarah 2:255). Translation not yet added — see Sunnah → Quran for the verified Arabic source.",
-    source: "Tanzil Project (Qur’an 2:255). Ruku number from Quran Foundation (api.quran.com)."
+    source: "Tanzil Project (Qur’an 2:255). Ruku number from Quran Foundation (api.quran.com).",
+    tasbih: { mode: "free" }
   }];
 
   var ROUTINE_SECTIONS = [
@@ -416,10 +426,23 @@
           ruku: 41,
           transliteration: null,
           meaning: "(2:285) The Messenger has believed in what was revealed to him from his Lord, and [so have] the believers. All of them have believed in Allah and His angels and His books and His messengers, “We make no distinction between any of His messengers.” And they say, “We hear and we obey. [We seek] Your forgiveness, our Lord, and to You is the [final] destination.” (2:286) Allah does not charge a soul except with that within its capacity. It will have the consequence of what good it has gained, and it will bear the consequence of what evil it has earned. “Our Lord, do not impose blame upon us if we have forgotten or erred. Our Lord, do not lay upon us a burden like that which You laid upon those before us. Our Lord, do not burden us with that which we have no ability to bear. And pardon us, and forgive us, and have mercy upon us. You are our protector, so give us victory over the disbelieving people.”",
-          source: "Surah Al-Baqarah 2:285–286. Arabic: Tanzil Project. Translation: Saheeh International, via the Quran Foundation API (api.quran.com). Ruku number from Quran Foundation."
+          source: "Surah Al-Baqarah 2:285–286. Arabic: Tanzil Project. Translation: Saheeh International, via the Quran Foundation API (api.quran.com). Ruku number from Quran Foundation.",
+          tasbih: { mode: "free" }
         }
       ] },
-      { id: "bs-tasbih", name: "Tasbih before sleep" },
+      { id: "bs-tasbih", name: "Tasbih before sleep", items: [
+        {
+          arabic: "تُسَبِّحِينَ اللَّهَ عِنْدَ مَنَامِكِ ثَلَاثًا وَثَلَاثِينَ، وَتَحْمَدِينَ اللَّهَ ثَلَاثًا وَثَلَاثِينَ، وَتُكَبِّرِينَ اللَّهَ أَرْبَعًا وَثَلَاثِينَ",
+          transliteration: "Tusabbihina Allaha 'inda manamiki thalathan wa thalathin, wa tahmadina Allaha thalathan wa thalathin, wa tukabbirina Allaha arba'an wa thalathin",
+          meaning: "When you go to bed, recite 'Subhan Allah' thirty-three times, 'Alhamdulillah' thirty-three times, and 'Allahu Akbar' thirty-four times.",
+          source: "Sahih al-Bukhari 5362, narrated by Ali ibn Abi Talib — the Prophet ﷺ taught this to Fatimah instead of a servant",
+          tasbih: { mode: "phases", phases: [
+            { label: "SubhanAllah", arabic: "سُبْحَانَ اللَّهِ", target: 33 },
+            { label: "Alhamdulillah", arabic: "الْحَمْدُ لِلَّهِ", target: 33 },
+            { label: "Allahu Akbar", arabic: "اللَّهُ أَكْبَرُ", target: 34 }
+          ] }
+        }
+      ] },
       { id: "bs-dua", name: "Make a short dua before sleeping" }
     ]},
     { id: "tahajjud", title: "Tahajjud", actions: [
@@ -567,7 +590,123 @@
 
   var sunnahItemExpandState = {};
 
-  function buildSunnahItemDetail(items) {
+  function loadTasbihState(key) {
+    var all = {};
+    try { all = JSON.parse(localStorage.getItem("nc_tasbih_counts") || "{}"); } catch (e) { all = {}; }
+    var state = all[key];
+    var today = todayKey();
+    if (!state || state.date !== today) {
+      state = { date: today, phaseIndex: 0, count: 0 };
+    }
+    return state;
+  }
+
+  function saveTasbihState(key, state) {
+    var all = {};
+    try { all = JSON.parse(localStorage.getItem("nc_tasbih_counts") || "{}"); } catch (e) { all = {}; }
+    all[key] = state;
+    localStorage.setItem("nc_tasbih_counts", JSON.stringify(all));
+  }
+
+  function vibrateSafe(pattern) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) { /* no-op */ }
+  }
+
+  function pulseCircle(circle) {
+    circle.classList.remove("tasbih-pulse");
+    void circle.offsetWidth;
+    circle.classList.add("tasbih-pulse");
+  }
+
+  function buildTasbihCounter(key, config) {
+    var state = loadTasbihState(key);
+    var wrap = document.createElement("div");
+    wrap.className = "tasbih-counter";
+
+    function resetState() {
+      state = { date: todayKey(), phaseIndex: 0, count: 0 };
+      saveTasbihState(key, state);
+      render();
+    }
+
+    function render() {
+      wrap.innerHTML = "";
+
+      if (config.mode === "phases" && state.phaseIndex >= config.phases.length) {
+        var doneText = document.createElement("p");
+        doneText.className = "tasbih-done-text";
+        doneText.textContent = "✓ Completed";
+        wrap.appendChild(doneText);
+        var startOver = document.createElement("button");
+        startOver.type = "button";
+        startOver.className = "tasbih-reset-link";
+        startOver.textContent = "Start again";
+        startOver.addEventListener("click", resetState);
+        wrap.appendChild(startOver);
+        return;
+      }
+
+      var phase = config.mode === "phases" ? config.phases[state.phaseIndex] : null;
+      var target = phase ? phase.target : null;
+
+      if (phase) {
+        var label = document.createElement("div");
+        label.className = "tasbih-phase-label";
+        label.textContent = phase.label + " (" + (state.phaseIndex + 1) + "/" + config.phases.length + ")";
+        wrap.appendChild(label);
+      }
+
+      var circle = document.createElement("button");
+      circle.type = "button";
+      circle.className = "tasbih-tap-circle" + (target ? "" : " tasbih-tap-circle-free");
+      if (target) {
+        var pct = Math.min(100, Math.round((state.count / target) * 100));
+        circle.style.background = "conic-gradient(var(--mint) " + pct + "%, var(--surface-2) " + pct + "%)";
+      }
+      var num = document.createElement("span");
+      num.className = "tasbih-count-num";
+      num.textContent = state.count;
+      circle.appendChild(num);
+      if (target) {
+        var targetSpan = document.createElement("span");
+        targetSpan.className = "tasbih-count-target";
+        targetSpan.textContent = "/" + target;
+        circle.appendChild(targetSpan);
+      }
+      circle.addEventListener("click", function () {
+        state.count++;
+        pulseCircle(circle);
+        if (target && state.count >= target) {
+          vibrateSafe([15, 40, 15]);
+          state.phaseIndex++;
+          state.count = 0;
+        } else {
+          vibrateSafe(10);
+        }
+        saveTasbihState(key, state);
+        render();
+      });
+      wrap.appendChild(circle);
+
+      var controls = document.createElement("div");
+      controls.className = "tasbih-controls";
+      var reset = document.createElement("button");
+      reset.type = "button";
+      reset.className = "tasbih-reset-link";
+      reset.textContent = "Reset";
+      reset.addEventListener("click", function (e) {
+        e.stopPropagation();
+        resetState();
+      });
+      controls.appendChild(reset);
+      wrap.appendChild(controls);
+    }
+
+    render();
+    return wrap;
+  }
+
+  function buildSunnahItemDetail(items, actionId) {
     var detail = document.createElement("div");
     detail.className = "sunnah-item-detail hidden";
     items.forEach(function (entry, idx) {
@@ -605,6 +744,10 @@
       source.className = "hadith-source";
       source.textContent = "Source: " + entry.source;
       detail.appendChild(source);
+
+      if (entry.tasbih) {
+        detail.appendChild(buildTasbihCounter(actionId + "-" + idx, entry.tasbih));
+      }
     });
     return detail;
   }
@@ -646,7 +789,7 @@
     wrap.appendChild(item);
 
     if (action.items && action.items.length) {
-      var detail = buildSunnahItemDetail(action.items);
+      var detail = buildSunnahItemDetail(action.items, action.id);
       if (sunnahItemExpandState[action.id]) detail.classList.remove("hidden");
       wrap.appendChild(detail);
     }

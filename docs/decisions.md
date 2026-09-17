@@ -2,6 +2,18 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — Real tap-to-count tasbih counter added under every dhikr item
+
+Added a reusable tasbih counter component (`buildTasbihCounter` in `js/app.js`, new `.tasbih-counter` styles in `css/style.css`) that renders directly under any Routine dhikr entry that has a `tasbih` config. Two modes:
+- **Phases** — for dhikr with a real fixed repeat count (e.g. SubhanAllah/Alhamdulillah/Allahu Akbar x33 after salah, and the Fatimah tasbih 33/33/34 before sleep). Tapping the circle advances the count with a filling progress ring; on hitting the target it auto-advances to the next phrase, and shows "✓ Completed" with a "Start again" option once all phases are done.
+- **Free** — for dhikr recited once but which people often repeat personally (Allahumma antas-salam, Ayat al-Kursi, morning/evening dhikr, the last two ayat of Al-Baqarah). Just taps up with a reset link, no fixed target.
+
+Also gave "Tasbih before sleep" (previously just a bare toggle with no content) its actual citation: Sahih al-Bukhari 5362, narrated by Ali ibn Abi Talib — the Prophet ﷺ taught Fatimah to say SubhanAllah 33x, Alhamdulillah 33x, Allahu Akbar 34x before sleeping instead of asking for a servant. Verified the exact Arabic, translation, and count split by reading the live sunnah.com page directly (WebFetch to sunnah.com is blocked/403, so used the in-app browser tool instead) rather than trusting a search snippet.
+
+Storage: `nc_tasbih_counts` in localStorage, keyed by `<actionId>-<entryIndex>` so the same shared `AFTER_SALAH_DHIKR_ITEMS` array used by all 5 prayers gets an independent counter per prayer (Fajr's tally doesn't affect Dhuhr's). Counters reset automatically each new day, same pattern as the rest of the daily logs. Added `navigator.vibrate()` on tap (feature-detected, wrapped in try/catch, silently no-ops where unsupported) as a small "real counter" touch.
+
+Tested: full 33/33/33 and 33/33/34 phase-advance and completion flow, reset, reload persistence, per-prayer key isolation (Fajr vs Dhuhr independent), freeform mode, zero regressions across Akhlaq/Home/Hadith/Duas, zero real console errors (only a benign "vibrate blocked" warning from synthetic test clicks lacking a real user gesture — not present on actual taps).
+
 ## 2026-09-16 — Ruku badge moved onto the Arabic text itself
 
 Follow-up to the ruku feature: the ruku number was initially only mentioned inside the English "meaning" caption below the Arabic, which wasn't prominent enough. Moved it to its own small badge ("Ruku N") directly above the Arabic block, right-aligned to match the RTL flow — same visual treatment across all three Ayat al-Kursi instances (Ruku 35) and Al-Baqarah 285–286 (Ruku 41). The daily Quran verse already showed ruku next to its Surah:Ayah reference directly above the Arabic, so that one was already correct.
