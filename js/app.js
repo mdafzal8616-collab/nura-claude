@@ -457,7 +457,7 @@
     { id: "morning-adhkar", title: "Morning Adhkar", actions: [
       { id: "ma-ayatkursi", name: "Ayat al-Kursi", items: AYATKURSI_ITEMS },
       { id: "ma-dhikr", name: "Morning dhikr (Asbahna...)", items: MORNING_DHIKR_ITEMS },
-      { id: "ma-quran", name: "Read a portion of Qur'an" }
+      { id: "ma-quran", name: "Read a portion of Qur'an", link: { subtab: "quran", label: "Open Quran" } }
     ]},
     { id: "ishraq-duha", title: "Ishraq / Duha", actions: [
       { id: "id-ishraq", name: "Pray Ishraq after sunrise" },
@@ -785,6 +785,16 @@
       item.appendChild(expandBtn);
     }
 
+    if (action.link && action.link.subtab) {
+      var linkBtn = document.createElement("button");
+      linkBtn.className = "sunnah-item-expand-btn";
+      linkBtn.textContent = action.link.label || "Open";
+      linkBtn.addEventListener("click", function () {
+        switchSunnahSubtab(action.link.subtab);
+      });
+      item.appendChild(linkBtn);
+    }
+
     item.appendChild(toggle);
     wrap.appendChild(item);
 
@@ -862,14 +872,23 @@
     });
   }
 
+  function switchSunnahSubtab(subtabId) {
+    var buttons = document.querySelectorAll("#sunnah-subtabs .subtab");
+    var targetPanel = document.getElementById("sunnah-panel-" + subtabId);
+    if (!targetPanel) return;
+    buttons.forEach(function (b) {
+      b.classList.toggle("active", b.dataset.subtab === subtabId);
+    });
+    document.querySelectorAll(".sunnah-panel").forEach(function (p) { p.classList.add("hidden"); });
+    targetPanel.classList.remove("hidden");
+    targetPanel.scrollIntoView({ block: "start" });
+  }
+
   function initSunnahSubtabs() {
     var buttons = document.querySelectorAll("#sunnah-subtabs .subtab");
     buttons.forEach(function (btn) {
       btn.addEventListener("click", function () {
-        buttons.forEach(function (b) { b.classList.remove("active"); });
-        btn.classList.add("active");
-        document.querySelectorAll(".sunnah-panel").forEach(function (p) { p.classList.add("hidden"); });
-        document.getElementById("sunnah-panel-" + btn.dataset.subtab).classList.remove("hidden");
+        switchSunnahSubtab(btn.dataset.subtab);
       });
     });
   }

@@ -2,6 +2,12 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — "Read a portion of Qur'an" now links directly to the Quran tab
+
+That Morning Adhkar item ("ma-quran") was a bare toggle with no way to actually go read anything. Added a generic `action.link = { subtab, label }` config (`buildSunnahItem` in `js/app.js`) that renders an "Open Quran" button next to it; tapping it switches Sunnah to the Quran subtab via a new shared `switchSunnahSubtab()` function (factored out of the existing subtab click handler, so both paths stay in sync) and scrolls it into view. Generic by design — any future Routine/Akhlaq item can link to any subtab the same way.
+
+Tested: button switches to the Quran panel and back correctly, normal subtab bar clicks still work unaffected, no console errors.
+
 ## 2026-09-17 — Real tap-to-count tasbih counter added under every dhikr item
 
 Added a reusable tasbih counter component (`buildTasbihCounter` in `js/app.js`, new `.tasbih-counter` styles in `css/style.css`) that renders directly under any Routine dhikr entry that has a `tasbih` config. Two modes:
