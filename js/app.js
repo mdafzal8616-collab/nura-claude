@@ -1270,6 +1270,7 @@
   }
 
   function initPriorityUI() {
+    document.getElementById("duniya-tool-back").addEventListener("click", function () { setActiveView("duniya"); });
     document.getElementById("checkin-completed-btn").addEventListener("click", function () { submitAccountability("completed"); });
     document.getElementById("checkin-partly-btn").addEventListener("click", function () { submitAccountability("partial"); });
     document.getElementById("checkin-notyet-btn").addEventListener("click", function () { submitAccountability("not-yet"); });
@@ -3494,7 +3495,8 @@
     document.querySelectorAll(".nav-btn[data-nav]").forEach(function (btn) {
       btn.classList.toggle("active", btn.dataset.nav === navHighlight);
     });
-    if (name === "home") renderHome();
+    if (name === "home") { mountPriorityCard("priority-card-home-slot"); renderHome(); }
+    if (name === "duniya-tool") { mountPriorityCard("priority-card-duniya-slot"); renderTodaysPriority(); }
     if (name === "sunnah") { renderRoutine(); renderAkhlaq(); renderVerseOfDay(); renderHadithList(); renderDuaCategories(); }
     if (name === "chat") renderChatOptions();
     if (name === "vault") renderVaultRoot();
@@ -3568,6 +3570,19 @@
     { id: "growth", icon: "🌱", title: "Personal Growth", sub: "One practical exercise, not advice.", route: "view", view: "duniya-growth" }
   ];
 
+  function mountPriorityCard(slotId) {
+    var card = document.getElementById("priority-card-el");
+    var slot = document.getElementById(slotId);
+    if (!card || !slot) return;
+    if (card.parentElement !== slot) {
+      if (slotId === "priority-card-home-slot") {
+        slot.parentNode.insertBefore(card, slot.nextSibling);
+      } else {
+        slot.appendChild(card);
+      }
+    }
+  }
+
   function startDuniyaQuickAction(stepView) {
     var current = getCurrentPriority();
     if (current) {
@@ -3576,7 +3591,7 @@
       focusState.linkedPriorityId = null;
     }
     pickerStep = { view: stepView, bodyPart: null };
-    setActiveView("home");
+    setActiveView("duniya-tool");
   }
 
   function renderDuniyaToday() {
@@ -3843,14 +3858,214 @@
   function getSkillGoal() { return readJSON("nc_duniya_skill_goal", null); }
   function saveSkillGoal(g) { writeJSON("nc_duniya_skill_goal", g); }
 
+  // ---- Career Skills lesson library ----
+  // LEARN -> PRACTICE -> DO -> REFLECT, not READ -> READ -> READ.
+  // "How to Talk to People" gets the full rich treatment as the flagship
+  // lesson; every other lesson uses the same reusable template (why /
+  // explanation / steps / practice / challenge / reflection) so nothing
+  // is a dead "OK"-only screen, without padding every lesson to the same
+  // length. More lessons can be added to any category later.
+
+  var CAREER_SKILLS = [
+    { key: "communication", label: "Communication", lessons: [
+      {
+        key: "talk-to-people", title: "How to Talk to People",
+        why: "Good communication is not about talking more. It's about starting clearly, listening, asking good questions, and making the other person comfortable.",
+        explanation: "Most people overthink starting a conversation. A short, simple opener is almost always enough — the real skill is in what you do after that.",
+        steps: [
+          "Start simple: “Hi, how are you?” / “How do you know everyone here?” / “What are you working on?” / “How was your day?” — avoid complicated or personal openers.",
+          "Use Ask → Listen → Follow-up: build your next question from their answer. (“What are you studying?” → “Computer science.” → “Oh nice, what made you choose that?”)",
+          "Don't turn it into an interview. BAD: “Where are you from? What do you study? How old are you? What do you do?” one after another. GOOD: one question, really listen, then one natural follow-up from their actual answer.",
+          "Body language: look at the person naturally, keep shoulders relaxed, don't check your phone, don't interrupt, speak clearly, smile when it fits.",
+          "Stuck for what to ask? Use F.O.R.D. — Family, Occupation/Studies, Recreation/Interests, Dreams/Goals — but let it feel like curiosity, not a checklist."
+        ],
+        practice: "Next time someone answers a question, resist the urge to ask your next prepared question — ask something that reacts to what they just said instead.",
+        challenge: "Start one 2-minute conversation with someone — a classmate, coworker, shopkeeper, friend, relative, or gym member."
+      },
+      { key: "active-listening", title: "Active Listening",
+        why: "People can tell within seconds whether you're actually listening or just waiting to talk.",
+        explanation: "Active listening means your next sentence is built from what the other person just said, not from what you'd already planned to say.",
+        steps: ["Don't plan your reply while they're still talking.", "Repeat back the key point in your own words before responding.", "Ask one genuine follow-up question about what they said.", "Notice tone and body language, not just words."],
+        practice: "In your next conversation, before replying, silently repeat their last sentence in your head first.",
+        challenge: "In one conversation today, respond to at least two things by repeating them back in your own words first." },
+      { key: "speaking-clearly", title: "Speaking Clearly",
+        why: "Being understood the first time saves everyone's time and makes you sound more confident.",
+        explanation: "Clear speech is usually about slowing down and cutting filler, not about a bigger vocabulary.",
+        steps: ["Slow down — most people speak faster than they think when nervous.", "Cut filler words like ‘um’ and ‘like’ by pausing instead.", "Say one idea per sentence.", "End sentences clearly instead of trailing off."],
+        practice: "Record 30 seconds of yourself explaining something simple, then listen back once.",
+        challenge: "In your next conversation, deliberately pause instead of saying ‘um’ at least three times." },
+      { key: "better-questions", title: "Asking Better Questions",
+        why: "The quality of a conversation usually comes down to the quality of the questions, not the answers.",
+        explanation: "Closed questions (yes/no) end conversations. Open questions keep them going.",
+        steps: ["Prefer ‘What’ and ‘How’ questions over yes/no ones.", "Ask about specifics, not generalities (‘What part of it?’ not just ‘How was it?’).", "Follow up on the most interesting part of their answer, not the first thing you thought of.", "Leave space — don't fill every pause yourself."],
+        practice: "Turn one yes/no question you'd normally ask into an open one before asking it.",
+        challenge: "In one conversation today, ask at least two open-ended follow-up questions." },
+      { key: "public-speaking", title: "Public Speaking Basics",
+        why: "Most fear around public speaking comes from not having a simple structure to rely on.",
+        explanation: "You don't need to memorize a script — you need 3 clear points and a calm pace.",
+        steps: ["Open with why this matters to the audience, not a long introduction.", "Stick to 3 main points, no more.", "Pause after key points instead of rushing on.", "Look at a few friendly faces in the room, not the floor or ceiling.", "Close by repeating your main point in one sentence."],
+        practice: "Explain one topic out loud for 60 seconds using exactly 3 points, timed.",
+        challenge: "Speak up with one clear point in a group setting today — a class, meeting, or group chat voice note." },
+      { key: "difficult-conversations", title: "Difficult Conversations",
+        why: "Avoiding a hard conversation usually makes the problem bigger, not smaller.",
+        explanation: "Difficult conversations go better when you separate the person from the problem and stay specific.",
+        steps: ["State the specific issue, not a general complaint (‘This deadline was missed’ not ‘You're always late’).", "Say how it affected you or the situation, briefly.", "Ask their side before concluding anything.", "Agree on one concrete next step before ending."],
+        practice: "Write down the one specific sentence you'd open a hard conversation with — before you actually have it.",
+        challenge: "If something is bothering you, say the first honest sentence of that conversation to the person today — even if the rest waits." }
+    ]},
+    { key: "professional", label: "Professional Skills", lessons: [
+      { key: "time-management", title: "Time Management",
+        why: "Most time problems are planning problems, not effort problems.",
+        explanation: "Deciding what NOT to do today matters more than trying to fit everything in.",
+        steps: ["Pick your top 1-3 priorities before the day starts, not during it.", "Do the hardest task first, while your energy is highest.", "Block time for a task instead of leaving it 'somewhere today'.", "Say no to, or postpone, anything that isn't a priority."],
+        practice: "Before you start work today, write your top priority on paper first.",
+        challenge: "Do your single hardest task today before you check your phone." },
+      { key: "problem-solving", title: "Problem Solving",
+        why: "Most 'stuck' moments are really just an undefined problem, not an unsolvable one.",
+        explanation: "Clearly naming the actual problem usually reveals the next step.",
+        steps: ["Write the problem down in one specific sentence.", "List what's actually in your control right now.", "Pick the smallest next action, not the whole solution.", "Do that one action before reconsidering the whole problem."],
+        practice: "Take something vaguely bothering you and write it as one specific sentence.",
+        challenge: "Pick one real problem you're avoiding and do the smallest next step on it today." },
+      { key: "teamwork", title: "Teamwork",
+        why: "Most team friction comes from unclear expectations, not personality clashes.",
+        explanation: "Good teammates make their own work visible and ask before assuming.",
+        steps: ["State clearly what you're working on and by when.", "Ask instead of assuming when something's unclear.", "Give credit specifically, not generically.", "Flag a blocker early, not after it's already a problem."],
+        practice: "Tell one teammate exactly what you're doing today, unprompted.",
+        challenge: "Proactively update someone on your progress today, before they have to ask." },
+      { key: "leadership-basics", title: "Leadership Basics",
+        why: "Leadership isn't a title — it's taking responsibility before you're asked to.",
+        explanation: "The simplest form of leadership is doing the unglamorous thing that needs doing.",
+        steps: ["Notice what needs doing that no one's claimed.", "Take ownership of one small thing without being asked.", "Give one specific, useful piece of feedback.", "Follow through on what you said you'd do."],
+        practice: "Notice one small task today that's nobody's job and just do it.",
+        challenge: "Take ownership of one thing today that wasn't officially assigned to you." },
+      { key: "decision-making", title: "Decision Making",
+        why: "Indecision often costs more than picking an imperfect option.",
+        explanation: "Most everyday decisions don't need to be perfect — they need to be made.",
+        steps: ["Set a time limit for the decision.", "List only the 2-3 options that actually matter.", "Ask: what's the real cost of being wrong here?", "Decide, then stop reopening it."],
+        practice: "Pick one small decision you've been putting off and set yourself 5 minutes to decide.",
+        challenge: "Make one pending decision today instead of leaving it open." }
+    ]},
+    { key: "job", label: "Job Skills", lessons: [
+      { key: "resume-basics", title: "Resume Basics",
+        why: "A resume's job is to get you an interview, not to list everything you've ever done.",
+        explanation: "Specific, measurable lines beat vague descriptions every time.",
+        steps: ["Lead each line with what you did, using an action verb.", "Add a number or result where possible.", "Cut anything irrelevant to the role you want.", "Keep it to one page if you're early in your career."],
+        practice: "Rewrite one line of your resume to include a specific number or result.",
+        challenge: "Rewrite three bullet points on your resume to be more specific today." },
+      { key: "interview-basics", title: "Interview Basics",
+        why: "Most interviews are lost to vague answers, not to a lack of qualification.",
+        explanation: "Specific stories beat general claims — interviewers remember examples, not adjectives.",
+        steps: ["Prepare 2-3 real stories using: Situation, Task, Action, Result.", "Answer the actual question asked, not a rehearsed speech.", "Prepare 2 genuine questions to ask them.", "Practice saying your stories out loud, not just in your head."],
+        practice: "Turn one line from your resume into a 30-second Situation-Task-Action-Result story.",
+        challenge: "Say one of your interview stories out loud, from start to finish, today." },
+      { key: "networking", title: "Networking",
+        why: "Networking is just staying in genuine touch with people — not asking strangers for favors.",
+        explanation: "The best networking looks like helping first and reconnecting naturally.",
+        steps: ["Reach out with a specific, genuine reason, not just 'let's connect'.", "Offer something before asking for something, if you can.", "Follow up after a helpful conversation with a short thank-you.", "Keep in touch occasionally, not only when you need something."],
+        practice: "Think of one person you haven't spoken to in a while and draft a short message to them.",
+        challenge: "Send that message to one real contact today." },
+      { key: "professional-email", title: "Professional Email",
+        why: "A clear email gets a faster, better response than a long one.",
+        explanation: "State the ask in the first two lines — don't bury it in a big story.",
+        steps: ["Use a specific subject line, not 'Hi' or 'Question'.", "State your ask or point in the first two sentences.", "Keep paragraphs short.", "End with a clear, specific next step."],
+        practice: "Rewrite the subject line of your next email to be specific.",
+        challenge: "Send one email today that states your ask in the first two sentences." },
+      { key: "workplace-communication", title: "Workplace Communication",
+        why: "Most workplace confusion comes from assuming instead of confirming.",
+        explanation: "Confirming understanding out loud prevents most misunderstandings before they start.",
+        steps: ["Repeat back instructions in your own words to confirm.", "Communicate delays as soon as you know, not at the deadline.", "Put important decisions in writing, briefly.", "Match your tone to the channel — chat isn't email isn't a meeting."],
+        practice: "Next time you get an instruction, repeat it back in your own words before starting.",
+        challenge: "Confirm one instruction or task today by repeating it back before you begin." }
+    ]},
+    { key: "learning", label: "Learning Skills", lessons: [
+      { key: "learn-faster", title: "Learn Faster",
+        why: "How you study matters more than how long you study.",
+        explanation: "Actively recalling information beats re-reading it almost every time.",
+        steps: ["After reading a section, close it and try to explain it from memory.", "Space repetition out over days instead of cramming once.", "Teach the idea to someone else, even out loud to yourself.", "Test yourself before you feel ready."],
+        practice: "Pick something you studied recently and try to explain it out loud without looking.",
+        challenge: "Study one topic today using recall (close the book, explain it) instead of just re-reading." },
+      { key: "better-notes", title: "Take Better Notes",
+        why: "Notes you never review are just typing practice.",
+        explanation: "Good notes are built to be reviewed later, not just written once.",
+        steps: ["Write in your own words, not verbatim.", "Summarize each section in one line at the top.", "Leave space to add questions or connections later.", "Review notes within 24 hours, briefly."],
+        practice: "Take your last set of notes and add a one-line summary to the top.",
+        challenge: "Review one page of old notes today and add anything you now understand better." },
+      { key: "deep-work", title: "Deep Work",
+        why: "A distracted hour produces far less than 25 minutes of real focus.",
+        explanation: "Deep work needs a clear task, a time limit, and removed distractions — all three, not just one.",
+        steps: ["Pick one specific task, not 'work on project'.", "Set a timer for a fixed block.", "Remove your phone from the room, not just silence it.", "Take a real break when the timer ends."],
+        practice: "Pick your next task and write the one specific outcome you want from this session.",
+        challenge: "Do one real 25-minute deep work block today, phone out of the room." },
+      { key: "remember", title: "Remember What You Learn",
+        why: "Most forgetting happens because information is never revisited, not because it was too hard.",
+        explanation: "A few short reviews over time beat one long review.",
+        steps: ["Review new information within a day of learning it.", "Review again after a few days, then a week.", "Connect new information to something you already know.", "Write a one-line summary in your own words."],
+        practice: "Pick one thing you learned this week and write a one-line summary from memory.",
+        challenge: "Review one thing you learned earlier this week today, without looking it up first." }
+    ]}
+  ];
+
+  function findCareerLesson(catKey, lessonKey) {
+    var cat = CAREER_SKILLS.find(function (c) { return c.key === catKey; });
+    if (!cat) return null;
+    var lesson = cat.lessons.find(function (l) { return l.key === lessonKey; });
+    return lesson ? { cat: cat, lesson: lesson } : null;
+  }
+
+  function getCareerProgress() { return readJSON("nc_duniya_career_progress", {}); }
+  function saveCareerProgress(p) { writeJSON("nc_duniya_career_progress", p); }
+
   function renderDuniyaCareer() {
     var content = document.getElementById("duniya-career-content");
     content.innerHTML = "";
+
+    var h2 = document.createElement("h2");
+    h2.textContent = "Career Skills";
+    content.appendChild(h2);
+    var sub = document.createElement("p");
+    sub.className = "muted-line";
+    sub.style.marginBottom = "14px";
+    sub.textContent = "Short, practical lessons — learn, practice, do.";
+    content.appendChild(sub);
+
+    var progress = getCareerProgress();
+    CAREER_SKILLS.forEach(function (cat) {
+      var catTitle = document.createElement("p");
+      catTitle.className = "picker-step-title";
+      catTitle.textContent = cat.label;
+      content.appendChild(catTitle);
+      var list = document.createElement("div");
+      list.className = "dua-list";
+      list.style.marginBottom = "16px";
+      cat.lessons.forEach(function (lesson) {
+        var row = document.createElement("button");
+        row.className = "dua-list-item";
+        var done = progress[cat.key + ":" + lesson.key];
+        row.innerHTML = '<span class="dua-list-title">' + lesson.title + '</span>' + (done ? '<span class="dua-list-fav">✓</span>' : '');
+        row.addEventListener("click", function () { openCareerLesson(cat.key, lesson.key); });
+        list.appendChild(row);
+      });
+      content.appendChild(list);
+    });
+
+    var divider = document.createElement("div");
+    divider.className = "sunnah-item-divider";
+    content.appendChild(divider);
+
+    var goalTitle = document.createElement("p");
+    goalTitle.className = "picker-step-title";
+    goalTitle.textContent = "My Skill Goal";
+    content.appendChild(goalTitle);
+    renderSkillGoalArea(content);
+  }
+
+  function renderSkillGoalArea(content) {
     var goal = getSkillGoal();
     if (!goal) {
-      var title = document.createElement("h2");
-      title.textContent = "What do you want to improve?";
-      content.appendChild(title);
+      var label = document.createElement("p");
+      label.className = "muted-line";
+      label.textContent = "Track daily action on one skill area of your own.";
+      content.appendChild(label);
       var grid = document.createElement("div");
       grid.className = "preset-plan-grid";
       DUNIYA_SKILL_AREAS.forEach(function (area) {
@@ -3861,30 +4076,11 @@
         grid.appendChild(btn);
       });
       content.appendChild(grid);
-      var customRow = document.createElement("div");
-      customRow.className = "priority-custom-row";
-      var input = document.createElement("input");
-      input.type = "text";
-      input.className = "text-input";
-      input.placeholder = "Something else...";
-      var btn2 = document.createElement("button");
-      btn2.className = "btn btn-primary";
-      btn2.textContent = "Pick";
-      btn2.addEventListener("click", function () {
-        if (input.value.trim()) renderSkillGoalForm(input.value.trim());
-      });
-      customRow.appendChild(input);
-      customRow.appendChild(btn2);
-      content.appendChild(customRow);
       return;
     }
-
-    var h2 = document.createElement("h2");
-    h2.textContent = goal.area;
-    content.appendChild(h2);
     var goalLine = document.createElement("p");
     goalLine.className = "muted-line";
-    goalLine.textContent = "Goal: " + goal.goal;
+    goalLine.textContent = goal.area + ": " + goal.goal;
     content.appendChild(goalLine);
     var todayDone = (goal.log || {})[todayKey()];
     var actionBtn = document.createElement("button");
@@ -3930,6 +4126,154 @@
       renderDuniyaCareer();
     });
     content.appendChild(saveBtn);
+    var backBtn = document.createElement("button");
+    backBtn.className = "priority-change-link";
+    backBtn.textContent = "← Back";
+    backBtn.addEventListener("click", renderDuniyaCareer);
+    content.appendChild(backBtn);
+  }
+
+  function openCareerLesson(catKey, lessonKey) {
+    var found = findCareerLesson(catKey, lessonKey);
+    if (!found) return;
+    var lesson = found.lesson, cat = found.cat;
+    var content = document.getElementById("duniya-career-content");
+    content.innerHTML = "";
+
+    var backBtn = document.createElement("button");
+    backBtn.className = "picker-step-back";
+    backBtn.textContent = "← Career Skills";
+    backBtn.addEventListener("click", renderDuniyaCareer);
+    content.appendChild(backBtn);
+
+    var title = document.createElement("h2");
+    title.textContent = lesson.title;
+    content.appendChild(title);
+
+    var why = document.createElement("p");
+    why.className = "priority-why";
+    why.textContent = lesson.why;
+    content.appendChild(why);
+
+    var expl = document.createElement("p");
+    expl.className = "hadith-text";
+    expl.textContent = lesson.explanation;
+    content.appendChild(expl);
+
+    var stepsTitle = document.createElement("p");
+    stepsTitle.className = "picker-step-title";
+    stepsTitle.textContent = "Practical steps";
+    content.appendChild(stepsTitle);
+    var stepsList = document.createElement("ul");
+    stepsList.className = "fitness-warmup-list";
+    lesson.steps.forEach(function (s) {
+      var li = document.createElement("li");
+      li.textContent = s;
+      stepsList.appendChild(li);
+    });
+    content.appendChild(stepsList);
+
+    var practiceTitle = document.createElement("p");
+    practiceTitle.className = "picker-step-title";
+    practiceTitle.textContent = "Mini practice";
+    content.appendChild(practiceTitle);
+    var practiceP = document.createElement("p");
+    practiceP.className = "hadith-explain";
+    practiceP.textContent = lesson.practice;
+    content.appendChild(practiceP);
+
+    var progress = getCareerProgress();
+    var key = catKey + ":" + lessonKey;
+    var entry = progress[key];
+
+    var challengeTitle = document.createElement("p");
+    challengeTitle.className = "picker-step-title";
+    challengeTitle.textContent = "TODAY'S CHALLENGE";
+    content.appendChild(challengeTitle);
+    var challengeP = document.createElement("p");
+    challengeP.className = "hadith-text";
+    challengeP.textContent = lesson.challenge;
+    content.appendChild(challengeP);
+
+    if (!entry || !entry.started) {
+      var startBtn = document.createElement("button");
+      startBtn.className = "btn btn-primary btn-full";
+      startBtn.textContent = "Start Challenge";
+      startBtn.addEventListener("click", function () {
+        progress[key] = { started: true, done: false };
+        saveCareerProgress(progress);
+        openCareerLesson(catKey, lessonKey);
+      });
+      content.appendChild(startBtn);
+    } else if (!entry.done) {
+      var doneBtn = document.createElement("button");
+      doneBtn.className = "btn btn-primary btn-full";
+      doneBtn.textContent = "I Did It";
+      doneBtn.addEventListener("click", function () {
+        entry.done = true;
+        entry.completedDate = todayKey();
+        saveCareerProgress(progress);
+        openCareerLesson(catKey, lessonKey);
+      });
+      content.appendChild(doneBtn);
+    } else if (!entry.difficulty) {
+      var howLabel = document.createElement("p");
+      howLabel.className = "muted-line";
+      howLabel.textContent = "How did it go?";
+      content.appendChild(howLabel);
+      var moodRow = document.createElement("div");
+      moodRow.className = "priority-checkin-buttons";
+      [["Easy", "🙂"], ["Okay", "😐"], ["Difficult", "😬"]].forEach(function (m) {
+        var btn = document.createElement("button");
+        btn.className = "action-btn";
+        btn.textContent = m[1] + " " + m[0];
+        btn.addEventListener("click", function () {
+          entry.difficulty = m[0];
+          saveCareerProgress(progress);
+          openCareerLesson(catKey, lessonKey);
+        });
+        moodRow.appendChild(btn);
+      });
+      content.appendChild(moodRow);
+    } else {
+      var doneText = document.createElement("p");
+      doneText.className = "priority-done-text";
+      doneText.textContent = "Completed ✓ (" + entry.difficulty + ")";
+      content.appendChild(doneText);
+      if (!entry.reflection) {
+        var reflLabel = document.createElement("p");
+        reflLabel.className = "muted-line";
+        reflLabel.textContent = "What was difficult? (optional)";
+        content.appendChild(reflLabel);
+        var reflInput = document.createElement("input");
+        reflInput.type = "text";
+        reflInput.className = "text-input";
+        content.appendChild(reflInput);
+        var saveReflBtn = document.createElement("button");
+        saveReflBtn.className = "btn btn-outline btn-full";
+        saveReflBtn.textContent = "Save reflection";
+        saveReflBtn.addEventListener("click", function () {
+          entry.reflection = reflInput.value.trim();
+          saveCareerProgress(progress);
+          openCareerLesson(catKey, lessonKey);
+        });
+        content.appendChild(saveReflBtn);
+      } else {
+        var reflShown = document.createElement("p");
+        reflShown.className = "muted-line";
+        reflShown.textContent = "Reflection: " + entry.reflection;
+        content.appendChild(reflShown);
+      }
+      var restartBtn = document.createElement("button");
+      restartBtn.className = "priority-change-link";
+      restartBtn.textContent = "Do this challenge again";
+      restartBtn.addEventListener("click", function () {
+        progress[key] = { started: true, done: false };
+        saveCareerProgress(progress);
+        openCareerLesson(catKey, lessonKey);
+      });
+      content.appendChild(restartBtn);
+    }
   }
 
   function initDuniyaCareer() {
