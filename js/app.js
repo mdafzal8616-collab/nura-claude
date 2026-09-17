@@ -3507,6 +3507,7 @@
     if (name === "duniya-career") renderDuniyaCareer();
     if (name === "duniya-money") renderDuniyaMoney();
     if (name === "duniya-growth") renderDuniyaGrowth();
+    if (name === "duniya-plan") renderDuniyaPlan();
   }
 
   function initNav() {
@@ -3645,7 +3646,7 @@
     var planBtn = document.createElement("button");
     planBtn.className = "preset-plan-chip";
     planBtn.textContent = "Plan My Day";
-    planBtn.addEventListener("click", function () { setActiveView("duniya-productivity"); });
+    planBtn.addEventListener("click", function () { setActiveView("duniya-plan"); });
     grid.appendChild(planBtn);
     var resetBtn = document.createElement("button");
     resetBtn.className = "preset-plan-chip";
@@ -4410,6 +4411,551 @@
     document.getElementById("duniya-growth-back").addEventListener("click", function () { setActiveView("duniya"); });
   }
 
+  // ---------- PLAN MY DAY ----------
+  // A real, deterministic day-scheduling engine (locked/fixed activities,
+  // gap detection, priority-ordered flexible placement, conflict
+  // detection) — no AI, no chat, no generated advice anywhere in this
+  // flow. USER DECIDES -> NURA ORGANIZES -> USER FOLLOWS.
+
+  var PLAN_DUNYA_CATEGORIES = ["College", "School", "Studies", "Career", "Work", "Tuition", "Fitness", "Gym", "Family", "Personal", "Errands", "Rest", "Meals", "Sleep", "Other"];
+  var PLAN_DEEN_CATEGORIES = ["Salah", "Quran", "Dhikr", "Dua", "Islamic learning", "Sunnah habit", "Other deen activity"];
+  var PLAN_SUNNAH_ITEMS = [
+    { key: "morning-adhkar", label: "Morning Adhkar", minutes: 10, anchor: "after-fajr" },
+    { key: "evening-adhkar", label: "Evening Adhkar", minutes: 10, anchor: "after-asr" },
+    { key: "quran-reading", label: "Quran reading", minutes: 15, anchor: "after-fajr" },
+    { key: "dua-waking", label: "Dua after waking", minutes: 5, anchor: "after-fajr" },
+    { key: "dhikr", label: "Dhikr", minutes: 10, anchor: "any" },
+    { key: "islamic-learning", label: "Short Islamic learning", minutes: 15, anchor: "any" },
+    { key: "before-sleep", label: "Before-sleep routine", minutes: 15, anchor: "end-of-day" }
+  ];
+
+  function getPlanActivities() { return readJSON("nc_plan_activities_" + todayKey(), []); }
+  function savePlanActivities(list) { writeJSON("nc_plan_activities_" + todayKey(), list); }
+  function getPlanSettings() { return readJSON("nc_plan_settings", { dayStart: "06:00", dayEnd: "23:00", sunnahEnabled: {} }); }
+  function savePlanSettings(s) { writeJSON("nc_plan_settings", s); }
+  function getPlanBuilt() { return readJSON("nc_plan_built_" + todayKey(), null); }
+  function savePlanBuilt(result) { writeJSON("nc_plan_built_" + todayKey(), result); }
+
+  function planTimeToMinutes(hhmm) {
+    var p = hhmm.split(":");
+    return Number(p[0]) * 60 + Number(p[1]);
+  }
+  function planMinutesToClock(mins) {
+    mins = ((Math.round(mins) % 1440) + 1440) % 1440;
+    var h = Math.floor(mins / 60), m = mins % 60;
+    var period = h >= 12 ? "PM" : "AM";
+    var h12 = h % 12; if (h12 === 0) h12 = 12;
+    return h12 + ":" + String(m).padStart(2, "0") + " " + period;
+  }
+
+  function computePlanSchedule(activities, settings, prayerTimings, fromMin) {
+    var dayStartMin = planTimeToMinutes(settings.dayStart);
+    var dayEndMin = planTimeToMinutes(settings.dayEnd);
+    var lowerBound = fromMin != null ? Math.max(fromMin, dayStartMin) : dayStartMin;
+
+    var locked = [];
+    activities.filter(function (a) { return a.mode === "fixed" && a.startTime && a.status !== "skipped"; }).forEach(function (a) {
+      var s = planTimeToMinutes(a.startTime);
+      var e = a.endTime ? planTimeToMinutes(a.endTime) : s + (Number(a.durationMinutes) || 60);
+      var prep = Number(a.prepMinutes) || 0;
+      var travel = Number(a.travelMinutes) || 0;
+      if (travel > 0) locked.push({ startMin: s - prep - travel, endMin: s - prep, label: "Leave for " + a.name, kind: "travel", refId: a.id + "-travel" });
+      if (prep > 0) locked.push({ startMin: s - prep, endMin: s, label: "Get ready for " + a.name, kind: "prep", refId: a.id + "-prep" });
+      locked.push({ startMin: s, endMin: e, label: a.name, kind: "fixed", refId: a.id, activity: a });
+    });
+
+    if (prayerTimings) {
+      PRAYER_ORDER.forEach(function (name) {
+        var t = prayerTimings[name];
+        if (!t) return;
+        var s = planTimeToMinutes(t);
+        locked.push({ startMin: s, endMin: s + 15, label: name, kind: "prayer", refId: "prayer-" + name });
+      });
+    }
+
+    var conflicts = [];
+    for (var i = 0; i < locked.length; i++) {
+      for (var j = i + 1; j < locked.length; j++) {
+        var A = locked[i], B = locked[j];
+        var bothMeaningful = (A.kind === "fixed" || A.kind === "prayer") && (B.kind === "fixed" || B.kind === "prayer");
+        if (bothMeaningful && A.startMin < B.endMin && B.startMin < A.endMin) {
+          conflicts.push({ labelA: A.label, labelB: B.label, overlapMinutes: Math.min(A.endMin, B.endMin) - Math.max(A.startMin, B.startMin), isPrayer: A.kind === "prayer" || B.kind === "prayer" });
+        }
+      }
+    }
+
+    var merged = [];
+    locked.slice().sort(function (a, b) { return a.startMin - b.startMin; }).forEach(function (b) {
+      var start = Math.max(b.startMin, lowerBound), end = Math.min(b.endMin, dayEndMin);
+      if (end <= start) return;
+      if (!merged.length || start > merged[merged.length - 1].end) merged.push({ start: start, end: end });
+      else merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, end);
+    });
+    var gaps = [];
+    var cursor = lowerBound;
+    merged.forEach(function (m) {
+      if (m.start > cursor) gaps.push({ start: cursor, end: m.start });
+      cursor = Math.max(cursor, m.end);
+    });
+    if (cursor < dayEndMin) gaps.push({ start: cursor, end: dayEndMin });
+
+    var flexItems = activities.filter(function (a) { return a.mode === "flexible" && a.status !== "done" && a.status !== "skipped"; }).map(function (a) {
+      return { id: a.id, label: a.name, minutes: Number(a.durationMinutes) || 30, priority: a.priority || "medium", kind: "flexible", activity: a, anchorAfter: null };
+    });
+    (settings.sunnahEnabled ? Object.keys(settings.sunnahEnabled) : []).forEach(function (key) {
+      if (!settings.sunnahEnabled[key]) return;
+      var def = PLAN_SUNNAH_ITEMS.find(function (s) { return s.key === key; });
+      if (!def) return;
+      var anchorMin = null;
+      if (def.anchor === "after-fajr" && prayerTimings && prayerTimings.Fajr) anchorMin = planTimeToMinutes(prayerTimings.Fajr) + 15;
+      if (def.anchor === "after-asr" && prayerTimings && prayerTimings.Asr) anchorMin = planTimeToMinutes(prayerTimings.Asr) + 15;
+      if (def.anchor === "end-of-day") anchorMin = dayEndMin - 60;
+      flexItems.push({ id: "sunnah-" + def.key, label: def.label, minutes: def.minutes, priority: "high", kind: "sunnah", anchorAfter: anchorMin });
+    });
+
+    var priorityRank = { high: 0, medium: 1, low: 2 };
+    flexItems.sort(function (a, b) {
+      if (a.anchorAfter !== null && b.anchorAfter !== null) return a.anchorAfter - b.anchorAfter;
+      if (a.anchorAfter !== null) return -1;
+      if (b.anchorAfter !== null) return 1;
+      return priorityRank[a.priority] - priorityRank[b.priority];
+    });
+
+    var placed = [];
+    var unfit = [];
+    var BREAK_MIN = 10;
+    flexItems.forEach(function (item) {
+      var chosenIdx = -1, chosenStart = 0;
+      for (var g = 0; g < gaps.length; g++) {
+        var usableStart = Math.max(gaps[g].start, item.anchorAfter || gaps[g].start);
+        if (gaps[g].end - usableStart >= item.minutes) { chosenIdx = g; chosenStart = usableStart; break; }
+      }
+      if (chosenIdx === -1) { unfit.push(item); return; }
+      var start = chosenStart, end = start + item.minutes;
+      placed.push({ startMin: start, endMin: end, label: item.label, kind: item.kind, refId: item.id, activity: item.activity });
+      var gap = gaps[chosenIdx];
+      var remainderStart = (gap.end - end >= BREAK_MIN) ? end + BREAK_MIN : end;
+      var newGaps = [];
+      if (start > gap.start) newGaps.push({ start: gap.start, end: start });
+      if (remainderStart < gap.end) newGaps.push({ start: remainderStart, end: gap.end });
+      gaps.splice.apply(gaps, [chosenIdx, 1].concat(newGaps));
+    });
+
+    var timeline = [];
+    locked.forEach(function (b) { if (b.endMin > lowerBound) timeline.push(b); });
+    placed.forEach(function (b) { timeline.push(b); });
+    gaps.forEach(function (g) { if (g.end - g.start >= 10) timeline.push({ startMin: g.start, endMin: g.end, label: "Free Time", kind: "free" }); });
+    timeline.sort(function (a, b) { return a.startMin - b.startMin; });
+
+    return { timeline: timeline, conflicts: conflicts, unfit: unfit };
+  }
+
+  function runBuildMyDay() {
+    var activities = getPlanActivities();
+    var settings = getPlanSettings();
+    var prayerSettings = getPrayerSettings();
+    var proceed = function (timings) {
+      var result = computePlanSchedule(activities, settings, timings, null);
+      savePlanBuilt(result);
+      renderDuniyaPlan();
+    };
+    if (prayerSettings) {
+      fetchPrayerTimesForToday().then(proceed).catch(function () { proceed(null); });
+    } else {
+      proceed(null);
+    }
+  }
+
+  function adjustRemainingDay() {
+    var built = getPlanBuilt();
+    if (!built) return;
+    var activities = getPlanActivities();
+    var settings = getPlanSettings();
+    var nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+    var prayerSettings = getPrayerSettings();
+    var proceed = function (timings) {
+      var result = computePlanSchedule(activities, settings, timings, nowMin);
+      // keep already-past locked/placed entries from the old timeline so the day's history isn't erased
+      var past = built.timeline.filter(function (e) { return e.endMin <= nowMin; });
+      result.timeline = past.concat(result.timeline);
+      savePlanBuilt(result);
+      renderDuniyaPlan();
+      showToast("Remaining day adjusted");
+    };
+    if (prayerSettings) {
+      fetchPrayerTimesForToday().then(proceed).catch(function () { proceed(null); });
+    } else {
+      proceed(null);
+    }
+  }
+
+  function setPlanActivityStatus(activityId, status) {
+    var activities = getPlanActivities();
+    activities.forEach(function (a) { if (a.id === activityId) a.status = status; });
+    savePlanActivities(activities);
+    var built = getPlanBuilt();
+    if (built) {
+      built.timeline.forEach(function (e) { if (e.refId === activityId) e.status = status; });
+      savePlanBuilt(built);
+    }
+    renderDuniyaPlan();
+  }
+
+  function renderPlanProgress(container, timeline) {
+    var trackable = timeline.filter(function (e) { return e.kind === "fixed" || e.kind === "flexible" || e.kind === "sunnah" || e.kind === "prayer"; });
+    var done = trackable.filter(function (e) {
+      if (e.kind === "prayer") return false;
+      var a = getPlanActivities().find(function (x) { return x.id === e.refId; });
+      return a && a.status === "done";
+    });
+    var total = trackable.filter(function (e) { return e.kind !== "prayer"; }).length;
+    var pct = total ? Math.round((done.length / total) * 100) : 0;
+
+    var deenTotal = 0, deenDone = 0, dunyaTotal = 0, dunyaDone = 0;
+    trackable.forEach(function (e) {
+      if (e.kind === "prayer") return;
+      var isDeen = e.kind === "sunnah" || (e.activity && e.activity.category === "deen");
+      var a = getPlanActivities().find(function (x) { return x.id === e.refId; });
+      var isDone = a && a.status === "done";
+      if (isDeen) { deenTotal++; if (isDone) deenDone++; } else { dunyaTotal++; if (isDone) dunyaDone++; }
+    });
+
+    var wrap = document.createElement("div");
+    var track = document.createElement("div");
+    track.className = "plan-progress-track";
+    var fill = document.createElement("div");
+    fill.className = "plan-progress-fill";
+    fill.style.width = pct + "%";
+    track.appendChild(fill);
+    wrap.appendChild(track);
+    var line = document.createElement("p");
+    line.className = "muted-line";
+    line.textContent = pct + "% — " + done.length + " of " + total + " activities completed";
+    wrap.appendChild(line);
+
+    var tiles = document.createElement("div");
+    tiles.className = "plan-progress-summary";
+    tiles.innerHTML =
+      '<div class="plan-progress-tile"><span class="big">' + deenDone + "/" + deenTotal + '</span><span class="lbl">DEEN</span></div>' +
+      '<div class="plan-progress-tile"><span class="big">' + dunyaDone + "/" + dunyaTotal + '</span><span class="lbl">DUNYA</span></div>';
+    wrap.appendChild(tiles);
+    container.appendChild(wrap);
+  }
+
+  function renderPlanTimelineItem(entry) {
+    var item = document.createElement("div");
+    item.className = "plan-timeline-item";
+
+    var dot = document.createElement("div");
+    var isDeen = entry.kind === "prayer" || entry.kind === "sunnah" || (entry.activity && entry.activity.category === "deen");
+    dot.className = "plan-timeline-dot" + (isDeen ? " deen" : "") + (entry.kind === "free" ? " free" : "");
+    item.appendChild(dot);
+
+    if (entry.kind === "free") {
+      var freeBody = document.createElement("div");
+      freeBody.className = "plan-timeline-free";
+      freeBody.textContent = planMinutesToClock(entry.startMin) + " – " + planMinutesToClock(entry.endMin) + " · Free Time (" + (entry.endMin - entry.startMin) + " min) — study, rest, Quran, walk, or prepare for what's next.";
+      item.appendChild(freeBody);
+      return item;
+    }
+
+    var body = document.createElement("div");
+    var activity = entry.refId ? getPlanActivities().find(function (a) { return a.id === entry.refId; }) : null;
+    var status = activity ? activity.status : (entry.kind === "prayer" ? null : "pending");
+    body.className = "plan-timeline-body" + (status === "done" ? " done" : "");
+
+    var time = document.createElement("p");
+    time.className = "plan-timeline-time";
+    time.textContent = entry.endMin - entry.startMin > 1 ? (planMinutesToClock(entry.startMin) + " – " + planMinutesToClock(entry.endMin)) : planMinutesToClock(entry.startMin);
+    body.appendChild(time);
+
+    var name = document.createElement("p");
+    name.className = "plan-timeline-name" + (status === "done" ? " done" : "");
+    name.textContent = entry.label;
+    body.appendChild(name);
+
+    if (entry.kind === "fixed" || entry.kind === "flexible" || entry.kind === "sunnah") {
+      var meta = document.createElement("p");
+      meta.className = "plan-timeline-meta";
+      meta.textContent = (entry.kind === "sunnah" ? "Sunnah" : (entry.kind === "fixed" ? "Fixed" : "Flexible")) + (status === "skipped" ? " · Skipped" : "") + (status === "delayed" ? " · Delayed" : "");
+      body.appendChild(meta);
+    }
+
+    if (entry.refId && status !== "done" && status !== "skipped" && (entry.kind === "fixed" || entry.kind === "flexible" || entry.kind === "sunnah")) {
+      var actions = document.createElement("div");
+      actions.className = "plan-timeline-actions";
+      if (entry.activity && entry.activity.category === "Studies" || (entry.activity && entry.activity.type === "study")) {
+        var startBtn = document.createElement("button");
+        startBtn.className = "action-btn primary";
+        startBtn.textContent = "Start";
+        startBtn.addEventListener("click", function () {
+          startAdhocFocus(entry.label, entry.endMin - entry.startMin);
+          setActiveView("home");
+        });
+        actions.appendChild(startBtn);
+      }
+      var doneBtn = document.createElement("button");
+      doneBtn.className = "action-btn primary";
+      doneBtn.textContent = "Done";
+      doneBtn.addEventListener("click", function () { setPlanActivityStatus(entry.refId, "done"); });
+      actions.appendChild(doneBtn);
+      var skipBtn = document.createElement("button");
+      skipBtn.className = "action-btn warn";
+      skipBtn.textContent = "Skip";
+      skipBtn.addEventListener("click", function () { setPlanActivityStatus(entry.refId, "skipped"); });
+      actions.appendChild(skipBtn);
+      if (entry.kind !== "sunnah") {
+        var delayBtn = document.createElement("button");
+        delayBtn.className = "action-btn";
+        delayBtn.textContent = "Delay";
+        delayBtn.addEventListener("click", function () { setPlanActivityStatus(entry.refId, "delayed"); adjustRemainingDay(); });
+        actions.appendChild(delayBtn);
+      }
+      body.appendChild(actions);
+    }
+
+    item.appendChild(body);
+    return item;
+  }
+
+  function renderPlanTimelineView(content, built) {
+    renderPlanProgress(content, built.timeline);
+
+    if (built.conflicts && built.conflicts.length) {
+      built.conflicts.forEach(function (c) {
+        var banner = document.createElement("div");
+        banner.className = "plan-conflict-banner";
+        banner.textContent = "⚠️ " + c.labelA + " overlaps " + c.labelB + " by " + c.overlapMinutes + " minutes.";
+        content.appendChild(banner);
+      });
+    }
+    if (built.unfit && built.unfit.length) {
+      var unfitBox = document.createElement("div");
+      unfitBox.className = "plan-unfit-list";
+      unfitBox.innerHTML = "<strong>Couldn't fit today:</strong><br>" + built.unfit.map(function (u) { return "• " + u.label + " (" + u.minutes + " min)"; }).join("<br>");
+      content.appendChild(unfitBox);
+    }
+
+    var timelineWrap = document.createElement("div");
+    timelineWrap.className = "plan-timeline";
+    built.timeline.forEach(function (entry) { timelineWrap.appendChild(renderPlanTimelineItem(entry)); });
+    content.appendChild(timelineWrap);
+
+    var adjustBtn = document.createElement("button");
+    adjustBtn.className = "btn btn-outline btn-full";
+    adjustBtn.textContent = "Adjust Remaining Day";
+    adjustBtn.addEventListener("click", adjustRemainingDay);
+    content.appendChild(adjustBtn);
+
+    var editBtn = document.createElement("button");
+    editBtn.className = "priority-change-link";
+    editBtn.textContent = "Edit activities / rebuild";
+    editBtn.addEventListener("click", function () { savePlanBuilt(null); renderDuniyaPlan(); });
+    content.appendChild(editBtn);
+  }
+
+  function renderPlanSetupView(content) {
+    var activities = getPlanActivities();
+    var settings = getPlanSettings();
+
+    var h2 = document.createElement("h2");
+    h2.textContent = "Today's Activities";
+    content.appendChild(h2);
+    var sub = document.createElement("p");
+    sub.className = "muted-line";
+    sub.style.marginBottom = "14px";
+    sub.textContent = "You decide what matters today — NURA only organizes it into a schedule.";
+    content.appendChild(sub);
+
+    if (!activities.length) {
+      var empty = document.createElement("p");
+      empty.className = "muted-line";
+      empty.textContent = "No activities added yet.";
+      content.appendChild(empty);
+    } else {
+      activities.forEach(function (a) {
+        var row = document.createElement("div");
+        row.className = "duniya-goal-item";
+        var info = document.createElement("span");
+        info.className = "name";
+        info.textContent = a.name + " — " + (a.mode === "fixed" ? (a.startTime + (a.endTime ? " to " + a.endTime : "")) : (a.durationMinutes + " min, flexible"));
+        var del = document.createElement("button");
+        del.className = "action-btn warn";
+        del.textContent = "Remove";
+        del.addEventListener("click", function () {
+          savePlanActivities(getPlanActivities().filter(function (x) { return x.id !== a.id; }));
+          renderDuniyaPlan();
+        });
+        row.appendChild(info);
+        row.appendChild(del);
+        content.appendChild(row);
+      });
+    }
+
+    var formTitle = document.createElement("p");
+    formTitle.className = "picker-step-title";
+    formTitle.style.marginTop = "14px";
+    formTitle.textContent = "Add an activity";
+    content.appendChild(formTitle);
+
+    var nameInput = document.createElement("input");
+    nameInput.type = "text"; nameInput.className = "text-input"; nameInput.placeholder = "Activity name (e.g. Gym)";
+    content.appendChild(nameInput);
+
+    var catLabel = document.createElement("p");
+    catLabel.className = "plan-form-label";
+    catLabel.textContent = "Category";
+    content.appendChild(catLabel);
+    var catSelect = document.createElement("select");
+    catSelect.className = "text-input";
+    var dunyaGroup = document.createElement("optgroup"); dunyaGroup.label = "Dunya";
+    PLAN_DUNYA_CATEGORIES.forEach(function (c) { var o = document.createElement("option"); o.value = "dunya:" + c; o.textContent = c; dunyaGroup.appendChild(o); });
+    var deenGroup = document.createElement("optgroup"); deenGroup.label = "Deen";
+    PLAN_DEEN_CATEGORIES.forEach(function (c) { var o = document.createElement("option"); o.value = "deen:" + c; o.textContent = c; deenGroup.appendChild(o); });
+    catSelect.appendChild(dunyaGroup); catSelect.appendChild(deenGroup);
+    content.appendChild(catSelect);
+
+    var modeLabel = document.createElement("p");
+    modeLabel.className = "plan-form-label";
+    modeLabel.style.marginTop = "10px";
+    modeLabel.textContent = "Fixed or Flexible";
+    content.appendChild(modeLabel);
+    var modeRow = document.createElement("div");
+    modeRow.className = "priority-checkin-buttons";
+    var mode = "fixed";
+    var fixedBtn = document.createElement("button"); fixedBtn.type = "button"; fixedBtn.className = "action-btn primary"; fixedBtn.textContent = "Fixed";
+    var flexBtn = document.createElement("button"); flexBtn.type = "button"; flexBtn.className = "action-btn"; flexBtn.textContent = "Flexible";
+    modeRow.appendChild(fixedBtn); modeRow.appendChild(flexBtn);
+    content.appendChild(modeRow);
+
+    var fixedFields = document.createElement("div");
+    var startInput = document.createElement("input"); startInput.type = "time"; startInput.className = "text-input";
+    var endInput = document.createElement("input"); endInput.type = "time"; endInput.className = "text-input";
+    var fixedRow = document.createElement("div"); fixedRow.className = "plan-form-row";
+    var startWrap = document.createElement("div"); startWrap.style.flex = "1"; startWrap.innerHTML = '<p class="plan-form-label">Start</p>'; startWrap.appendChild(startInput);
+    var endWrap = document.createElement("div"); endWrap.style.flex = "1"; endWrap.innerHTML = '<p class="plan-form-label">End</p>'; endWrap.appendChild(endInput);
+    fixedRow.appendChild(startWrap); fixedRow.appendChild(endWrap);
+    fixedFields.appendChild(fixedRow);
+    content.appendChild(fixedFields);
+
+    var flexFields = document.createElement("div");
+    flexFields.classList.add("hidden");
+    var durInput = document.createElement("input"); durInput.type = "number"; durInput.className = "text-input"; durInput.placeholder = "Duration (minutes)";
+    flexFields.appendChild(durInput);
+    var priorityLabel = document.createElement("p"); priorityLabel.className = "plan-form-label"; priorityLabel.textContent = "Priority";
+    flexFields.appendChild(priorityLabel);
+    var priorityRow = document.createElement("div"); priorityRow.className = "priority-checkin-buttons";
+    var priority = "medium";
+    ["high", "medium", "low"].forEach(function (p) {
+      var b = document.createElement("button"); b.type = "button"; b.className = "action-btn" + (p === "medium" ? " primary" : ""); b.textContent = p.charAt(0).toUpperCase() + p.slice(1);
+      b.addEventListener("click", function () {
+        priority = p;
+        Array.from(priorityRow.children).forEach(function (c) { c.classList.remove("primary"); });
+        b.classList.add("primary");
+      });
+      priorityRow.appendChild(b);
+    });
+    flexFields.appendChild(priorityRow);
+    content.appendChild(flexFields);
+
+    fixedBtn.addEventListener("click", function () { mode = "fixed"; fixedBtn.classList.add("primary"); flexBtn.classList.remove("primary"); fixedFields.classList.remove("hidden"); flexFields.classList.add("hidden"); });
+    flexBtn.addEventListener("click", function () { mode = "flexible"; flexBtn.classList.add("primary"); fixedBtn.classList.remove("primary"); flexFields.classList.remove("hidden"); fixedFields.classList.add("hidden"); });
+
+    var extraLabel = document.createElement("p");
+    extraLabel.className = "plan-form-label";
+    extraLabel.style.marginTop = "10px";
+    extraLabel.textContent = "Optional: prep + travel time (minutes)";
+    content.appendChild(extraLabel);
+    var extraRow = document.createElement("div"); extraRow.className = "plan-form-row";
+    var prepInput = document.createElement("input"); prepInput.type = "number"; prepInput.className = "text-input"; prepInput.placeholder = "Prep";
+    var travelInput = document.createElement("input"); travelInput.type = "number"; travelInput.className = "text-input"; travelInput.placeholder = "Travel";
+    extraRow.appendChild(prepInput); extraRow.appendChild(travelInput);
+    content.appendChild(extraRow);
+
+    var addBtn = document.createElement("button");
+    addBtn.className = "btn btn-primary btn-full";
+    addBtn.textContent = "Add Activity";
+    addBtn.addEventListener("click", function () {
+      var name = nameInput.value.trim();
+      if (!name) { showToast("Enter an activity name"); return; }
+      var catParts = catSelect.value.split(":");
+      var entry = {
+        id: uid("plan"), name: name, category: catParts[0], type: catParts[1],
+        mode: mode, status: "pending",
+        startTime: mode === "fixed" ? startInput.value : null,
+        endTime: mode === "fixed" ? endInput.value : null,
+        durationMinutes: mode === "flexible" ? (Number(durInput.value) || 30) : null,
+        priority: mode === "flexible" ? priority : null,
+        prepMinutes: Number(prepInput.value) || 0,
+        travelMinutes: Number(travelInput.value) || 0
+      };
+      if (mode === "fixed" && !entry.startTime) { showToast("Enter a start time for a fixed activity"); return; }
+      var list = getPlanActivities();
+      list.push(entry);
+      savePlanActivities(list);
+      renderDuniyaPlan();
+    });
+    content.appendChild(addBtn);
+
+    var sunnahTitle = document.createElement("p");
+    sunnahTitle.className = "picker-step-title";
+    sunnahTitle.style.marginTop = "18px";
+    sunnahTitle.textContent = "Include Sunnah habits";
+    content.appendChild(sunnahTitle);
+    PLAN_SUNNAH_ITEMS.forEach(function (s) {
+      var label = document.createElement("label");
+      label.className = "checklist-item";
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = !!(settings.sunnahEnabled && settings.sunnahEnabled[s.key]);
+      cb.addEventListener("change", function () {
+        var st = getPlanSettings();
+        st.sunnahEnabled = st.sunnahEnabled || {};
+        st.sunnahEnabled[s.key] = cb.checked;
+        savePlanSettings(st);
+      });
+      var span = document.createElement("span");
+      span.textContent = s.label;
+      label.appendChild(cb); label.appendChild(span);
+      content.appendChild(label);
+    });
+
+    var windowTitle = document.createElement("p");
+    windowTitle.className = "picker-step-title";
+    windowTitle.style.marginTop = "14px";
+    windowTitle.textContent = "Day window";
+    content.appendChild(windowTitle);
+    var windowRow = document.createElement("div"); windowRow.className = "plan-form-row";
+    var dayStartInput = document.createElement("input"); dayStartInput.type = "time"; dayStartInput.className = "text-input"; dayStartInput.value = settings.dayStart;
+    var dayEndInput = document.createElement("input"); dayEndInput.type = "time"; dayEndInput.className = "text-input"; dayEndInput.value = settings.dayEnd;
+    dayStartInput.addEventListener("change", function () { var st = getPlanSettings(); st.dayStart = dayStartInput.value; savePlanSettings(st); });
+    dayEndInput.addEventListener("change", function () { var st = getPlanSettings(); st.dayEnd = dayEndInput.value; savePlanSettings(st); });
+    windowRow.appendChild(dayStartInput); windowRow.appendChild(dayEndInput);
+    content.appendChild(windowRow);
+
+    var buildBtn = document.createElement("button");
+    buildBtn.className = "btn btn-primary btn-full";
+    buildBtn.style.marginTop = "16px";
+    buildBtn.textContent = "Build My Day";
+    buildBtn.addEventListener("click", function () {
+      if (!getPlanActivities().length) { showToast("Add at least one activity first"); return; }
+      runBuildMyDay();
+    });
+    content.appendChild(buildBtn);
+  }
+
+  function renderDuniyaPlan() {
+    var content = document.getElementById("duniya-plan-content");
+    content.innerHTML = "";
+    var built = getPlanBuilt();
+    if (built) renderPlanTimelineView(content, built);
+    else renderPlanSetupView(content);
+  }
+
+  function initDuniyaPlan() {
+    document.getElementById("duniya-plan-back").addEventListener("click", function () { setActiveView("duniya"); });
+  }
+
   // ---------- INIT ----------
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -4430,6 +4976,7 @@
     initDuniyaCareer();
     initDuniyaMoney();
     initDuniyaGrowth();
+    initDuniyaPlan();
     renderHome();
     renderMore();
   });

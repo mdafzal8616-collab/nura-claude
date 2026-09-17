@@ -592,6 +592,46 @@ html, body {
   margin-bottom: 8px;
 }
 .duniya-goal-item .name { font-size: 13.5px; }
+
+/* PLAN MY DAY */
+.plan-progress-summary { display: flex; gap: 10px; margin-bottom: 14px; }
+.plan-progress-tile { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; text-align: center; }
+.plan-progress-tile .big { font-size: 18px; font-weight: 700; color: var(--mint); display: block; }
+.plan-progress-tile .lbl { font-size: 10.5px; color: var(--muted); }
+.plan-progress-track { background: var(--surface-2); border-radius: 999px; height: 10px; overflow: hidden; margin-bottom: 6px; }
+.plan-progress-fill { background: var(--mint); height: 100%; border-radius: 999px; transition: width 0.3s ease; }
+
+.plan-conflict-banner { background: rgba(192, 57, 43, 0.1); border: 1px solid var(--danger); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; font-size: 12.5px; color: var(--danger); }
+
+.plan-timeline { display: flex; flex-direction: column; }
+.plan-timeline-item { display: flex; gap: 10px; padding-bottom: 16px; position: relative; }
+.plan-timeline-item::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 16px;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+.plan-timeline-item:last-child::before { display: none; }
+.plan-timeline-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--surface-2); border: 2px solid var(--mint); flex-shrink: 0; margin-top: 4px; }
+.plan-timeline-dot.filled { background: var(--mint); }
+.plan-timeline-dot.free { border-color: var(--border); }
+.plan-timeline-dot.deen { border-color: var(--gold); }
+.plan-timeline-body { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.plan-timeline-body.done { opacity: 0.6; }
+.plan-timeline-time { font-size: 11px; color: var(--muted); font-weight: 600; margin-bottom: 2px; }
+.plan-timeline-name { font-size: 14px; font-weight: 600; }
+.plan-timeline-name.done { text-decoration: line-through; }
+.plan-timeline-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.plan-timeline-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.plan-timeline-free { background: none; border: 1px dashed var(--border); border-radius: 12px; padding: 10px 12px; color: var(--muted); font-size: 12.5px; }
+
+.plan-form-row { display: flex; gap: 8px; margin-bottom: 8px; }
+.plan-form-row .text-input { margin-bottom: 0; }
+.plan-form-label { font-size: 11.5px; color: var(--muted); margin: 0 0 4px; }
+.plan-unfit-list { background: rgba(192, 57, 43, 0.08); border: 1px solid var(--danger); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 12.5px; }
 .dua-category-card .cat-count { font-size: 11.5px; color: var(--muted); }
 .dua-category-card.empty .cat-count { color: var(--muted); }
 

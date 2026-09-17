@@ -2,6 +2,22 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — Real Plan My Day: a non-AI scheduling engine
+
+Replaced the placeholder "Plan My Day" button (which just opened the unrelated Top-3-tasks Productivity screen — exactly the wrong, generic behavior the brief called out) with a real, self-contained day-scheduling feature. USER DECIDES → NURA ORGANIZES → USER FOLLOWS — no AI, no chat, no generated advice anywhere in this flow; it's a deterministic algorithm over user-entered data.
+
+**Activity input**: name, category (Dunya or Deen, with the exact sub-categories listed in the brief, or custom), Fixed (start+end time) or Flexible (duration+priority), optional prep/travel minutes.
+
+**Scheduling engine** (`computePlanSchedule`, pure function, no network/AI calls): locks all fixed activities plus real prayer times (reusing the existing Salah/Aladhan integration already built — never invents times), computes free gaps across the day, places flexible activities and any enabled Sunnah habits into those gaps (Sunnah habits get an anchor rule — e.g. Morning Adhkar placed in the first gap after Fajr — everything else placed by priority), detects and clearly reports overlaps between fixed commitments and/or prayer times without silently moving anything, and reports anything that couldn't fit rather than pretending it was scheduled.
+
+**Today Timeline**: Start/Done/Skip/Delay/Edit per activity, not a single one-size-fits-all 25-minute timer — only Study-category activities get a Start-a-focus-session option, matching the brief's "only use a timer when it makes sense" rule.
+
+**Adjust Remaining Day**: tapping Delay (or the dedicated button) re-runs the same scheduling function with a `now` lower bound, only replacing pending flexible activities after the current time — fixed activities and anything already completed stay exactly where they were.
+
+**Progress**: a real percentage plus a Deen/Dunya split, computed from actual activity completion, not fabricated.
+
+Tested the brief's exact acceptance scenario end to end: College (9–2) and Tuition (4–6) entered as fixed, Gym/Study/Lunch as flexible — the engine correctly kept both fixed blocks untouched and placed all three flexible activities into the real morning gap before College, with correctly labeled Free Time for the rest; confirmed zero AI/chat messaging anywhere in the flow; Done/Skip actions update status and the Deen/Dunya progress tiles correctly (verified 1/5 Dunya, 0/0 Deen with a Dunya-only test set); full plan (including completion state) confirmed surviving a page reload; full regression across Home/Sunnah — zero breakage; zero console errors on a fresh tab.
+
 ## 2026-09-17 — Fixed Dunya-opens-in-Home navigation bug; built real Career Skills lesson library
 
 **Root cause of the navigation bug**: last turn, Dunya's Study/Phone/Sleep/Fitness cards were wired to literally call `setActiveView("home")` after setting up the picker state — a deliberate reuse of Home's already-built "Today's Priority" UI rather than duplicating it, but it meant those tools visibly opened Home's screen, breaking the expectation that Dunya tools stay inside Dunya.
