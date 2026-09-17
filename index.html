@@ -257,6 +257,118 @@
     </section>
   </main>
 
+  <!-- DUNIYA -->
+  <main class="view hidden" id="view-duniya" data-view="duniya">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow">Everyday Self-Improvement</p>
+        <h1>Duniya</h1>
+      </div>
+    </header>
+    <p class="home-motivation">Improve one part of your life at a time.</p>
+
+    <section class="card">
+      <div class="card-row"><h2>Today</h2></div>
+      <div id="duniya-today-content"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-row"><h2>Quick Actions</h2></div>
+      <div class="preset-plan-grid" id="duniya-quick-actions"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-row"><h2>Life Areas</h2></div>
+      <div class="duniya-area-grid" id="duniya-area-grid"></div>
+    </section>
+  </main>
+
+  <!-- DUNIYA: HABITS & DISCIPLINE -->
+  <main class="view hidden" id="view-duniya-habits" data-view="duniya-habits">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow"><button class="icon-btn" id="duniya-habits-back">&larr; Duniya</button></p>
+        <h1>Habits &amp; Discipline</h1>
+      </div>
+    </header>
+    <p class="muted-line" style="margin-bottom:14px;">Missed yesterday? Restart today. No streaks, no shame.</p>
+    <section class="card">
+      <div class="habit-list" id="duniya-habit-list"></div>
+      <div class="add-task-row" style="margin-top:10px;">
+        <input type="text" class="text-input" id="duniya-habit-input" placeholder="e.g. Drink water" maxlength="40">
+        <button class="btn btn-primary" id="duniya-habit-add-btn">Add</button>
+      </div>
+    </section>
+  </main>
+
+  <!-- DUNIYA: PRODUCTIVITY -->
+  <main class="view hidden" id="view-duniya-productivity" data-view="duniya-productivity">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow"><button class="icon-btn" id="duniya-productivity-back">&larr; Duniya</button></p>
+        <h1>Productivity</h1>
+      </div>
+    </header>
+    <section class="card">
+      <h2>Top 3 tasks today</h2>
+      <div id="duniya-top3-list"></div>
+    </section>
+    <section class="card">
+      <h2>End-of-day review</h2>
+      <p class="muted-line">One honest note about today.</p>
+      <textarea id="duniya-eod-note" class="text-input reflection-textarea" maxlength="200" rows="3"></textarea>
+      <button class="btn btn-outline btn-full" id="duniya-eod-save-btn">Save</button>
+    </section>
+  </main>
+
+  <!-- DUNIYA: MENTAL WELLBEING -->
+  <main class="view hidden" id="view-duniya-wellbeing" data-view="duniya-wellbeing">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow"><button class="icon-btn" id="duniya-wellbeing-back">&larr; Duniya</button></p>
+        <h1>Mental Wellbeing</h1>
+      </div>
+    </header>
+    <p class="pending-note" style="margin-bottom:14px;">NURA offers grounding support, not medical or mental-health diagnosis. If things feel serious or ongoing, please reach out to a real professional.</p>
+    <div class="chat-options" id="duniya-wellbeing-options"></div>
+    <section class="card hidden" id="duniya-wellbeing-response-card">
+      <div id="duniya-wellbeing-response"></div>
+    </section>
+  </main>
+
+  <!-- DUNIYA: CAREER & SKILLS -->
+  <main class="view hidden" id="view-duniya-career" data-view="duniya-career">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow"><button class="icon-btn" id="duniya-career-back">&larr; Duniya</button></p>
+        <h1>Career &amp; Skills</h1>
+      </div>
+    </header>
+    <section class="card" id="duniya-career-content"></section>
+  </main>
+
+  <!-- DUNIYA: MONEY HABITS -->
+  <main class="view hidden" id="view-duniya-money" data-view="duniya-money">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow"><button class="icon-btn" id="duniya-money-back">&larr; Duniya</button></p>
+        <h1>Money Habits</h1>
+      </div>
+    </header>
+    <section class="card" id="duniya-money-content"></section>
+  </main>
+
+  <!-- DUNIYA: PERSONAL GROWTH -->
+  <main class="view hidden" id="view-duniya-growth" data-view="duniya-growth">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow"><button class="icon-btn" id="duniya-growth-back">&larr; Duniya</button></p>
+        <h1>Personal Growth</h1>
+      </div>
+    </header>
+    <section class="card" id="duniya-growth-content"></section>
+  </main>
+
   <!-- VAULT -->
   <main class="view hidden" id="view-vault" data-view="vault">
     <header class="top-header">
@@ -388,6 +500,12 @@
     </section>
 
     <section class="card">
+      <h2>Hamdard</h2>
+      <p class="muted-line">Your private, encrypted reflection space.</p>
+      <button class="btn btn-outline btn-full" id="open-hamdard-btn">Open Hamdard</button>
+    </section>
+
+    <section class="card">
       <h2>Today's Coins</h2>
       <p class="coins-line"><span id="coins-count">0</span> learning coins</p>
       <p class="pending-note">Redemption, monetary value, and partnerships are undecided — these are a learning tracker only, not currency.</p>
@@ -419,9 +537,9 @@
       <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 4h16v12H7l-3 3z"/></svg>
       <span>AI Chat</span>
     </button>
-    <button class="nav-btn" data-nav="vault" aria-label="Vault">
-      <svg viewBox="0 0 24 24" width="22" height="22"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-      <span>Vault</span>
+    <button class="nav-btn" data-nav="duniya" aria-label="Duniya">
+      <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18a13 13 0 0 1 0-18z"/></svg>
+      <span>Duniya</span>
     </button>
     <button class="nav-btn" data-nav="more" aria-label="More">
       <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>

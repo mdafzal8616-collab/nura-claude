@@ -2,6 +2,26 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — Vault's nav slot repurposed into Duniya (everyday self-improvement hub)
+
+The owner's "Duniya Self-Improvement Section" prompt asked to replace the Vault tab with a new practical/everyday self-improvement hub, distinct from Sunnah's Deen (spiritual) content. This directly touches CLAUDE.md's "Exactly these five [nav items], always" rule and the real, tested, AES-GCM-encrypted Hamdard journal built earlier this session — a high-stakes, largely irreversible-if-wrong change, so it got extra care before any code was touched.
+
+**Decision made without asking** (safe-default reasoning, not a guess): repurpose the nav slot, but never delete real encrypted user data on a guess. Relocated Hamdard's entry point to More (“Hamdard → Open Hamdard”) instead of removing it — the screen, its encryption, and any existing entries are completely untouched, just reached differently. Updated `CLAUDE.md` Section 3 to reflect this is now the authoritative nav (Home/Sunnah/AI Chat/Duniya/More), rather than letting the docs drift from what's actually live.
+
+**Duniya hub**: Today (mirrors whatever priority is active from Home — one shared source of truth, not a duplicate tracker), Quick Actions (Focus Now / Phone-Free Session / Quick Workout / Better Sleep / Plan My Day / Reset My Day), and a 10-card Life Areas grid.
+
+Four of the ten areas (Study & Focus, Phone Control, Sleep, Fitness) **reuse the exact picker flows already built into Home** over the last two turns — tapping the card archives any current priority honestly (logged, not deleted) and jumps straight into the same prep-checklist/duration/etc. flow already tested. No duplicate logic.
+
+The other six are new, and deliberately scoped small per the prompt's own repeated instruction not to over-build each one:
+- **Habits & Discipline** — create a habit, mark completed/missed/restarted per day. No streaks, explicitly no shame language.
+- **Productivity** — top 3 tasks (editable, checkable), "Start One Task" (starts the first unfinished one as a 25-min ad-hoc focus session), a one-line end-of-day note.
+- **Mental Wellbeing** — 5 states (stressed/overwhelmed/wasted day/can't focus/angry), each with a short practical grounding step and a link into the real AI Chat, with an explicit non-diagnostic disclaimer up top.
+- **Career & Skills** — pick an area (or type your own) → one small goal → daily "mark today's action done" tracking.
+- **Money Habits** — a daily Yes/No "avoided an unnecessary purchase" check plus a simple saving-goal note. Explicitly not a banking app.
+- **Personal Growth** — pick a growth area, get one concrete daily exercise (e.g. Confidence → "start one conversation yourself today"), mark done. Practical exercise, not generic advice, matching the prompt's own bad/good example.
+
+Tested: nav relabeled correctly everywhere: bottom nav, active-state highlighting (including on Duniya's sub-pages, which aren't separate nav items), Study routing confirmed jumping straight into Home's real prep checklist, Habits add + all 3 status buttons, Productivity's 3-task list, Career's 6 preset areas, Money's question, Growth's 7 areas, Wellbeing's 5 options — all matching the prompt's content exactly. Hamdard confirmed fully reachable and intact from More. Full regression pass across Sunnah/AI Chat/Home — zero breakage (one apparent "10 chat options" discrepancy during testing turned out to be an unscoped query matching both AI Chat's and Duniya Wellbeing's shared `.chat-option-btn` class, not a real duplication — confirmed correct when scoped to the visible view). Zero console errors on a fresh tab.
+
 ## 2026-09-17 — Practical Action + Real Data Fix: 7-day graph, Phone-Free sessions, Sleep tracking, honest checklists
 
 The owner's "Practical Action + Real Data Fix" prompt flagged several perceived bugs and asked for two brand-new priority kinds (Phone Use, Better Sleep) plus a real 7-day graph. Investigated the two "bug" claims before touching anything:

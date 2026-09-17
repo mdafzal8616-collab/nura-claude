@@ -563,6 +563,35 @@ html, body {
   color: var(--text);
 }
 .dua-category-card .cat-name { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+
+/* DUNIYA */
+.duniya-area-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.duniya-area-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text);
+}
+.duniya-area-icon { font-size: 20px; margin-bottom: 6px; display: block; }
+.duniya-area-title { display: block; font-size: 13.5px; font-weight: 700; margin-bottom: 4px; }
+.duniya-area-sub { display: block; font-size: 11px; color: var(--muted); line-height: 1.4; }
+.duniya-area-progress { display: block; font-size: 10.5px; color: var(--mint); font-weight: 600; margin-top: 6px; }
+
+.duniya-goal-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 13px;
+  margin-bottom: 8px;
+}
+.duniya-goal-item .name { font-size: 13.5px; }
 .dua-category-card .cat-count { font-size: 11.5px; color: var(--muted); }
 .dua-category-card.empty .cat-count { color: var(--muted); }
 

@@ -3448,6 +3448,10 @@
       document.getElementById("modal-name").classList.remove("hidden");
     });
 
+    document.getElementById("open-hamdard-btn").addEventListener("click", function () {
+      setActiveView("vault");
+    });
+
     document.getElementById("export-data-btn").addEventListener("click", function () {
       var data = {};
       for (var i = 0; i < localStorage.length; i++) {
@@ -3486,14 +3490,21 @@
     document.querySelectorAll(".view").forEach(function (v) {
       v.classList.toggle("hidden", v.dataset.view !== name);
     });
+    var navHighlight = name.indexOf("duniya") === 0 ? "duniya" : name;
     document.querySelectorAll(".nav-btn[data-nav]").forEach(function (btn) {
-      btn.classList.toggle("active", btn.dataset.nav === name);
+      btn.classList.toggle("active", btn.dataset.nav === navHighlight);
     });
     if (name === "home") renderHome();
     if (name === "sunnah") { renderRoutine(); renderAkhlaq(); renderVerseOfDay(); renderHadithList(); renderDuaCategories(); }
     if (name === "chat") renderChatOptions();
     if (name === "vault") renderVaultRoot();
     if (name === "more") renderMore();
+    if (name === "duniya") renderDuniya();
+    if (name === "duniya-habits") renderDuniyaHabits();
+    if (name === "duniya-productivity") renderDuniyaProductivity();
+    if (name === "duniya-career") renderDuniyaCareer();
+    if (name === "duniya-money") renderDuniyaMoney();
+    if (name === "duniya-growth") renderDuniyaGrowth();
   }
 
   function initNav() {
@@ -3536,6 +3547,525 @@
     });
   }
 
+  // ---------- DUNIYA (everyday self-improvement hub) ----------
+  // Deen (Sunnah/Quran/Duas) stays separate from Duniya (study, phone,
+  // sleep, fitness, habits, productivity, wellbeing, career, money,
+  // growth) so users know which part of life they're working on, per
+  // the two-worlds distinction in the brief. Study/Phone/Sleep/Fitness
+  // reuse the exact same picker flow already built into Home rather
+  // than duplicating that logic — Duniya just routes into it.
+
+  var DUNIYA_AREAS = [
+    { id: "study", icon: "📚", title: "Study & Focus", sub: "Pick a subject, start a timer.", route: "picker", step: "study-prep" },
+    { id: "phone", icon: "📵", title: "Phone Control", sub: "Name the distraction, take a break from it.", route: "picker", step: "phone-distraction" },
+    { id: "sleep", icon: "🌙", title: "Sleep", sub: "Set a bedtime, track when you wake.", route: "picker", step: "sleep-bedtime" },
+    { id: "fitness", icon: "🏋️", title: "Fitness", sub: "Pick a body part and get moving.", route: "picker", step: "fitness-bodypart" },
+    { id: "habits", icon: "✅", title: "Habits & Discipline", sub: "Build habits without streak pressure.", route: "view", view: "duniya-habits" },
+    { id: "productivity", icon: "📋", title: "Productivity", sub: "Top 3 tasks, one at a time.", route: "view", view: "duniya-productivity" },
+    { id: "wellbeing", icon: "🧘", title: "Mental Wellbeing", sub: "A grounding step when things feel heavy.", route: "view", view: "duniya-wellbeing" },
+    { id: "career", icon: "🎯", title: "Career & Skills", sub: "One small goal, one daily action.", route: "view", view: "duniya-career" },
+    { id: "money", icon: "💰", title: "Money Habits", sub: "A little daily awareness.", route: "view", view: "duniya-money" },
+    { id: "growth", icon: "🌱", title: "Personal Growth", sub: "One practical exercise, not advice.", route: "view", view: "duniya-growth" }
+  ];
+
+  function startDuniyaQuickAction(stepView) {
+    var current = getCurrentPriority();
+    if (current) {
+      appendPriorityLog({ date: current.date, planKey: current.planKey, title: current.title, minutes: current.minutes, status: current.status === "pending" ? "not-yet" : current.status });
+      savePriority(null);
+      focusState.linkedPriorityId = null;
+    }
+    pickerStep = { view: stepView, bodyPart: null };
+    setActiveView("home");
+  }
+
+  function renderDuniyaToday() {
+    var content = document.getElementById("duniya-today-content");
+    var p = getCurrentPriority();
+    content.innerHTML = "";
+    if (!p) {
+      var q = document.createElement("p");
+      q.className = "muted-line";
+      q.textContent = "What do you want to improve today?";
+      content.appendChild(q);
+      return;
+    }
+    var focusLabel = document.createElement("p");
+    focusLabel.className = "salah-next-label";
+    focusLabel.textContent = "Today's focus";
+    content.appendChild(focusLabel);
+    var title = document.createElement("p");
+    title.className = "priority-title";
+    title.style.margin = "0 0 8px";
+    title.textContent = p.title;
+    content.appendChild(title);
+    var pct = computeProgressPercent(p);
+    var progress = document.createElement("p");
+    progress.className = "muted-line";
+    progress.textContent = pct + "% today.";
+    content.appendChild(progress);
+    var contBtn = document.createElement("button");
+    contBtn.className = "btn btn-primary btn-full";
+    contBtn.textContent = "CONTINUE";
+    contBtn.addEventListener("click", function () { setActiveView("home"); });
+    content.appendChild(contBtn);
+  }
+
+  function renderDuniyaQuickActions() {
+    var grid = document.getElementById("duniya-quick-actions");
+    grid.innerHTML = "";
+    var actions = [
+      { label: "Focus Now", step: "study-prep" },
+      { label: "Phone-Free Session", step: "phone-distraction" },
+      { label: "Quick Workout", step: "fitness-bodypart" },
+      { label: "Better Sleep", step: "sleep-bedtime" }
+    ];
+    actions.forEach(function (a) {
+      var btn = document.createElement("button");
+      btn.className = "preset-plan-chip";
+      btn.textContent = a.label;
+      btn.addEventListener("click", function () { startDuniyaQuickAction(a.step); });
+      grid.appendChild(btn);
+    });
+    var planBtn = document.createElement("button");
+    planBtn.className = "preset-plan-chip";
+    planBtn.textContent = "Plan My Day";
+    planBtn.addEventListener("click", function () { setActiveView("duniya-productivity"); });
+    grid.appendChild(planBtn);
+    var resetBtn = document.createElement("button");
+    resetBtn.className = "preset-plan-chip";
+    resetBtn.textContent = "Reset My Day";
+    resetBtn.addEventListener("click", function () {
+      showToast("A missed morning doesn't cancel the rest of today — pick one small thing below.");
+      setActiveView("duniya");
+    });
+    grid.appendChild(resetBtn);
+  }
+
+  function renderDuniyaAreaGrid() {
+    var grid = document.getElementById("duniya-area-grid");
+    grid.innerHTML = "";
+    DUNIYA_AREAS.forEach(function (area) {
+      var btn = document.createElement("button");
+      btn.className = "duniya-area-card";
+      btn.innerHTML =
+        '<span class="duniya-area-icon">' + area.icon + '</span>' +
+        '<span class="duniya-area-title">' + area.title + '</span>' +
+        '<span class="duniya-area-sub">' + area.sub + '</span>';
+      btn.addEventListener("click", function () {
+        if (area.route === "picker") startDuniyaQuickAction(area.step);
+        else setActiveView(area.view);
+      });
+      grid.appendChild(btn);
+    });
+  }
+
+  function renderDuniya() {
+    renderDuniyaToday();
+    renderDuniyaQuickActions();
+    renderDuniyaAreaGrid();
+  }
+
+  // ---- Habits & Discipline ----
+
+  function getHabits() { return readJSON("nc_duniya_habits", []); }
+  function saveHabits(h) { writeJSON("nc_duniya_habits", h); }
+  function getHabitLogToday() {
+    var all = readJSON("nc_duniya_habit_log", {});
+    return all[todayKey()] || {};
+  }
+  function setHabitStatus(habitId, status) {
+    var all = readJSON("nc_duniya_habit_log", {});
+    var today = todayKey();
+    all[today] = all[today] || {};
+    all[today][habitId] = status;
+    writeJSON("nc_duniya_habit_log", all);
+  }
+
+  function renderDuniyaHabits() {
+    var list = document.getElementById("duniya-habit-list");
+    list.innerHTML = "";
+    var habits = getHabits();
+    var log = getHabitLogToday();
+    if (!habits.length) {
+      var empty = document.createElement("p");
+      empty.className = "muted-line";
+      empty.textContent = "No habits yet — add one below.";
+      list.appendChild(empty);
+    }
+    habits.forEach(function (h) {
+      var item = document.createElement("div");
+      item.className = "habit-item";
+      var name = document.createElement("span");
+      name.className = "name";
+      name.textContent = h.name;
+      item.appendChild(name);
+      var status = log[h.id];
+      var actions = document.createElement("div");
+      actions.className = "action-buttons";
+      ["done", "missed", "restarted"].forEach(function (s) {
+        var btn = document.createElement("button");
+        btn.className = "action-btn" + (status === s ? " primary" : "");
+        btn.textContent = s.charAt(0).toUpperCase() + s.slice(1);
+        btn.addEventListener("click", function () { setHabitStatus(h.id, s); renderDuniyaHabits(); });
+        actions.appendChild(btn);
+      });
+      item.appendChild(actions);
+      list.appendChild(item);
+    });
+  }
+
+  function initDuniyaHabits() {
+    document.getElementById("duniya-habits-back").addEventListener("click", function () { setActiveView("duniya"); });
+    document.getElementById("duniya-habit-add-btn").addEventListener("click", function () {
+      var input = document.getElementById("duniya-habit-input");
+      var val = input.value.trim();
+      if (!val) return;
+      var habits = getHabits();
+      habits.push({ id: uid("hab"), name: val });
+      saveHabits(habits);
+      input.value = "";
+      renderDuniyaHabits();
+    });
+  }
+
+  // ---- Productivity ----
+
+  function getTop3() { return readJSON("nc_duniya_top3_" + todayKey(), ["", "", ""]); }
+  function saveTop3(arr) { writeJSON("nc_duniya_top3_" + todayKey(), arr); }
+  function getTop3Done() { return readJSON("nc_duniya_top3_done_" + todayKey(), [false, false, false]); }
+  function saveTop3Done(arr) { writeJSON("nc_duniya_top3_done_" + todayKey(), arr); }
+
+  function renderDuniyaProductivity() {
+    var list = document.getElementById("duniya-top3-list");
+    list.innerHTML = "";
+    var tasks = getTop3();
+    var done = getTop3Done();
+    for (var i = 0; i < 3; i++) {
+      (function (idx) {
+        var row = document.createElement("div");
+        row.className = "duniya-goal-item";
+        var input = document.createElement("input");
+        input.type = "text";
+        input.className = "text-input";
+        input.style.marginBottom = "0";
+        input.placeholder = "Task " + (idx + 1);
+        input.value = tasks[idx] || "";
+        input.addEventListener("change", function () {
+          var t = getTop3();
+          t[idx] = input.value.trim();
+          saveTop3(t);
+        });
+        var check = document.createElement("button");
+        check.className = "action-btn" + (done[idx] ? " primary" : "");
+        check.textContent = done[idx] ? "Done" : "Mark done";
+        check.style.marginLeft = "8px";
+        check.addEventListener("click", function () {
+          var d = getTop3Done();
+          d[idx] = !d[idx];
+          saveTop3Done(d);
+          renderDuniyaProductivity();
+        });
+        row.appendChild(input);
+        row.appendChild(check);
+        list.appendChild(row);
+      })(i);
+    }
+    var startBtn = document.createElement("button");
+    startBtn.className = "btn btn-outline btn-full";
+    startBtn.textContent = "Start One Task";
+    startBtn.addEventListener("click", function () {
+      var t = getTop3();
+      var firstUnfinished = t.findIndex(function (v, idx) { return v && !done[idx]; });
+      if (firstUnfinished === -1) { showToast("Add or finish a task first"); return; }
+      startAdhocFocus(t[firstUnfinished], 25);
+      setActiveView("home");
+    });
+    list.appendChild(startBtn);
+  }
+
+  function initDuniyaProductivity() {
+    document.getElementById("duniya-productivity-back").addEventListener("click", function () { setActiveView("duniya"); });
+    document.getElementById("duniya-eod-save-btn").addEventListener("click", function () {
+      var val = document.getElementById("duniya-eod-note").value.trim();
+      writeJSON("nc_duniya_eod_" + todayKey(), val);
+      showToast("Saved");
+    });
+  }
+
+  // ---- Mental Wellbeing ----
+
+  var DUNIYA_WELLBEING_OPTIONS = [
+    { id: "stressed", label: "I feel stressed", lines: ["Take three slow breaths right now — in for 4, out for 6.", "Name one thing causing it. You don't have to fix it this second, just name it.", "Pick one small next step, even a 5-minute one."] },
+    { id: "overwhelmed", label: "I feel overwhelmed", lines: ["Everything feeling like too much at once is a sign to shrink the list, not push harder.", "Pick just one thing from everything on your mind and do only that.", "The rest can wait until this one is done."] },
+    { id: "wasted-day", label: "I wasted my day", lines: ["The day isn't over yet. What still matters today, even something small?", "One small action now counts more than regret about the rest of the day."] },
+    { id: "cannot-focus", label: "I cannot focus", lines: ["Try a very short session first — 5 minutes, not 25.", "Remove one distraction (phone in another room) before trying again."] },
+    { id: "angry", label: "I am angry", lines: ["Step away from the situation for a moment before responding.", "Slow, deliberate breaths for 30 seconds can lower the intensity.", "Write down what happened before deciding what to do about it."] }
+  ];
+
+  function renderDuniyaWellbeingOptions() {
+    var wrap = document.getElementById("duniya-wellbeing-options");
+    wrap.innerHTML = "";
+    DUNIYA_WELLBEING_OPTIONS.forEach(function (opt) {
+      var btn = document.createElement("button");
+      btn.className = "chat-option-btn";
+      btn.textContent = opt.label;
+      btn.addEventListener("click", function () {
+        var card = document.getElementById("duniya-wellbeing-response-card");
+        var area = document.getElementById("duniya-wellbeing-response");
+        area.innerHTML = "";
+        opt.lines.forEach(function (line) {
+          var p = document.createElement("p");
+          p.className = "chat-response-line";
+          p.textContent = line;
+          area.appendChild(p);
+        });
+        var chatBtn = document.createElement("button");
+        chatBtn.className = "btn btn-outline btn-full";
+        chatBtn.textContent = "Talk to Bhai (AI Chat)";
+        chatBtn.addEventListener("click", function () { setActiveView("chat"); });
+        area.appendChild(chatBtn);
+        card.classList.remove("hidden");
+      });
+      wrap.appendChild(btn);
+    });
+  }
+
+  function initDuniyaWellbeing() {
+    document.getElementById("duniya-wellbeing-back").addEventListener("click", function () { setActiveView("duniya"); });
+    renderDuniyaWellbeingOptions();
+  }
+
+  // ---- Career & Skills ----
+
+  var DUNIYA_SKILL_AREAS = ["Communication", "English", "Coding", "Business", "Study", "Job preparation"];
+
+  function getSkillGoal() { return readJSON("nc_duniya_skill_goal", null); }
+  function saveSkillGoal(g) { writeJSON("nc_duniya_skill_goal", g); }
+
+  function renderDuniyaCareer() {
+    var content = document.getElementById("duniya-career-content");
+    content.innerHTML = "";
+    var goal = getSkillGoal();
+    if (!goal) {
+      var title = document.createElement("h2");
+      title.textContent = "What do you want to improve?";
+      content.appendChild(title);
+      var grid = document.createElement("div");
+      grid.className = "preset-plan-grid";
+      DUNIYA_SKILL_AREAS.forEach(function (area) {
+        var btn = document.createElement("button");
+        btn.className = "preset-plan-chip";
+        btn.textContent = area;
+        btn.addEventListener("click", function () { renderSkillGoalForm(area); });
+        grid.appendChild(btn);
+      });
+      content.appendChild(grid);
+      var customRow = document.createElement("div");
+      customRow.className = "priority-custom-row";
+      var input = document.createElement("input");
+      input.type = "text";
+      input.className = "text-input";
+      input.placeholder = "Something else...";
+      var btn2 = document.createElement("button");
+      btn2.className = "btn btn-primary";
+      btn2.textContent = "Pick";
+      btn2.addEventListener("click", function () {
+        if (input.value.trim()) renderSkillGoalForm(input.value.trim());
+      });
+      customRow.appendChild(input);
+      customRow.appendChild(btn2);
+      content.appendChild(customRow);
+      return;
+    }
+
+    var h2 = document.createElement("h2");
+    h2.textContent = goal.area;
+    content.appendChild(h2);
+    var goalLine = document.createElement("p");
+    goalLine.className = "muted-line";
+    goalLine.textContent = "Goal: " + goal.goal;
+    content.appendChild(goalLine);
+    var todayDone = (goal.log || {})[todayKey()];
+    var actionBtn = document.createElement("button");
+    actionBtn.className = "btn btn-primary btn-full";
+    actionBtn.textContent = todayDone ? "Today's action done ✓" : "Mark today's action done";
+    actionBtn.disabled = !!todayDone;
+    actionBtn.addEventListener("click", function () {
+      goal.log = goal.log || {};
+      goal.log[todayKey()] = true;
+      saveSkillGoal(goal);
+      renderDuniyaCareer();
+    });
+    content.appendChild(actionBtn);
+    var changeBtn = document.createElement("button");
+    changeBtn.className = "priority-change-link";
+    changeBtn.textContent = "Choose a different goal";
+    changeBtn.addEventListener("click", function () { saveSkillGoal(null); renderDuniyaCareer(); });
+    content.appendChild(changeBtn);
+  }
+
+  function renderSkillGoalForm(area) {
+    var content = document.getElementById("duniya-career-content");
+    content.innerHTML = "";
+    var h2 = document.createElement("h2");
+    h2.textContent = area;
+    content.appendChild(h2);
+    var label = document.createElement("p");
+    label.className = "muted-line";
+    label.textContent = "What's one small goal here?";
+    content.appendChild(label);
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "text-input";
+    input.placeholder = "e.g. Practice speaking 10 minutes daily";
+    content.appendChild(input);
+    var saveBtn = document.createElement("button");
+    saveBtn.className = "btn btn-primary btn-full";
+    saveBtn.textContent = "Set goal";
+    saveBtn.addEventListener("click", function () {
+      var val = input.value.trim();
+      if (!val) return;
+      saveSkillGoal({ area: area, goal: val, log: {} });
+      renderDuniyaCareer();
+    });
+    content.appendChild(saveBtn);
+  }
+
+  function initDuniyaCareer() {
+    document.getElementById("duniya-career-back").addEventListener("click", function () { setActiveView("duniya"); });
+  }
+
+  // ---- Money Habits ----
+
+  function getMoneyLogToday() {
+    var all = readJSON("nc_duniya_money_log", {});
+    return all[todayKey()] || { avoided: null, savingGoal: readJSON("nc_duniya_saving_goal", "") };
+  }
+  function saveMoneyLogToday(entry) {
+    var all = readJSON("nc_duniya_money_log", {});
+    all[todayKey()] = entry;
+    writeJSON("nc_duniya_money_log", all);
+  }
+
+  function renderDuniyaMoney() {
+    var content = document.getElementById("duniya-money-content");
+    content.innerHTML = "";
+    var entry = getMoneyLogToday();
+
+    var q = document.createElement("h2");
+    q.textContent = "Did you avoid an unnecessary purchase today?";
+    content.appendChild(q);
+    var btnRow = document.createElement("div");
+    btnRow.className = "priority-checkin-buttons";
+    ["Yes", "No"].forEach(function (label) {
+      var btn = document.createElement("button");
+      btn.className = "action-btn" + (entry.avoided === label ? " primary" : "");
+      btn.textContent = label;
+      btn.addEventListener("click", function () {
+        entry.avoided = label;
+        saveMoneyLogToday(entry);
+        renderDuniyaMoney();
+      });
+      btnRow.appendChild(btn);
+    });
+    content.appendChild(btnRow);
+
+    var savingLabel = document.createElement("p");
+    savingLabel.className = "muted-line";
+    savingLabel.style.marginTop = "16px";
+    savingLabel.textContent = "Saving goal";
+    content.appendChild(savingLabel);
+    var savingInput = document.createElement("input");
+    savingInput.type = "text";
+    savingInput.className = "text-input";
+    savingInput.placeholder = "e.g. Save ₹5,000 this month";
+    savingInput.value = readJSON("nc_duniya_saving_goal", "");
+    savingInput.addEventListener("change", function () {
+      writeJSON("nc_duniya_saving_goal", savingInput.value.trim());
+    });
+    content.appendChild(savingInput);
+  }
+
+  function initDuniyaMoney() {
+    document.getElementById("duniya-money-back").addEventListener("click", function () { setActiveView("duniya"); });
+  }
+
+  // ---- Personal Growth ----
+
+  var DUNIYA_GROWTH_AREAS = [
+    { key: "confidence", label: "Confidence", exercise: "Start one conversation yourself today — don't wait for the other person." },
+    { key: "communication", label: "Communication", exercise: "In your next conversation, ask one real follow-up question instead of just replying." },
+    { key: "discipline", label: "Discipline", exercise: "Do the one task you've been avoiding, for just 10 minutes." },
+    { key: "time", label: "Time Management", exercise: "Write down what you'll do in the next hour before you start it." },
+    { key: "decisions", label: "Decision Making", exercise: "Pick a small pending decision and make it today — don't leave it open." },
+    { key: "reading", label: "Reading", exercise: "Read for 10 minutes, no phone nearby." },
+    { key: "consistency", label: "Consistency", exercise: "Do one thing today exactly the way you did it yesterday — on purpose." }
+  ];
+
+  function renderDuniyaGrowth() {
+    var content = document.getElementById("duniya-growth-content");
+    content.innerHTML = "";
+    var log = readJSON("nc_duniya_growth_log", {});
+    var todayEntry = log[todayKey()];
+
+    if (!todayEntry) {
+      var h2 = document.createElement("h2");
+      h2.textContent = "What do you want to work on?";
+      content.appendChild(h2);
+      var grid = document.createElement("div");
+      grid.className = "preset-plan-grid";
+      DUNIYA_GROWTH_AREAS.forEach(function (g) {
+        var btn = document.createElement("button");
+        btn.className = "preset-plan-chip";
+        btn.textContent = g.label;
+        btn.addEventListener("click", function () {
+          var allLog = readJSON("nc_duniya_growth_log", {});
+          allLog[todayKey()] = { key: g.key, done: false };
+          writeJSON("nc_duniya_growth_log", allLog);
+          renderDuniyaGrowth();
+        });
+        grid.appendChild(btn);
+      });
+      content.appendChild(grid);
+      return;
+    }
+
+    var area = DUNIYA_GROWTH_AREAS.find(function (g) { return g.key === todayEntry.key; });
+    var h2b = document.createElement("h2");
+    h2b.textContent = area.label;
+    content.appendChild(h2b);
+    var exercise = document.createElement("p");
+    exercise.className = "priority-why";
+    exercise.textContent = area.exercise;
+    content.appendChild(exercise);
+    var doneBtn = document.createElement("button");
+    doneBtn.className = "btn btn-primary btn-full";
+    doneBtn.textContent = todayEntry.done ? "Done today ✓" : "Mark done";
+    doneBtn.disabled = todayEntry.done;
+    doneBtn.addEventListener("click", function () {
+      var allLog = readJSON("nc_duniya_growth_log", {});
+      allLog[todayKey()].done = true;
+      writeJSON("nc_duniya_growth_log", allLog);
+      renderDuniyaGrowth();
+    });
+    content.appendChild(doneBtn);
+    var changeBtn = document.createElement("button");
+    changeBtn.className = "priority-change-link";
+    changeBtn.textContent = "Choose a different area";
+    changeBtn.addEventListener("click", function () {
+      var allLog = readJSON("nc_duniya_growth_log", {});
+      delete allLog[todayKey()];
+      writeJSON("nc_duniya_growth_log", allLog);
+      renderDuniyaGrowth();
+    });
+    content.appendChild(changeBtn);
+  }
+
+  function initDuniyaGrowth() {
+    document.getElementById("duniya-growth-back").addEventListener("click", function () { setActiveView("duniya"); });
+  }
+
   // ---------- INIT ----------
 
   document.addEventListener("DOMContentLoaded", function () {
@@ -3550,6 +4080,12 @@
     initVault();
     initShield();
     initMore();
+    initDuniyaHabits();
+    initDuniyaProductivity();
+    initDuniyaWellbeing();
+    initDuniyaCareer();
+    initDuniyaMoney();
+    initDuniyaGrowth();
     renderHome();
     renderMore();
   });

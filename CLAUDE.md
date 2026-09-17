@@ -28,11 +28,12 @@ No guilt machine, fake "truth score," humiliation, invented diagnosis, religious
 
 ## 3. Navigation
 
-**Home / Sunnah / AI Chat / Vault / More.** Exactly these five, always.
+**Home / Sunnah / AI Chat / Duniya / More.** Exactly these five, always. (Changed 2026-09-17: Vault's nav slot was repurposed into **Duniya** — NURA's everyday/practical self-improvement hub (study, phone control, sleep, fitness, habits, productivity, mental wellbeing, career, money habits, personal growth), distinct from Sunnah's Deen content. Hamdard's real, encrypted-journal Vault screen was not deleted — it's still fully intact, just relocated to an entry point inside More instead of the bottom nav.)
 
 - Profile: reachable via header avatar and/or More — not its own tab.
 - Do not restore the old Home/Habits/+/Bhai/Profile structure.
-- "Hamdard" = the private-reflection idea inside Vault, not a repeated tab elsewhere.
+- "Hamdard" = the private-reflection idea, now reached via More → Hamdard, not a bottom-nav tab.
+- Duniya and Sunnah (Deen) should feel connected but distinct — a user should always know which part of life they're improving.
 - No standalone "Reset" tab and no constantly-visible Reset button. A recovery flow may help resume/reschedule; it must never erase missed work or pretend a tap completed it.
 - No creator feed, reels feed, public social network, or endless scroll. NURA should help users leave the app and do real things.
 - Design: clean typography, generous touch targets, labeled icons, strong contrast, accessible sizes. Calm midnight/dark with mint-green accents (and a light evergreen alt) are reference directions, not locked-in. No gender stereotyping. Show loading/empty/error/offline/permission-denied states. Avoid clutter and decorative dashboards.
