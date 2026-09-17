@@ -2,6 +2,25 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — Practical Action + Real Data Fix: 7-day graph, Phone-Free sessions, Sleep tracking, honest checklists
+
+The owner's "Practical Action + Real Data Fix" prompt flagged several perceived bugs and asked for two brand-new priority kinds (Phone Use, Better Sleep) plus a real 7-day graph. Investigated the two "bug" claims before touching anything:
+
+- **"Day 4 is static/fake"** — re-tested `getJourneyDay()` fresh (grepped for every write to `nc_journey_start`: exactly one, guarded to only fire if unset). Backdated the stored start date by 4 real days and reloaded: correctly showed "DAY 5." The math was already correct; the report was very likely from checking it within a single day, where a stable number is the *correct* behavior, not a bug. No code change needed here — verified and left alone rather than "fixing" something that wasn't broken.
+- **"The graph is decorative/fake"** — this one was real, but not in the way implied: there was no multi-day graph at all yet, only the single-value Today's Progress ring from two turns ago. Built the actual missing feature rather than patching something.
+
+**7-day progress graph + Progress Details sheet.** Real data only, sourced from `nc_priority_log` (yesterday and earlier) and the live current-priority state (today, via the same `computeProgressPercent` the ring already used). Days with no priority chosen show "No activity," never a fabricated value. Verified with a genuinely empty account: shows "Complete your first action to start your progress graph," not fake bars. Tapping the graph opens a bottom sheet with today's completed/pending/overall breakdown and the real last-7-days list side by side.
+
+**Phone Use → real "Phone-Free Session."** New `phone` priority kind: distraction picker (Instagram/Reels, YouTube, Gaming, Messaging, Browsing, General scrolling, Other) → Focus Mode step (honest "Open Focus / DND Settings" — opens nothing automatically, just tells the user where to go, since no web API can toggle system DND) → "close the app" confirmation → duration (10/15/30/45/60) → replacement activity (Study/Walk/Exercise/Read Quran/Read a book/Complete a task/Rest/Custom) → reuses the existing timer as a live phone-free countdown. Tested end to end exactly matching the prompt's own 4-step example.
+
+**Better Sleep → real bedtime + wake tracking.** New `sleep` priority kind, deliberately *not* a countdown timer (per the request — no fragile overnight countdown): pick a target bedtime → a 30-minutes-before-bed checklist (phone on charge, dim lights, wudu/wash, stop scrolling, prepare room, set alarm) → "I'M GOING TO SLEEP" saves a timestamp only. Next time Home opens, if unresolved, shows "Good Morning — Are you awake?" → "I'M AWAKE" saves the wake timestamp and computes `wake - sleepStart`. Tested with a backdated 7h55m gap: displayed exactly "7h 55m / 8h target," matching the prompt's own worked example verbatim, always labeled "Estimated sleep duration" / "Sleep window" with an explicit disclaimer that NURA cannot confirm the person was actually asleep the whole time (no wearable/sensor data exists) — never claims certainty. Verified the timestamp survives a full page reload (persistence, since it's just localStorage — same guarantee as everything else in this app).
+
+**Study Focus prep restructured.** Removed the modal-on-Start-click approach from two turns ago (now redundant) in favor of a proper checklist step *during selection*, before the duration picker — matching the prompt's exact flow order: prep checklist → duration → timer. Checkboxes are non-blocking reminders, never gate the Continue button.
+
+**Today's Progress connection.** The ring, the graph, and the details sheet all read from the same underlying state (`nc_priority_current`, `nc_priority_log`, `nc_salah_completions`) — completing any action updates all three immediately, verified live (ring jumped 0→100%, today's graph bar filled, details sheet reflected it, all without a reload).
+
+Tested: full regression across Sunnah/Quran/AI Chat/Vault/More — zero breakage; zero console errors on a fresh tab; every acceptance test from the prompt's own list exercised directly (empty-state graph, live update on completion, tap-to-open details, Study prep checklist, Phone Use step-by-step intervention, Sleep timestamp persistence across reload, wake-time duration math).
+
 ## 2026-09-17 — Home Screen Implementation Update: functional progress ring, Study/Salah/Fitness made real
 
 The owner's follow-up prompt assumed a "3 permanent priority cards" Home layout that doesn't match what's actually built (single priority at a time, chosen from 6 presets). Confirmed with the owner before building: **keep the single-priority picker**, and give Study Focus / Salah Consistency / Fitness Basics this full rich behavior specifically when one of those three is the active priority, rather than restructuring Home around 3 always-visible cards.

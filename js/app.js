@@ -65,6 +65,16 @@
     return Math.max(1, diffDays + 1);
   }
 
+  function getLastNDateKeys(n) {
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      var d = new Date();
+      d.setDate(d.getDate() - i);
+      out.push(todayKey(d));
+    }
+    return out;
+  }
+
   // ---------- MOTIVATIONAL LINE ----------
   // One line, stable for the whole day (picked deterministically from the
   // date), not re-randomized on every render.
@@ -208,13 +218,18 @@
   // no reset-mode, no multi-item checklist.
 
   var PRESET_PLANS = [
-    { key: "study", label: "Study Focus", kind: "study", why: "You chose Study Focus as what matters most today.", actionTitle: "Study for 25 minutes", minutes: 25 },
-    { key: "sleep", label: "Better Sleep", kind: null, why: "You chose Better Sleep as what matters most today.", actionTitle: "Start winding down 30 minutes before bed", minutes: 30 },
-    { key: "phone", label: "Reduce Phone Use", kind: null, why: "You chose Reduce Phone Use as what matters most today.", actionTitle: "Keep your phone away for the next 30 minutes", minutes: 30 },
+    { key: "study", label: "Study Focus", kind: "study", why: "You chose Study Focus as what matters most today.", actionTitle: null, minutes: null },
+    { key: "sleep", label: "Better Sleep", kind: "sleep", why: "You chose Better Sleep as what matters most today.", actionTitle: null, minutes: null },
+    { key: "phone", label: "Reduce Phone Use", kind: "phone", why: "You chose Reduce Phone Use as what matters most today.", actionTitle: null, minutes: null },
     { key: "salah", label: "Salah Consistency", kind: "salah", why: "You chose Salah Consistency as what matters most today.", actionTitle: "Stay on top of today's prayers", minutes: null },
     { key: "fitness", label: "Fitness Basics", kind: "fitness", why: "You chose Fitness Basics as what matters most today.", actionTitle: null, minutes: null },
     { key: "morning", label: "Morning Routine", kind: null, why: "You chose Morning Routine as what matters most today.", actionTitle: "Do your full morning routine", minutes: 15 }
   ];
+
+  var PHONE_DISTRACTIONS = ["Instagram / Reels", "YouTube", "Gaming", "Messaging", "Browsing", "General scrolling", "Other"];
+  var PHONE_REPLACEMENTS = ["Study", "Walk", "Exercise", "Read Quran", "Read a book", "Complete a task", "Rest"];
+  var STUDY_PREP_ITEMS = ["Turn on Do Not Disturb / Focus Mode", "Put distracting apps away", "Keep only your study material ready", "Choose what you are studying"];
+  var SLEEP_PREP_ITEMS = ["Put phone on charge away from bed", "Dim the lights", "Brush / wash / make wudu", "Stop scrolling", "Prepare the room", "Set morning alarm"];
 
   var pendingAdjustmentNote = null;
   var focusPrepShownForPriorityId = null;
@@ -267,6 +282,28 @@
     var bp = FITNESS_BODY_PARTS.find(function (b) { return b.key === bodyPartKey; });
     var plan = PRESET_PLANS.find(function (pl) { return pl.key === "fitness"; });
     var p = { id: uid("pri"), planKey: "fitness", kind: "fitness", title: "Fitness Basics — " + bp.label, why: plan.why, minutes: minutes, bodyPart: bodyPartKey, warmupDone: false, date: todayKey(), status: "pending" };
+    savePriority(p);
+    focusState.linkedPriorityId = null;
+    focusPrepShownForPriorityId = null;
+    return p;
+  }
+
+  function setTodaysPhonePriority(distraction, minutes, replacement) {
+    var plan = PRESET_PLANS.find(function (pl) { return pl.key === "phone"; });
+    var p = { id: uid("pri"), planKey: "phone", kind: "phone", title: "Phone-Free Session — " + replacement, why: plan.why, minutes: minutes, distraction: distraction, replacement: replacement, date: todayKey(), status: "pending" };
+    savePriority(p);
+    focusState.linkedPriorityId = null;
+    focusPrepShownForPriorityId = null;
+    return p;
+  }
+
+  function setTodaysSleepPriority(bedtime) {
+    var plan = PRESET_PLANS.find(function (pl) { return pl.key === "sleep"; });
+    var p = {
+      id: uid("pri"), planKey: "sleep", kind: "sleep", title: "Better Sleep — target " + bedtime, why: plan.why,
+      minutes: null, targetBedtime: bedtime, sleepStart: new Date().toISOString(), wakeTime: null,
+      date: todayKey(), status: "pending"
+    };
     savePriority(p);
     focusState.linkedPriorityId = null;
     focusPrepShownForPriorityId = null;
@@ -330,6 +367,23 @@
 
   var pickerStep = { view: "main", bodyPart: null };
 
+  function buildChecklist(items) {
+    var list = document.createElement("div");
+    list.className = "checklist";
+    items.forEach(function (text, idx) {
+      var label = document.createElement("label");
+      label.className = "checklist-item";
+      var input = document.createElement("input");
+      input.type = "checkbox";
+      var span = document.createElement("span");
+      span.textContent = text;
+      label.appendChild(input);
+      label.appendChild(span);
+      list.appendChild(label);
+    });
+    return list;
+  }
+
   function buildDurationChipPicker(options, onPick) {
     var wrap = document.createElement("div");
     wrap.className = "focus-duration-row";
@@ -384,7 +438,22 @@
     stepEl.classList.remove("hidden");
     addStepBack(stepEl);
 
-    if (pickerStep.view === "study-duration") {
+    if (pickerStep.view === "study-prep") {
+      var pt = document.createElement("p");
+      pt.className = "picker-step-title";
+      pt.textContent = "Prepare to study";
+      stepEl.appendChild(pt);
+      stepEl.appendChild(buildChecklist(STUDY_PREP_ITEMS));
+      var contBtn = document.createElement("button");
+      contBtn.type = "button";
+      contBtn.className = "btn btn-primary btn-full";
+      contBtn.textContent = "Continue";
+      contBtn.addEventListener("click", function () {
+        pickerStep = { view: "study-duration", bodyPart: null };
+        renderPickerStep();
+      });
+      stepEl.appendChild(contBtn);
+    } else if (pickerStep.view === "study-duration") {
       var t1 = document.createElement("p");
       t1.className = "picker-step-title";
       t1.textContent = "How long do you want to study?";
@@ -395,6 +464,144 @@
         pickerStep = { view: "main", bodyPart: null };
         renderHome();
       }));
+    } else if (pickerStep.view === "phone-distraction") {
+      var pd = document.createElement("p");
+      pd.className = "picker-step-title";
+      pd.textContent = "What is distracting you right now?";
+      stepEl.appendChild(pd);
+      var pdGrid = document.createElement("div");
+      pdGrid.className = "preset-plan-grid";
+      PHONE_DISTRACTIONS.forEach(function (d) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "preset-plan-chip";
+        btn.textContent = d;
+        btn.addEventListener("click", function () {
+          pickerStep = { view: "phone-steps", bodyPart: null, distraction: d };
+          renderPickerStep();
+        });
+        pdGrid.appendChild(btn);
+      });
+      stepEl.appendChild(pdGrid);
+    } else if (pickerStep.view === "phone-steps") {
+      var ps1 = document.createElement("p");
+      ps1.className = "picker-step-title";
+      ps1.textContent = "STEP 1 — Turn on Focus Mode / Do Not Disturb";
+      stepEl.appendChild(ps1);
+      var settingsBtn = document.createElement("button");
+      settingsBtn.type = "button";
+      settingsBtn.className = "btn btn-outline btn-full";
+      settingsBtn.textContent = "Open Focus / Do Not Disturb Settings";
+      settingsBtn.addEventListener("click", function () {
+        showToast("Open your phone's Settings app → Sound / Focus → turn on Do Not Disturb");
+      });
+      stepEl.appendChild(settingsBtn);
+      var ps2 = document.createElement("p");
+      ps2.className = "picker-step-title";
+      ps2.textContent = "STEP 2 — Close " + pickerStep.distraction;
+      stepEl.appendChild(ps2);
+      var contBtn2 = document.createElement("button");
+      contBtn2.type = "button";
+      contBtn2.className = "btn btn-primary btn-full";
+      contBtn2.textContent = "Done — continue";
+      contBtn2.addEventListener("click", function () {
+        pickerStep = { view: "phone-duration", bodyPart: null, distraction: pickerStep.distraction };
+        renderPickerStep();
+      });
+      stepEl.appendChild(contBtn2);
+    } else if (pickerStep.view === "phone-duration") {
+      var pdt = document.createElement("p");
+      pdt.className = "picker-step-title";
+      pdt.textContent = "STEP 3 — How long do you want to stay away?";
+      stepEl.appendChild(pdt);
+      var distraction = pickerStep.distraction;
+      stepEl.appendChild(buildDurationChipPicker([10, 15, 30, 45, 60], function (mins) {
+        pickerStep = { view: "phone-replacement", bodyPart: null, distraction: distraction, minutes: mins };
+        renderPickerStep();
+      }));
+    } else if (pickerStep.view === "phone-replacement") {
+      var prt = document.createElement("p");
+      prt.className = "picker-step-title";
+      prt.textContent = "STEP 4 — What will you do instead?";
+      stepEl.appendChild(prt);
+      var prGrid = document.createElement("div");
+      prGrid.className = "preset-plan-grid";
+      var stepMinutes = pickerStep.minutes;
+      var stepDistraction = pickerStep.distraction;
+      PHONE_REPLACEMENTS.forEach(function (r) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "preset-plan-chip";
+        btn.textContent = r;
+        btn.addEventListener("click", function () {
+          setTodaysPhonePriority(stepDistraction, stepMinutes, r);
+          pendingAdjustmentNote = null;
+          pickerStep = { view: "main", bodyPart: null };
+          renderHome();
+        });
+        prGrid.appendChild(btn);
+      });
+      stepEl.appendChild(prGrid);
+      var customRow = document.createElement("div");
+      customRow.className = "priority-custom-row";
+      var customInput = document.createElement("input");
+      customInput.type = "text";
+      customInput.className = "text-input";
+      customInput.placeholder = "Custom activity...";
+      var customBtn = document.createElement("button");
+      customBtn.type = "button";
+      customBtn.className = "btn btn-primary";
+      customBtn.textContent = "Set";
+      customBtn.addEventListener("click", function () {
+        var val = customInput.value.trim();
+        if (!val) return;
+        setTodaysPhonePriority(stepDistraction, stepMinutes, val);
+        pendingAdjustmentNote = null;
+        pickerStep = { view: "main", bodyPart: null };
+        renderHome();
+      });
+      customRow.appendChild(customInput);
+      customRow.appendChild(customBtn);
+      stepEl.appendChild(customRow);
+    } else if (pickerStep.view === "sleep-bedtime") {
+      var sbt = document.createElement("p");
+      sbt.className = "picker-step-title";
+      sbt.textContent = "What time do you want to sleep?";
+      stepEl.appendChild(sbt);
+      var timeInput = document.createElement("input");
+      timeInput.type = "time";
+      timeInput.className = "text-input";
+      timeInput.id = "sleep-bedtime-input";
+      stepEl.appendChild(timeInput);
+      var nextBtn = document.createElement("button");
+      nextBtn.type = "button";
+      nextBtn.className = "btn btn-primary btn-full";
+      nextBtn.textContent = "Continue";
+      nextBtn.addEventListener("click", function () {
+        var val = timeInput.value;
+        if (!val) { showToast("Pick a bedtime first"); return; }
+        pickerStep = { view: "sleep-prep", bodyPart: null, bedtime: val };
+        renderPickerStep();
+      });
+      stepEl.appendChild(nextBtn);
+    } else if (pickerStep.view === "sleep-prep") {
+      var spt = document.createElement("p");
+      spt.className = "picker-step-title";
+      spt.textContent = "30 minutes before bed";
+      stepEl.appendChild(spt);
+      stepEl.appendChild(buildChecklist(SLEEP_PREP_ITEMS));
+      var bedtime = pickerStep.bedtime;
+      var sleepBtn = document.createElement("button");
+      sleepBtn.type = "button";
+      sleepBtn.className = "btn btn-primary btn-full";
+      sleepBtn.textContent = "I'M GOING TO SLEEP";
+      sleepBtn.addEventListener("click", function () {
+        setTodaysSleepPriority(bedtime);
+        pendingAdjustmentNote = null;
+        pickerStep = { view: "main", bodyPart: null };
+        renderHome();
+      });
+      stepEl.appendChild(sleepBtn);
     } else if (pickerStep.view === "fitness-bodypart") {
       var t2 = document.createElement("p");
       t2.className = "picker-step-title";
@@ -504,7 +711,13 @@
       btn.textContent = plan.label;
       btn.addEventListener("click", function () {
         if (plan.key === "study") {
-          pickerStep = { view: "study-duration", bodyPart: null };
+          pickerStep = { view: "study-prep", bodyPart: null };
+          renderPickerStep();
+        } else if (plan.key === "phone") {
+          pickerStep = { view: "phone-distraction", bodyPart: null };
+          renderPickerStep();
+        } else if (plan.key === "sleep") {
+          pickerStep = { view: "sleep-bedtime", bodyPart: null };
           renderPickerStep();
         } else if (plan.key === "fitness") {
           pickerStep = { view: "fitness-bodypart", bodyPart: null };
@@ -545,6 +758,11 @@
       var doneCount = PRAYER_ORDER.filter(function (n) { return completions[n]; }).length;
       return Math.round((doneCount / PRAYER_ORDER.length) * 100);
     }
+    if (p.kind === "sleep") {
+      if (!p.sleepStart) return 0;
+      var elapsedHrs = (new Date() - new Date(p.sleepStart)) / 3600000;
+      return Math.min(100, Math.max(0, Math.round((elapsedHrs / 8) * 100)));
+    }
     if (focusState.linkedPriorityId === p.id && p.minutes && (p.kind !== "fitness" || p.warmupDone)) {
       var total = focusSecondsTotal();
       var elapsed = total - focusState.remaining;
@@ -560,6 +778,92 @@
     document.getElementById("progress-ring-percent").textContent = pct + "%";
   }
 
+  // ---------- 7-DAY PROGRESS GRAPH (real data only) ----------
+
+  function getDayProgressPercent(dateKey) {
+    if (dateKey === todayKey()) {
+      return computeProgressPercent(getCurrentPriority());
+    }
+    var log = readJSON("nc_priority_log", []);
+    var entries = log.filter(function (e) { return e.date === dateKey; });
+    if (!entries.length) return null;
+    var last = entries[entries.length - 1];
+    if (last.status === "completed") return 100;
+    if (last.status === "partial") return 50;
+    return 0;
+  }
+
+  function renderProgressGraph() {
+    var container = document.getElementById("progress-graph-container");
+    var anyData = readJSON("nc_priority_log", []).length > 0 || !!getCurrentPriority();
+    container.innerHTML = "";
+
+    if (!anyData) {
+      var empty = document.createElement("p");
+      empty.className = "progress-graph-empty";
+      empty.textContent = "Complete your first action to start your progress graph.";
+      container.appendChild(empty);
+      return;
+    }
+
+    var row = document.createElement("div");
+    row.className = "progress-graph-row";
+    var today = todayKey();
+    getLastNDateKeys(7).slice().reverse().forEach(function (dateKey) {
+      var pct = getDayProgressPercent(dateKey);
+      var wrap = document.createElement("div");
+      wrap.className = "progress-graph-bar-wrap";
+      var bar = document.createElement("div");
+      bar.className = "progress-graph-bar" + (pct !== null ? " has-data" : "") + (dateKey === today ? " is-today" : "");
+      bar.style.height = Math.max(4, (pct || 0) * 0.7) + "px";
+      var label = document.createElement("span");
+      label.className = "progress-graph-label";
+      label.textContent = new Date(dateKey + "T00:00:00").toLocaleDateString(undefined, { weekday: "short" }).slice(0, 3);
+      wrap.appendChild(bar);
+      wrap.appendChild(label);
+      row.appendChild(wrap);
+    });
+    row.addEventListener("click", openProgressDetails);
+    container.appendChild(row);
+
+    var hint = document.createElement("p");
+    hint.className = "progress-tap-hint";
+    hint.textContent = "Tap for details";
+    container.appendChild(hint);
+  }
+
+  function openProgressDetails() {
+    var todayEl = document.getElementById("progress-details-today");
+    var p = getCurrentPriority();
+    todayEl.innerHTML = "";
+    var rows = [
+      { label: "Completed actions", value: p && p.status !== "pending" ? "1" : "0" },
+      { label: "Pending actions", value: p && p.status === "pending" ? "1" : "0" },
+      { label: "Overall progress", value: computeProgressPercent(p) + "%" }
+    ];
+    rows.forEach(function (r) {
+      var row = document.createElement("div");
+      row.className = "progress-detail-row";
+      row.innerHTML = '<span class="progress-detail-label">' + r.label + '</span><span class="progress-detail-value">' + r.value + '</span>';
+      todayEl.appendChild(row);
+    });
+
+    var weekEl = document.getElementById("progress-details-week");
+    weekEl.innerHTML = "";
+    var dates = getLastNDateKeys(7).slice().reverse();
+    dates.forEach(function (dateKey) {
+      var pct = getDayProgressPercent(dateKey);
+      var row = document.createElement("div");
+      row.className = "progress-detail-row";
+      var label = new Date(dateKey + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+      var value = pct === null ? "No activity" : pct + "%";
+      row.innerHTML = '<span class="progress-detail-label">' + label + '</span><span class="progress-detail-value">' + value + '</span>';
+      weekEl.appendChild(row);
+    });
+
+    document.getElementById("modal-progress-details").classList.remove("hidden");
+  }
+
   function renderProgressLine(p) {
     var line = document.getElementById("progress-line");
     renderProgressRing(p);
@@ -568,6 +872,10 @@
       var completions = getSalahCompletions();
       var doneCount = PRAYER_ORDER.filter(function (n) { return completions[n]; }).length;
       line.textContent = doneCount + " of 5 prayers marked complete today.";
+      return;
+    }
+    if (p.kind === "sleep") {
+      line.textContent = p.wakeTime ? "Sleep logged ✓" : "Asleep since " + new Date(p.sleepStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + ".";
       return;
     }
     if (p.status !== "pending") { line.textContent = "Completed today ✓"; return; }
@@ -692,6 +1000,104 @@
 
   // ---------- FITNESS VIEW ----------
 
+  function renderPhoneExtra(p, container) {
+    container.innerHTML = "";
+    var meta = document.createElement("p");
+    meta.className = "fitness-meta-line";
+    meta.textContent = "Away from " + p.distraction + " • Instead: " + p.replacement;
+    container.appendChild(meta);
+  }
+
+  function renderSleepView(p, container) {
+    container.innerHTML = "";
+    if (!p.wakeTime) {
+      var label = document.createElement("p");
+      label.className = "salah-next-label";
+      label.textContent = "Sleep started";
+      container.appendChild(label);
+      var timeP = document.createElement("p");
+      timeP.className = "salah-next-name";
+      timeP.textContent = new Date(p.sleepStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      container.appendChild(timeP);
+      var note = document.createElement("p");
+      note.className = "muted-line";
+      note.style.marginBottom = "16px";
+      note.textContent = "Come back in the morning and tap “I'm Awake.”";
+      container.appendChild(note);
+
+      var awakeCard = document.createElement("div");
+      awakeCard.style.textAlign = "center";
+      var goodMorning = document.createElement("p");
+      goodMorning.className = "priority-title";
+      goodMorning.textContent = "Good Morning";
+      awakeCard.appendChild(goodMorning);
+      var areYouAwake = document.createElement("p");
+      areYouAwake.className = "priority-why";
+      areYouAwake.textContent = "Are you awake?";
+      awakeCard.appendChild(areYouAwake);
+      container.appendChild(awakeCard);
+
+      var awakeBtn = document.createElement("button");
+      awakeBtn.className = "btn btn-primary btn-full";
+      awakeBtn.textContent = "I'M AWAKE";
+      awakeBtn.addEventListener("click", function () {
+        p.wakeTime = new Date().toISOString();
+        p.status = "completed";
+        savePriority(p);
+        renderHome();
+      });
+      container.appendChild(awakeBtn);
+
+      var editLink = document.createElement("button");
+      editLink.className = "priority-change-link";
+      editLink.textContent = "Edit sleep time";
+      editLink.addEventListener("click", function () {
+        var input = prompt("Enter sleep start time (HH:MM, 24h)", new Date(p.sleepStart).toTimeString().slice(0, 5));
+        if (!input) return;
+        var parts = input.split(":");
+        if (parts.length !== 2) { showToast("Enter time as HH:MM"); return; }
+        var d = new Date(p.sleepStart);
+        d.setHours(Number(parts[0]), Number(parts[1]), 0, 0);
+        p.sleepStart = d.toISOString();
+        savePriority(p);
+        renderHome();
+      });
+      container.appendChild(editLink);
+      return;
+    }
+
+    var start = new Date(p.sleepStart);
+    var wake = new Date(p.wakeTime);
+    var diffMs = wake - start;
+    var hours = Math.floor(diffMs / 3600000);
+    var mins = Math.round((diffMs % 3600000) / 60000);
+
+    var windowLabel = document.createElement("p");
+    windowLabel.className = "salah-next-label";
+    windowLabel.textContent = "Sleep window";
+    container.appendChild(windowLabel);
+    var windowLine = document.createElement("p");
+    windowLine.className = "salah-next-name";
+    windowLine.style.fontSize = "17px";
+    windowLine.textContent = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + " → " + wake.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    container.appendChild(windowLine);
+
+    var estLabel = document.createElement("p");
+    estLabel.className = "salah-next-label";
+    estLabel.style.marginTop = "12px";
+    estLabel.textContent = "Estimated sleep duration";
+    container.appendChild(estLabel);
+    var estValue = document.createElement("p");
+    estValue.className = "salah-countdown";
+    estValue.textContent = hours + "h " + mins + "m / 8h target";
+    container.appendChild(estValue);
+
+    var disclaimer = document.createElement("p");
+    disclaimer.className = "salah-recovery-note";
+    disclaimer.textContent = "Estimated from the time between your two taps — NURA can't confirm you were asleep the whole time.";
+    container.appendChild(disclaimer);
+  }
+
   function renderFitnessExtra(p, container) {
     container.innerHTML = "";
     var bp = FITNESS_BODY_PARTS.find(function (b) { return b.key === p.bodyPart; }) || FITNESS_BODY_PARTS[0];
@@ -759,11 +1165,13 @@
     var activeEl = document.getElementById("priority-active");
     var genericEl = document.getElementById("priority-view-generic");
     var salahEl = document.getElementById("priority-view-salah");
+    var sleepEl = document.getElementById("priority-view-sleep");
     checkinEl.classList.add("hidden");
     pickerEl.classList.add("hidden");
     activeEl.classList.add("hidden");
     genericEl.classList.add("hidden");
     salahEl.classList.add("hidden");
+    sleepEl.classList.add("hidden");
     document.getElementById("priority-extra-content").innerHTML = "";
     document.getElementById("focus-duration-row").classList.add("hidden");
     stopSalahCountdown();
@@ -813,6 +1221,13 @@
       return;
     }
 
+    if (p.kind === "sleep") {
+      sleepEl.classList.remove("hidden");
+      renderSleepView(p, sleepEl);
+      renderProgressLine(p);
+      return;
+    }
+
     genericEl.classList.remove("hidden");
 
     if (focusState.linkedPriorityId !== p.id) {
@@ -825,6 +1240,8 @@
 
     if (p.kind === "fitness") {
       renderFitnessExtra(p, document.getElementById("priority-extra-content"));
+    } else if (p.kind === "phone") {
+      renderPhoneExtra(p, document.getElementById("priority-extra-content"));
     }
 
     var timerWrap = document.getElementById("priority-timer-wrap");
@@ -849,6 +1266,7 @@
     document.getElementById("journey-badge-text").textContent = "DAY " + getJourneyDay() + " OF YOUR CHANGE JOURNEY";
 
     renderTodaysPriority();
+    renderProgressGraph();
   }
 
   function initPriorityUI() {
@@ -872,18 +1290,10 @@
 
     document.getElementById("priority-change-btn").addEventListener("click", chooseDifferentPriority);
 
-    document.getElementById("focus-prep-continue-btn").addEventListener("click", function () {
-      document.getElementById("modal-focus-prep").classList.add("hidden");
-      if (focusPrepPendingStart) {
-        var p = getCurrentPriority();
-        if (p) focusPrepShownForPriorityId = p.id;
-        focusPrepPendingStart = false;
-        startFocusForPriority();
-      }
+    document.getElementById("progress-details-close").addEventListener("click", function () {
+      document.getElementById("modal-progress-details").classList.add("hidden");
     });
-    document.getElementById("focus-prep-settings-btn").addEventListener("click", function () {
-      showToast("Open your phone's Settings app → Sound / Focus → turn on Do Not Disturb");
-    });
+
   }
 
   // ---------- FOCUS TIMER ----------
@@ -1028,14 +1438,7 @@
 
   function initFocusTimer() {
     document.getElementById("focus-start-btn").addEventListener("click", function () {
-      var p = getCurrentPriority();
-      if (!p) return;
-      if (p.kind === "study" && !focusPrepShownForPriorityId) {
-        focusPrepPendingStart = true;
-        document.getElementById("modal-focus-prep").classList.remove("hidden");
-        return;
-      }
-      startFocusForPriority();
+      if (getCurrentPriority()) startFocusForPriority();
     });
     document.getElementById("focus-pause-btn").addEventListener("click", pauseFocus);
     document.getElementById("focus-stop-btn").addEventListener("click", function () { stopFocus(); renderHome(); });

@@ -180,6 +180,27 @@ html, body {
 .fitness-warmup-list li { font-size: 13.5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
 .fitness-meta-line { font-size: 12.5px; color: var(--muted); margin: 0 0 12px; }
 
+/* CHECKLISTS (study prep, sleep prep) */
+.checklist { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
+.checklist-item { display: flex; align-items: center; gap: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; cursor: pointer; }
+.checklist-item input { width: 18px; height: 18px; accent-color: var(--mint); flex-shrink: 0; }
+
+/* PROGRESS GRAPH */
+.progress-graph-row { display: flex; align-items: flex-end; gap: 6px; height: 80px; margin: 4px 0 6px; cursor: pointer; }
+.progress-graph-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+.progress-graph-bar { width: 100%; max-width: 22px; background: var(--surface-2); border-radius: 5px 5px 0 0; min-height: 4px; transition: height 0.3s ease; }
+.progress-graph-bar.has-data { background: var(--mint); }
+.progress-graph-bar.is-today { background: var(--gold); }
+.progress-graph-label { font-size: 10px; color: var(--muted); margin-top: 5px; }
+.progress-graph-empty { font-size: 12.5px; color: var(--muted); text-align: center; padding: 20px 10px; }
+.progress-tap-hint { font-size: 11px; color: var(--muted); text-align: center; margin: 0; }
+
+/* PROGRESS DETAILS SHEET */
+.progress-detail-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+.progress-detail-row:last-child { border-bottom: none; }
+.progress-detail-label { color: var(--muted); }
+.progress-detail-value { font-weight: 700; }
+
 .avatar-btn {
   width: 38px;
   height: 38px;

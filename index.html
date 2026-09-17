@@ -95,6 +95,7 @@
           </div>
 
           <div id="priority-view-salah" class="hidden"></div>
+          <div id="priority-view-sleep" class="hidden"></div>
 
           <button class="priority-change-link" id="priority-change-btn">Choose a different priority</button>
         </div>
@@ -115,6 +116,7 @@
         </div>
         <p class="muted-line" id="progress-line">Not started yet.</p>
       </div>
+      <div id="progress-graph-container"></div>
     </section>
   </main>
 
@@ -449,14 +451,17 @@
   </div>
 </div>
 
-<!-- FOCUS PREPARATION MODAL -->
-<div class="modal-overlay hidden" id="modal-focus-prep">
+<!-- PROGRESS DETAILS MODAL -->
+<div class="modal-overlay hidden" id="modal-progress-details">
   <div class="modal-sheet">
-    <h2>Ready to focus?</h2>
-    <p class="modal-sub">For a better focus session, turn on Do Not Disturb / Focus Mode.</p>
-    <p class="modal-sub">Reducing distractions also helps — try silent mode, or Airplane Mode if you don't need internet.</p>
-    <button class="btn btn-outline btn-full" id="focus-prep-settings-btn">Open Settings</button>
-    <button class="btn btn-primary btn-full" id="focus-prep-continue-btn">Continue</button>
+    <div class="modal-header-row">
+      <h2>Progress Details</h2>
+      <button class="icon-btn" id="progress-details-close" aria-label="Close">&#10005;</button>
+    </div>
+    <p class="modal-sub">Today</p>
+    <div id="progress-details-today"></div>
+    <p class="modal-sub" style="margin-top:16px;">Last 7 days</p>
+    <div id="progress-details-week"></div>
   </div>
 </div>
 
