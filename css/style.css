@@ -185,6 +185,70 @@ html, body {
 .add-task-row .text-input { margin-bottom: 0; flex: 1; }
 .add-task-row .btn { padding: 12px 16px; }
 
+/* TODAY'S ACTIONS */
+.action-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.action-item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 13px;
+}
+.action-item-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.action-title { font-size: 14.5px; font-weight: 600; flex: 1; }
+.action-item.done .action-title { text-decoration: line-through; color: var(--muted); }
+
+.action-status {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.action-status.pending { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.action-status.done { background: var(--mint); color: #06251A; }
+.action-status.partial { background: transparent; color: var(--mint-soft); border: 1px solid var(--mint-soft); }
+.action-status.skipped { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+
+.action-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
+.action-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.action-btn.primary { border-color: var(--mint); color: var(--mint); }
+.action-btn.warn { border-color: var(--danger); color: var(--danger); }
+
+.action-recovery {
+  margin-top: 10px;
+  padding: 10px 0 0;
+  border-top: 1px dashed var(--border);
+}
+.action-recovery-label { font-size: 11px; color: var(--muted); margin: 0 0 8px; }
+
+.chat-action-btn {
+  display: inline-block;
+  margin-top: 4px;
+  background: var(--mint);
+  color: #06251A;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.reflection-textarea { resize: vertical; min-height: 46px; }
+
 .text-input {
   width: 100%;
   padding: 12px 14px;

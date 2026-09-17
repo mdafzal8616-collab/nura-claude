@@ -29,14 +29,16 @@
 
     <section class="card">
       <div class="card-row">
-        <h2>Today</h2>
-        <span class="count-badge" id="tasks-count-badge">0 of 0</span>
+        <h2>Today's Actions</h2>
+        <span class="count-badge" id="actions-count-badge">0 of 2</span>
       </div>
-      <div class="task-list" id="task-list"></div>
-      <div class="add-task-row">
-        <input type="text" id="task-input" class="text-input" placeholder="Add a task for today" maxlength="60">
-        <button class="btn btn-primary" id="add-task-btn">Add</button>
+      <p class="muted-line">Choose 1–2 small, specific actions. Not a to-do list — just what actually matters today.</p>
+      <div class="action-list" id="action-list"></div>
+      <div class="add-task-row" id="add-action-row">
+        <input type="text" id="action-input" class="text-input" placeholder="e.g. Study for 20 minutes" maxlength="60">
+        <button class="btn btn-primary" id="add-action-btn">Add</button>
       </div>
+      <p class="muted-line hidden" id="actions-full-note">Today's 2 actions are set. Finish what's here, or come back tomorrow to choose again.</p>
     </section>
 
     <section class="card">
@@ -44,7 +46,7 @@
         <h2>Focus Timer</h2>
         <span class="count-badge" id="focus-status-badge">Ready</span>
       </div>
-      <p class="muted-line" id="focus-target-line">Pick a task above, then start a focus session.</p>
+      <p class="muted-line" id="focus-target-line">Tap "Start Now" on an action above, or start a plain session below.</p>
       <div class="focus-duration-row" id="focus-duration-row">
         <button class="duration-chip" data-minutes="5">5</button>
         <button class="duration-chip" data-minutes="10">10</button>
@@ -62,6 +64,22 @@
         <button class="btn btn-outline btn-full hidden" id="focus-pause-btn">Pause</button>
         <button class="btn btn-outline btn-full hidden" id="focus-stop-btn">Stop</button>
       </div>
+    </section>
+
+    <section class="card hidden" id="reflection-card">
+      <div class="card-row">
+        <h2>How was today?</h2>
+      </div>
+      <p class="muted-line" id="reflection-status-line">Three quick questions — takes under a minute.</p>
+      <button class="btn btn-outline btn-full" id="reflection-open-btn">Reflect on today</button>
+    </section>
+
+    <section class="card hidden" id="week-review-card">
+      <div class="card-row">
+        <h2>This Week</h2>
+      </div>
+      <p class="muted-line" id="week-review-summary"></p>
+      <p class="muted-line" id="week-review-suggestion"></p>
     </section>
 
     <button class="btn btn-shield btn-full" id="open-shield">Need a pause? Open Shield</button>
@@ -395,6 +413,23 @@
     <p class="modal-sub" id="focus-check-text">Did you actually finish the task, or just the timer?</p>
     <button class="btn btn-primary btn-full" id="focus-check-done">Yes, I finished it</button>
     <button class="btn btn-outline btn-full" id="focus-check-notdone">No, still working on it</button>
+  </div>
+</div>
+
+<!-- END-OF-DAY REFLECTION MODAL -->
+<div class="modal-overlay hidden" id="modal-reflection">
+  <div class="modal-sheet">
+    <div class="modal-header-row">
+      <h2>Today's reflection</h2>
+      <button class="icon-btn" id="reflection-close" aria-label="Close">&#10005;</button>
+    </div>
+    <p class="modal-sub">What did you complete?</p>
+    <textarea id="reflection-completed" class="text-input reflection-textarea" maxlength="200" rows="2"></textarea>
+    <p class="modal-sub">What stopped you?</p>
+    <textarea id="reflection-blocked" class="text-input reflection-textarea" maxlength="200" rows="2"></textarea>
+    <p class="modal-sub">What is one thing you'll change tomorrow?</p>
+    <textarea id="reflection-change" class="text-input reflection-textarea" maxlength="200" rows="2"></textarea>
+    <button class="btn btn-primary btn-full" id="reflection-save-btn">Save</button>
   </div>
 </div>
 

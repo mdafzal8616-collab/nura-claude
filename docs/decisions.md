@@ -2,6 +2,28 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — Practical self-improvement loop built into Home: CHOOSE → DO → TRACK → REVIEW → RESET → REPEAT
+
+Rebuilt Home's Tasks + Focus Timer into a real daily-action loop, replacing the old unlimited to-do list. Scope decision: built the smallest complete version of the *entire* loop first (per CLAUDE.md Section 15's Golden Rule and the request itself: "build the simplest working version first... only then expand"), rather than polishing one piece. Deliberately left out: weekly graphs/charts (request explicitly said avoid these), points/badges/streaks (against CLAUDE.md Section 2/4 — no guilt-heavy streaks, no guessed stats), and a broader Bhai AI rebuild beyond adding action buttons to its existing scripted responses (Bhai is still labeled "scripted guided support, not a live AI model" — unchanged, honest).
+
+**CHOOSE** — "Today's Actions" card, hard-capped at 2 (`todaysMainActions().length >= 2` blocks a 3rd, input row hides, a plain note explains why). Replaces the old unlimited task list entirely — a capped, deliberate choice mattered more than keeping an open-ended list, per "don't add extra features just because they sound impressive."
+
+**DO** — every action gets a real "Start Now" button, not just a plan. It reuses the existing (already-tested) Focus Timer: if the action's title has a parsed "N min(utes)" in it, the timer duration is set to that number automatically; otherwise it uses whatever duration is already set. Clicking it jumps straight into a running countdown, scrolled into view.
+
+**TRACK** — status is one of `pending / done / partial / skipped` (not a boolean). The existing honest-completion modal ("did you actually finish, or just the timer?") now maps "No, still working on it" to `partial` instead of leaving it ambiguous.
+
+**RESET** — a "Reset → smaller step" button appears on any `partial`/`skipped` action with no existing recovery child. It parses a "N min" from the title and creates a nested recovery action at a flat 5 minutes (matching the request's own example: "Couldn't study for 30 minutes? Do 5 minutes now" — tested and confirmed this exact output). No minutes in the title → generic "A small part of it, right now: <title>" fallback (for things like "Pray the next Salah on time"). Only one recovery step per action — not an infinite chain. Original skipped/partial status is never overwritten or deleted; the recovery is a new, separate record, so history stays honest (per CLAUDE.md Section 3: "must never erase missed work or pretend a tap completed it").
+
+**REVIEW (daily)** — a "Reflect on today" card appears once at least one action exists for today. Exactly the 3 questions asked, nothing more: what you completed, what stopped you, what you'll change tomorrow. Stored per date in `nc_reflections`, editable same-day.
+
+**REVIEW (weekly) / REPEAT** — a "This Week" card aggregates the last 7 days' main actions: one factual completion-count sentence, plus one deterministic (not invented/AI-guessed) suggestion — either "X was missed N times this week, use Reset sooner" if a title repeats as skipped/partial 2+ times, or a completion-rate nudge, or plain encouragement. No charts, no points — text only, per the request and CLAUDE.md's "never a guessed... stat" rule.
+
+**Bhai AI tie-in** — the two chat responses that already told the user to "start a focus session" now end with a real button ("Start a 20-minute study session" etc.) instead of just a sentence. Tapping it jumps to Home, creates the action if a slot is free (else starts an untracked ad-hoc session so it's never blocked by the 2-action cap), and starts the timer immediately.
+
+Data model: new `nc_actions` (replaces `nc_tasks` entirely — verified zero remaining references anywhere in the codebase) and `nc_reflections`.
+
+Tested end-to-end: add 2 actions, 3rd blocked with correct UI state; Start Now sets duration from parsed minutes and links correctly; Done/Partial/Skip all update state and badge correctly; Reset produces the exact "N min → 5 min" recovery the request specified; honest-check "No" correctly marks partial; reflection modal saves/reloads/persists correctly; weekly review computes and displays correctly with real data; Bhai AI action button navigates + creates + starts a session in one tap; full regression pass across Sunnah/Vault/More — zero breakage; zero console errors.
+
 ## 2026-09-17 — Tasbih counters now only appear where the real repeat count is 32+
 
 New rule going forward: a tasbih counter only belongs on a dhikr with a real, hadith-specified repeat count of 32 or more — not on every dhikr just because it has Arabic text. Removed the "free" tap counter from every single-recitation item it had been added to: Allahumma antas-salam, both Ayat al-Kursi citations (after-salah and before-sleep), morning dhikr, evening dhikr, the last two ayat of Al-Baqarah, and the Jumu'ah salawat item. Kept the two counters with a genuine 32+ count: the after-salah tasbih (33/33/33) and the before-sleep Fatimah tasbih (33/33/34) — those are unchanged.

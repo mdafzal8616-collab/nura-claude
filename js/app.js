@@ -47,86 +47,198 @@
     return prefix + "-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
   }
 
-  // ---------- TASKS (Home) ----------
+  // ---------- TODAY'S ACTIONS (Home) ----------
+  // Core loop: CHOOSE (max 2/day) -> DO (Start Now) -> TRACK (done/partial/
+  // skipped) -> RESET (smaller recovery action, never destroys history) ->
+  // REVIEW (end-of-day 3 questions + weekly pattern) -> REPEAT.
 
-  function getTasks() {
-    return readJSON("nc_tasks", []);
+  function getActions() {
+    return readJSON("nc_actions", []);
   }
 
-  function saveTasks(tasks) {
-    writeJSON("nc_tasks", tasks);
+  function saveActions(actions) {
+    writeJSON("nc_actions", actions);
   }
 
-  function addTask(title) {
-    var tasks = getTasks();
-    tasks.push({ id: uid("t"), title: title, date: todayKey(), done: false, createdAt: Date.now() });
-    saveTasks(tasks);
+  function parseMinutesFromTitle(title) {
+    var m = title.match(/(\d+)\s*min/i);
+    return m ? Number(m[1]) : null;
   }
 
-  function toggleTaskDone(id) {
-    var tasks = getTasks();
-    tasks.forEach(function (t) {
-      if (t.id === id) t.done = !t.done;
+  function todaysMainActions() {
+    var key = todayKey();
+    return getActions().filter(function (a) { return a.date === key && !a.parentId; });
+  }
+
+  function addAction(title) {
+    if (todaysMainActions().length >= 2) return false;
+    var actions = getActions();
+    actions.push({
+      id: uid("act"),
+      date: todayKey(),
+      title: title,
+      minutes: parseMinutesFromTitle(title),
+      status: "pending",
+      parentId: null,
+      createdAt: Date.now(),
+      completedAt: null
     });
-    saveTasks(tasks);
+    saveActions(actions);
+    return true;
   }
 
-  function rescheduleTaskToTomorrow(id) {
-    var tasks = getTasks();
-    tasks.forEach(function (t) {
-      if (t.id === id) t.date = tomorrowKey();
+  function setActionStatus(id, status) {
+    var actions = getActions();
+    actions.forEach(function (a) {
+      if (a.id === id) {
+        a.status = status;
+        if (status === "done") a.completedAt = Date.now();
+      }
     });
-    saveTasks(tasks);
+    saveActions(actions);
   }
 
-  function deleteTask(id) {
-    var tasks = getTasks().filter(function (t) { return t.id !== id; });
-    saveTasks(tasks);
+  function deletePendingAction(id) {
+    var actions = getActions();
+    var target = actions.find(function (a) { return a.id === id; });
+    if (!target || target.status !== "pending") return; // never erase a recorded outcome
+    saveActions(actions.filter(function (a) { return a.id !== id; }));
   }
 
-  function buildTaskItem(task) {
+  function buildRecoveryFrom(original) {
+    var m = original.title.match(/(\d+)\s*min/i);
+    if (m) {
+      var mins = Number(m[1]);
+      var smaller = mins > 5 ? 5 : Math.max(1, mins - 1);
+      return { title: original.title.replace(/\d+\s*min(ute)?s?/i, smaller + " min"), minutes: smaller };
+    }
+    return { title: "A small part of it, right now: " + original.title, minutes: null };
+  }
+
+  function createRecoveryAction(parent) {
+    var actions = getActions();
+    var already = actions.find(function (a) { return a.parentId === parent.id; });
+    if (already) return; // one recovery step per action, not an endless chain
+    var rec = buildRecoveryFrom(parent);
+    actions.push({
+      id: uid("act"),
+      date: todayKey(),
+      title: rec.title,
+      minutes: rec.minutes,
+      status: "pending",
+      parentId: parent.id,
+      createdAt: Date.now(),
+      completedAt: null
+    });
+    saveActions(actions);
+  }
+
+  function buildActionButtons(action) {
+    var wrap = document.createElement("div");
+    wrap.className = "action-buttons";
+
+    var startBtn = document.createElement("button");
+    startBtn.className = "action-btn primary";
+    startBtn.textContent = "Start Now";
+    startBtn.addEventListener("click", function () { startFocusForAction(action.id); });
+    wrap.appendChild(startBtn);
+
+    var doneBtn = document.createElement("button");
+    doneBtn.className = "action-btn";
+    doneBtn.textContent = "Done";
+    doneBtn.addEventListener("click", function () { setActionStatus(action.id, "done"); renderHome(); });
+    wrap.appendChild(doneBtn);
+
+    var partialBtn = document.createElement("button");
+    partialBtn.className = "action-btn";
+    partialBtn.textContent = "Partial";
+    partialBtn.addEventListener("click", function () { setActionStatus(action.id, "partial"); renderHome(); });
+    wrap.appendChild(partialBtn);
+
+    var skipBtn = document.createElement("button");
+    skipBtn.className = "action-btn warn";
+    skipBtn.textContent = "Skip";
+    skipBtn.addEventListener("click", function () { setActionStatus(action.id, "skipped"); renderHome(); });
+    wrap.appendChild(skipBtn);
+
+    if (!action.parentId) {
+      var del = document.createElement("button");
+      del.className = "action-btn";
+      del.textContent = "✕";
+      del.setAttribute("aria-label", "Remove");
+      del.addEventListener("click", function () { deletePendingAction(action.id); renderHome(); });
+      wrap.appendChild(del);
+    }
+
+    return wrap;
+  }
+
+  function buildActionItem(action, todaysActions) {
     var item = document.createElement("div");
-    item.className = "task-item" + (task.done ? " done" : "");
+    item.className = "action-item" + (action.status === "done" ? " done" : "");
 
-    var name = document.createElement("span");
-    name.className = "task-name";
-    name.textContent = task.title;
+    var top = document.createElement("div");
+    top.className = "action-item-top";
+    var title = document.createElement("span");
+    title.className = "action-title";
+    title.textContent = action.title;
+    var status = document.createElement("span");
+    status.className = "action-status " + action.status;
+    status.textContent = action.status.charAt(0).toUpperCase() + action.status.slice(1);
+    top.appendChild(title);
+    top.appendChild(status);
+    item.appendChild(top);
 
-    var actions = document.createElement("div");
-    actions.className = "task-actions";
+    if (action.status === "pending") {
+      item.appendChild(buildActionButtons(action));
+    } else if (!action.parentId && action.status !== "done") {
+      var already = todaysActions.find(function (a) { return a.parentId === action.id; });
+      if (!already) {
+        var resetBtn = document.createElement("button");
+        resetBtn.className = "action-btn primary";
+        resetBtn.textContent = "Reset → smaller step";
+        resetBtn.addEventListener("click", function () { createRecoveryAction(action); renderHome(); });
+        item.appendChild(resetBtn);
+      }
+    }
 
-    var check = document.createElement("button");
-    check.className = "task-check" + (task.done ? " done" : "");
-    check.textContent = task.done ? "Done" : "Mark done";
-    check.addEventListener("click", function () {
-      toggleTaskDone(task.id);
-      renderHome();
-    });
+    var child = todaysActions.find(function (a) { return a.parentId === action.id; });
+    if (child) {
+      var recWrap = document.createElement("div");
+      recWrap.className = "action-recovery";
+      var label = document.createElement("p");
+      label.className = "action-recovery-label";
+      label.textContent = "Smaller step:";
+      recWrap.appendChild(label);
+      recWrap.appendChild(buildActionItem(child, todaysActions));
+      item.appendChild(recWrap);
+    }
 
-    var reschedule = document.createElement("button");
-    reschedule.className = "task-reschedule";
-    reschedule.textContent = "→ tomorrow";
-    reschedule.addEventListener("click", function () {
-      rescheduleTaskToTomorrow(task.id);
-      renderHome();
-      showToast("Moved to tomorrow");
-    });
-
-    var del = document.createElement("button");
-    del.className = "task-delete";
-    del.textContent = "✕";
-    del.setAttribute("aria-label", "Delete task");
-    del.addEventListener("click", function () {
-      deleteTask(task.id);
-      renderHome();
-    });
-
-    actions.appendChild(check);
-    actions.appendChild(reschedule);
-    actions.appendChild(del);
-    item.appendChild(name);
-    item.appendChild(actions);
     return item;
+  }
+
+  function renderActions() {
+    var key = todayKey();
+    var todaysActions = getActions().filter(function (a) { return a.date === key; });
+    var mainActions = todaysActions.filter(function (a) { return !a.parentId; });
+    var doneCount = mainActions.filter(function (a) { return a.status === "done"; }).length;
+
+    document.getElementById("actions-count-badge").textContent = doneCount + " of " + mainActions.length;
+
+    var list = document.getElementById("action-list");
+    list.innerHTML = "";
+    mainActions.forEach(function (a) {
+      list.appendChild(buildActionItem(a, todaysActions));
+    });
+
+    var full = mainActions.length >= 2;
+    document.getElementById("add-action-row").classList.toggle("hidden", full);
+    document.getElementById("actions-full-note").classList.toggle("hidden", !full);
+
+    var nextAction = mainActions.find(function (a) { return a.status === "pending"; });
+    document.getElementById("next-action-text").textContent = nextAction
+      ? nextAction.title
+      : (mainActions.length ? "Today's actions are handled." : "Nothing chosen yet — add 1-2 actions below.");
   }
 
   function renderHome() {
@@ -135,42 +247,144 @@
     document.getElementById("home-greeting").textContent = name ? ("Assalamu Alaikum, " + name) : "Assalamu Alaikum";
     document.getElementById("avatar-initial").textContent = name ? name.charAt(0).toUpperCase() : "N";
 
-    var key = todayKey();
-    var todaysTasks = getTasks().filter(function (t) { return t.date === key; });
-    var doneCount = todaysTasks.filter(function (t) { return t.done; }).length;
-    document.getElementById("tasks-count-badge").textContent = doneCount + " of " + todaysTasks.length;
-
-    var nextTask = todaysTasks.find(function (t) { return !t.done; });
-    document.getElementById("next-action-text").textContent = nextTask
-      ? nextTask.title
-      : (todaysTasks.length ? "Everything on today's list is done." : "Nothing scheduled yet — add your first task below.");
-
-    var list = document.getElementById("task-list");
-    list.innerHTML = "";
-    todaysTasks.forEach(function (t) {
-      list.appendChild(buildTaskItem(t));
-    });
-
+    renderActions();
     renderFocusTargetLine();
+    renderReflectionCard();
+    renderWeekReview();
   }
 
-  function initTaskForm() {
-    var input = document.getElementById("task-input");
-    var btn = document.getElementById("add-task-btn");
+  function initActionForm() {
+    var input = document.getElementById("action-input");
+    var btn = document.getElementById("add-action-btn");
 
     function save() {
       var val = input.value.trim();
-      if (val) {
-        addTask(val);
-        input.value = "";
-        renderHome();
+      if (!val) return;
+      if (todaysMainActions().length >= 2) {
+        showToast("Only 1-2 actions a day — finish or skip one first");
+        return;
       }
+      addAction(val);
+      input.value = "";
+      renderHome();
     }
 
     btn.addEventListener("click", save);
     input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") save();
     });
+  }
+
+  // ---------- END-OF-DAY REFLECTION ----------
+
+  function getReflections() {
+    return readJSON("nc_reflections", {});
+  }
+
+  function saveReflectionForToday(data) {
+    var all = getReflections();
+    all[todayKey()] = data;
+    writeJSON("nc_reflections", all);
+  }
+
+  function renderReflectionCard() {
+    var key = todayKey();
+    var hasActions = todaysMainActions().length > 0;
+    var card = document.getElementById("reflection-card");
+    card.classList.toggle("hidden", !hasActions);
+    if (!hasActions) return;
+    var existing = getReflections()[key];
+    document.getElementById("reflection-status-line").textContent = existing
+      ? "Saved — tap to review or edit."
+      : "Three quick questions — takes under a minute.";
+    document.getElementById("reflection-open-btn").textContent = existing ? "View / edit reflection" : "Reflect on today";
+  }
+
+  function openReflectionModal() {
+    var existing = getReflections()[todayKey()] || { completed: "", blocked: "", change: "" };
+    document.getElementById("reflection-completed").value = existing.completed;
+    document.getElementById("reflection-blocked").value = existing.blocked;
+    document.getElementById("reflection-change").value = existing.change;
+    document.getElementById("modal-reflection").classList.remove("hidden");
+  }
+
+  function initReflection() {
+    document.getElementById("reflection-open-btn").addEventListener("click", openReflectionModal);
+    document.getElementById("reflection-close").addEventListener("click", function () {
+      document.getElementById("modal-reflection").classList.add("hidden");
+    });
+    document.getElementById("reflection-save-btn").addEventListener("click", function () {
+      saveReflectionForToday({
+        completed: document.getElementById("reflection-completed").value.trim(),
+        blocked: document.getElementById("reflection-blocked").value.trim(),
+        change: document.getElementById("reflection-change").value.trim(),
+        savedAt: Date.now()
+      });
+      document.getElementById("modal-reflection").classList.add("hidden");
+      renderReflectionCard();
+      showToast("Reflection saved");
+    });
+  }
+
+  // ---------- WEEKLY REVIEW ----------
+
+  function getLastNDateKeys(n) {
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      var d = new Date();
+      d.setDate(d.getDate() - i);
+      out.push(todayKey(d));
+    }
+    return out;
+  }
+
+  function normalizeActionTitle(title) {
+    return title.toLowerCase().replace(/\d+\s*min(ute)?s?/gi, "").replace(/\s+/g, " ").trim();
+  }
+
+  function renderWeekReview() {
+    var dates = getLastNDateKeys(7);
+    var actions = getActions().filter(function (a) { return !a.parentId && dates.indexOf(a.date) !== -1; });
+    var card = document.getElementById("week-review-card");
+    if (!actions.length) {
+      card.classList.add("hidden");
+      return;
+    }
+    card.classList.remove("hidden");
+
+    var done = actions.filter(function (a) { return a.status === "done"; }).length;
+    var partial = actions.filter(function (a) { return a.status === "partial"; }).length;
+    var skipped = actions.filter(function (a) { return a.status === "skipped"; }).length;
+    var total = actions.length;
+
+    var summary = "Completed " + done + " of " + total + " actions this week";
+    var extras = [];
+    if (partial) extras.push(partial + " partial");
+    if (skipped) extras.push(skipped + " skipped");
+    if (extras.length) summary += " (" + extras.join(", ") + ")";
+    document.getElementById("week-review-summary").textContent = summary + ".";
+
+    var missCounts = {};
+    actions.forEach(function (a) {
+      if (a.status === "skipped" || a.status === "partial") {
+        var norm = normalizeActionTitle(a.title);
+        missCounts[norm] = (missCounts[norm] || 0) + 1;
+      }
+    });
+    var worst = null, worstCount = 0;
+    Object.keys(missCounts).forEach(function (k) {
+      if (missCounts[k] > worstCount) { worst = k; worstCount = missCounts[k]; }
+    });
+
+    var suggestion;
+    if (worst && worstCount >= 2) {
+      suggestion = "“" + worst + "” was missed " + worstCount + " times this week — next time, tap Reset right away instead of skipping it entirely.";
+    } else if (total > 0 && done / total < 0.5) {
+      suggestion = "Less than half of this week's actions were completed. Try picking just 1 action on your harder days instead of 2.";
+    } else {
+      suggestion = "Solid week — keep choosing just 1-2 actions a day.";
+    }
+    document.getElementById("week-review-suggestion").textContent = suggestion;
   }
 
   // ---------- FOCUS TIMER ----------
@@ -190,7 +404,7 @@
     return getFocusDurationMinutes() * 60;
   }
 
-  var focusState = { remaining: focusSecondsTotal(), running: false, intervalId: null, linkedTaskId: null };
+  var focusState = { remaining: focusSecondsTotal(), running: false, intervalId: null, linkedActionId: null, adhocLabel: null };
 
   function formatClock(seconds) {
     var m = Math.floor(seconds / 60);
@@ -200,11 +414,14 @@
 
   function renderFocusTargetLine() {
     var line = document.getElementById("focus-target-line");
-    if (focusState.linkedTaskId) {
-      var task = getTasks().find(function (t) { return t.id === focusState.linkedTaskId; });
-      line.textContent = task ? ("Focusing on: " + task.title) : "Pick a task above, then start a focus session.";
+    var fallback = "Tap \"Start Now\" on an action above, or start a plain session below.";
+    if (focusState.linkedActionId) {
+      var action = getActions().find(function (a) { return a.id === focusState.linkedActionId; });
+      line.textContent = action ? ("Focusing on: " + action.title) : fallback;
+    } else if (focusState.adhocLabel) {
+      line.textContent = "Focusing on: " + focusState.adhocLabel;
     } else {
-      line.textContent = "Pick a task above, then start a focus session.";
+      line.textContent = fallback;
     }
   }
 
@@ -257,15 +474,40 @@
     }
   }
 
-  function startFocus() {
-    var key = todayKey();
-    var nextTask = getTasks().find(function (t) { return t.date === key && !t.done; });
-    focusState.linkedTaskId = nextTask ? nextTask.id : null;
+  function beginFocusInterval() {
     focusState.running = true;
     stopFocusInterval();
     focusState.intervalId = setInterval(tickFocus, 1000);
     renderFocusTargetLine();
     updateFocusUI();
+  }
+
+  function startFocus() {
+    var mainActions = todaysMainActions();
+    var nextAction = mainActions.find(function (a) { return a.status === "pending"; });
+    focusState.linkedActionId = nextAction ? nextAction.id : null;
+    focusState.adhocLabel = null;
+    beginFocusInterval();
+  }
+
+  function startFocusForAction(actionId) {
+    var action = getActions().find(function (a) { return a.id === actionId; });
+    if (!action) return;
+    if (action.minutes) setFocusDurationMinutes(action.minutes);
+    focusState.remaining = focusSecondsTotal();
+    focusState.linkedActionId = actionId;
+    focusState.adhocLabel = null;
+    beginFocusInterval();
+    var clock = document.getElementById("focus-clock");
+    if (clock) clock.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
+  function startAdhocFocus(label, minutes) {
+    if (minutes) setFocusDurationMinutes(minutes);
+    focusState.remaining = focusSecondsTotal();
+    focusState.linkedActionId = null;
+    focusState.adhocLabel = label;
+    beginFocusInterval();
   }
 
   function pauseFocus() {
@@ -278,15 +520,17 @@
     focusState.running = false;
     stopFocusInterval();
     focusState.remaining = focusSecondsTotal();
-    focusState.linkedTaskId = null;
+    focusState.linkedActionId = null;
+    focusState.adhocLabel = null;
     renderFocusTargetLine();
     updateFocusUI();
   }
 
   function openFocusCheckModal() {
-    var task = focusState.linkedTaskId ? getTasks().find(function (t) { return t.id === focusState.linkedTaskId; }) : null;
-    document.getElementById("focus-check-text").textContent = task
-      ? ("Did you actually finish “" + task.title + "”, or just the timer?")
+    var action = focusState.linkedActionId ? getActions().find(function (a) { return a.id === focusState.linkedActionId; }) : null;
+    var label = action ? action.title : focusState.adhocLabel;
+    document.getElementById("focus-check-text").textContent = label
+      ? ("Did you actually finish “" + label + "”, or just the timer?")
       : "Did you actually finish what you were working on, or just the timer?";
     document.getElementById("modal-focus-check").classList.remove("hidden");
   }
@@ -325,8 +569,8 @@
     });
 
     document.getElementById("focus-check-done").addEventListener("click", function () {
-      if (focusState.linkedTaskId) {
-        toggleTaskDoneIfNotDone(focusState.linkedTaskId);
+      if (focusState.linkedActionId) {
+        setActionStatus(focusState.linkedActionId, "done");
       }
       document.getElementById("modal-focus-check").classList.add("hidden");
       stopFocus();
@@ -334,20 +578,15 @@
     });
 
     document.getElementById("focus-check-notdone").addEventListener("click", function () {
+      if (focusState.linkedActionId) {
+        setActionStatus(focusState.linkedActionId, "partial");
+      }
       document.getElementById("modal-focus-check").classList.add("hidden");
       stopFocus();
       renderHome();
     });
 
     updateFocusUI();
-  }
-
-  function toggleTaskDoneIfNotDone(id) {
-    var tasks = getTasks();
-    tasks.forEach(function (t) {
-      if (t.id === id && !t.done) t.done = true;
-    });
-    saveTasks(tasks);
   }
 
   // ---------- SUNNAH: ROUTINE ----------
@@ -2117,9 +2356,10 @@
       respond: function () {
         return [
           "That happens — the day isn't over yet. What still matters today, even something small?",
-          "Go to Home, add that one thing as a task, then start a 20-minute focus session. When the timer ends I'll ask if it's actually done — not just if the timer finished."
+          "Pick one small thing and start now. When the timer ends I'll ask if it's actually done — not just if the timer finished."
         ];
-      }
+      },
+      actionSuggestion: { label: "Start a 15-minute session", title: "Do the one thing that matters today (15 minutes)", minutes: 15 }
     },
     {
       id: "want-smoke",
@@ -2140,7 +2380,7 @@
       respond: function () {
         return [
           "A few real options right now: put the phone down, leave the room or situation you're in, or open Shield for a short pause.",
-          "You could also jump to today's tasks and start a focus session on something else.",
+          "You could also jump to today's actions and start a focus session on something else.",
           "No judgment here, and nothing here tracks or reports what you do — this is just a moment to choose your next step."
         ];
       },
@@ -2151,10 +2391,11 @@
       label: "Help me study",
       respond: function () {
         return [
-          "Pick the one subject or task that matters most right now and add it on Home.",
-          "Start a 20-minute focus session on just that one thing — one block at a time beats trying to do everything at once."
+          "Pick the one subject that matters most right now — not everything, just one.",
+          "One 20-minute block beats trying to do everything at once."
         ];
-      }
+      },
+      actionSuggestion: { label: "Start a 20-minute study session", title: "Study for 20 minutes", minutes: 20 }
     },
     {
       id: "missed-routine",
@@ -2199,7 +2440,31 @@
       shieldBtn.addEventListener("click", openShield);
       area.appendChild(shieldBtn);
     }
+    if (opt.actionSuggestion) {
+      var actionBtn = document.createElement("button");
+      actionBtn.className = "chat-action-btn";
+      actionBtn.textContent = opt.actionSuggestion.label;
+      actionBtn.addEventListener("click", function () {
+        quickStartFocusFromChat(opt.actionSuggestion.title, opt.actionSuggestion.minutes);
+      });
+      area.appendChild(actionBtn);
+    }
     card.classList.remove("hidden");
+  }
+
+  function quickStartFocusFromChat(title, minutes) {
+    var startedActionId = null;
+    if (todaysMainActions().length < 2) {
+      addAction(title);
+      var todays = todaysMainActions();
+      startedActionId = todays[todays.length - 1].id;
+    }
+    setActiveView("home");
+    if (startedActionId) {
+      startFocusForAction(startedActionId);
+    } else {
+      startAdhocFocus(title, minutes);
+    }
   }
 
   // ---------- SHIELD ----------
@@ -2398,7 +2663,8 @@
   document.addEventListener("DOMContentLoaded", function () {
     initNav();
     initNameModal();
-    initTaskForm();
+    initActionForm();
+    initReflection();
     initFocusTimer();
     initSunnahSubtabs();
     initDuasUI();
