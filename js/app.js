@@ -84,21 +84,141 @@
     return MOTIVATION_LINES[seed % MOTIVATION_LINES.length];
   }
 
+  // ---------- PRAYER TIMES ----------
+  // Powers the Salah Consistency priority. Times come from Aladhan
+  // (api.aladhan.com), a free, keyless, widely-used prayer-times API —
+  // same "legitimate public API, no secret keys in client code" pattern
+  // already used for Quran translations and ruku numbers. Never hard-coded
+  // to one city: either the user's coordinates (with consent) or a
+  // manually entered city/country, both re-fetched per local day.
+
+  var PRAYER_ORDER = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
+  var PRAYER_METHODS = [
+    { id: 1, label: "Karachi (Hanafi)" },
+    { id: 3, label: "Muslim World League" },
+    { id: 2, label: "ISNA" },
+    { id: 4, label: "Umm al-Qura" },
+    { id: 5, label: "Egyptian" },
+    { id: 11, label: "Singapore" }
+  ];
+
+  function getPrayerSettings() {
+    return readJSON("nc_prayer_settings", null);
+  }
+
+  function savePrayerSettings(s) {
+    writeJSON("nc_prayer_settings", s);
+  }
+
+  function cleanTimeStr(t) {
+    return (t || "").split(" ")[0];
+  }
+
+  function fetchPrayerTimesForToday(forceRefresh) {
+    var settings = getPrayerSettings();
+    if (!settings) return Promise.reject(new Error("no prayer settings"));
+    var sig = settings.mode === "auto"
+      ? (settings.lat.toFixed(2) + "," + settings.lon.toFixed(2) + ",m" + settings.method)
+      : (settings.city + "," + settings.country + ",m" + settings.method);
+    var cache = readJSON("nc_prayer_times_cache", null);
+    if (!forceRefresh && cache && cache.date === todayKey() && cache.signature === sig) {
+      return Promise.resolve(cache.timings);
+    }
+    var url = settings.mode === "auto"
+      ? "https://api.aladhan.com/v1/timings?latitude=" + settings.lat + "&longitude=" + settings.lon + "&method=" + settings.method
+      : "https://api.aladhan.com/v1/timingsByCity?city=" + encodeURIComponent(settings.city) + "&country=" + encodeURIComponent(settings.country) + "&method=" + settings.method;
+    return fetch(url).then(function (res) {
+      if (!res.ok) throw new Error("prayer times fetch failed");
+      return res.json();
+    }).then(function (data) {
+      var t = data.data.timings;
+      var timings = {
+        Fajr: cleanTimeStr(t.Fajr), Dhuhr: cleanTimeStr(t.Dhuhr), Asr: cleanTimeStr(t.Asr),
+        Maghrib: cleanTimeStr(t.Maghrib), Isha: cleanTimeStr(t.Isha)
+      };
+      writeJSON("nc_prayer_times_cache", { date: todayKey(), signature: sig, timings: timings });
+      return timings;
+    });
+  }
+
+  function parseTimeToday(hhmm, dayOffset) {
+    var parts = hhmm.split(":");
+    var d = new Date();
+    if (dayOffset) d.setDate(d.getDate() + dayOffset);
+    d.setHours(Number(parts[0]), Number(parts[1]), 0, 0);
+    return d;
+  }
+
+  function getNextPrayer(timings) {
+    var now = new Date();
+    for (var i = 0; i < PRAYER_ORDER.length; i++) {
+      var name = PRAYER_ORDER[i];
+      var t = parseTimeToday(timings[name]);
+      if (t > now) return { name: name, time: t };
+    }
+    return { name: "Fajr", time: parseTimeToday(timings.Fajr, 1), tomorrow: true };
+  }
+
+  function getSalahCompletions() {
+    var all = readJSON("nc_salah_completions", {});
+    return all[todayKey()] || {};
+  }
+
+  function setSalahComplete(name) {
+    var all = readJSON("nc_salah_completions", {});
+    var today = todayKey();
+    all[today] = all[today] || {};
+    all[today][name] = true;
+    writeJSON("nc_salah_completions", all);
+  }
+
+  function requestLocationForPrayerTimes() {
+    if (!navigator.geolocation) {
+      showToast("Location isn't available on this device — use manual setup instead");
+      return;
+    }
+    showToast("Getting your location…");
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      savePrayerSettings({ mode: "auto", lat: pos.coords.latitude, lon: pos.coords.longitude, method: 1 });
+      renderHome();
+    }, function () {
+      showToast("Location permission denied — use manual setup instead");
+    }, { timeout: 10000 });
+  }
+
+  // ---------- FITNESS CONTENT ----------
+  // Original, beginner-friendly warm-up + workout suggestions per body
+  // part — generic exercise names, not copied from any specific program.
+
+  var FITNESS_BODY_PARTS = [
+    { key: "full", label: "Full Body", warmup: ["Arm circles", "Bodyweight squats x10", "Torso twists", "Jumping jacks x15"], workout: ["Squats", "Push-ups", "Plank hold", "Lunges", "Mountain climbers"] },
+    { key: "chest", label: "Chest", warmup: ["Arm circles", "Shoulder rotations", "Wall chest stretch", "Light push-ups x5"], workout: ["Push-ups", "Incline push-ups", "Chest squeeze hold", "Wide push-ups"] },
+    { key: "back", label: "Back", warmup: ["Cat-cow stretch", "Shoulder rolls", "Standing back extension", "Arm swings"], workout: ["Superman hold", "Reverse snow angels", "Door-frame rows", "Bird-dog"] },
+    { key: "legs", label: "Legs", warmup: ["Leg swings", "Bodyweight squats x10", "Ankle circles", "Hip circles"], workout: ["Squats", "Lunges", "Calf raises", "Wall sit"] },
+    { key: "shoulders", label: "Shoulders", warmup: ["Arm circles", "Shoulder rolls", "Cross-body arm stretch", "Neck tilts"], workout: ["Pike push-ups", "Arm raises", "Shoulder taps", "Plank shoulder circles"] },
+    { key: "arms", label: "Arms", warmup: ["Arm circles", "Wrist rotations", "Triceps stretch", "Light push-ups x5"], workout: ["Push-ups", "Triceps dips (chair)", "Diamond push-ups", "Arm pulses"] },
+    { key: "core", label: "Core", warmup: ["Torso twists", "Cat-cow stretch", "Standing side bends", "Hip circles"], workout: ["Plank hold", "Bicycle crunches", "Leg raises", "Side plank"] },
+    { key: "mobility", label: "Mobility", warmup: ["Neck tilts", "Shoulder rolls", "Hip circles", "Ankle circles"], workout: ["Deep squat hold", "World's greatest stretch", "Cat-cow flow", "Standing forward fold"] },
+    { key: "stretch", label: "Stretching", warmup: [], workout: ["Standing forward fold", "Quad stretch", "Hamstring stretch", "Child's pose", "Chest opener stretch"] }
+  ];
+
   // ---------- TODAY'S PRIORITY ----------
   // Core loop: CHOOSE (one priority) -> DO (Start Now) -> TRACK -> REVIEW
   // (next-day accountability, realistic adjustment) -> REPEAT. No streaks,
   // no reset-mode, no multi-item checklist.
 
   var PRESET_PLANS = [
-    { key: "study", label: "Study Focus", why: "You chose Study Focus as what matters most today.", actionTitle: "Study for 25 minutes", minutes: 25 },
-    { key: "sleep", label: "Better Sleep", why: "You chose Better Sleep as what matters most today.", actionTitle: "Start winding down 30 minutes before bed", minutes: 30 },
-    { key: "phone", label: "Reduce Phone Use", why: "You chose Reduce Phone Use as what matters most today.", actionTitle: "Keep your phone away for the next 30 minutes", minutes: 30 },
-    { key: "salah", label: "Salah Consistency", why: "You chose Salah Consistency as what matters most today.", actionTitle: "Pray the next Salah on time", minutes: null },
-    { key: "fitness", label: "Fitness Basics", why: "You chose Fitness Basics as what matters most today.", actionTitle: "Take a 15-minute walk", minutes: 15 },
-    { key: "morning", label: "Morning Routine", why: "You chose Morning Routine as what matters most today.", actionTitle: "Do your full morning routine", minutes: 15 }
+    { key: "study", label: "Study Focus", kind: "study", why: "You chose Study Focus as what matters most today.", actionTitle: "Study for 25 minutes", minutes: 25 },
+    { key: "sleep", label: "Better Sleep", kind: null, why: "You chose Better Sleep as what matters most today.", actionTitle: "Start winding down 30 minutes before bed", minutes: 30 },
+    { key: "phone", label: "Reduce Phone Use", kind: null, why: "You chose Reduce Phone Use as what matters most today.", actionTitle: "Keep your phone away for the next 30 minutes", minutes: 30 },
+    { key: "salah", label: "Salah Consistency", kind: "salah", why: "You chose Salah Consistency as what matters most today.", actionTitle: "Stay on top of today's prayers", minutes: null },
+    { key: "fitness", label: "Fitness Basics", kind: "fitness", why: "You chose Fitness Basics as what matters most today.", actionTitle: null, minutes: null },
+    { key: "morning", label: "Morning Routine", kind: null, why: "You chose Morning Routine as what matters most today.", actionTitle: "Do your full morning routine", minutes: 15 }
   ];
 
   var pendingAdjustmentNote = null;
+  var focusPrepShownForPriorityId = null;
+  var focusPrepPendingStart = false;
 
   function parseMinutesFromTitle(title) {
     var m = title.match(/(\d+)\s*min/i);
@@ -123,13 +243,42 @@
     var plan = planKey ? PRESET_PLANS.find(function (pl) { return pl.key === planKey; }) : null;
     var p;
     if (plan) {
-      p = { id: uid("pri"), planKey: plan.key, title: plan.actionTitle, why: plan.why, minutes: plan.minutes, date: todayKey(), status: "pending" };
+      p = { id: uid("pri"), planKey: plan.key, kind: plan.kind, title: plan.actionTitle, why: plan.why, minutes: plan.minutes, date: todayKey(), status: "pending" };
     } else {
       var title = customTitle.trim();
-      p = { id: uid("pri"), planKey: null, title: title, why: "You chose this as what matters most today.", minutes: parseMinutesFromTitle(title), date: todayKey(), status: "pending" };
+      p = { id: uid("pri"), planKey: null, kind: null, title: title, why: "You chose this as what matters most today.", minutes: parseMinutesFromTitle(title), date: todayKey(), status: "pending" };
     }
     savePriority(p);
     focusState.linkedPriorityId = null;
+    focusPrepShownForPriorityId = null;
+    return p;
+  }
+
+  function setTodaysStudyPriority(minutes) {
+    var plan = PRESET_PLANS.find(function (pl) { return pl.key === "study"; });
+    var p = { id: uid("pri"), planKey: "study", kind: "study", title: "Study Focus — " + minutes + " minutes", why: plan.why, minutes: minutes, date: todayKey(), status: "pending" };
+    savePriority(p);
+    focusState.linkedPriorityId = null;
+    focusPrepShownForPriorityId = null;
+    return p;
+  }
+
+  function setTodaysFitnessPriority(bodyPartKey, minutes) {
+    var bp = FITNESS_BODY_PARTS.find(function (b) { return b.key === bodyPartKey; });
+    var plan = PRESET_PLANS.find(function (pl) { return pl.key === "fitness"; });
+    var p = { id: uid("pri"), planKey: "fitness", kind: "fitness", title: "Fitness Basics — " + bp.label, why: plan.why, minutes: minutes, bodyPart: bodyPartKey, warmupDone: false, date: todayKey(), status: "pending" };
+    savePriority(p);
+    focusState.linkedPriorityId = null;
+    focusPrepShownForPriorityId = null;
+    return p;
+  }
+
+  function setTodaysSalahPriority() {
+    var plan = PRESET_PLANS.find(function (pl) { return pl.key === "salah"; });
+    var p = { id: uid("pri"), planKey: "salah", kind: "salah", title: "Salah Consistency", why: plan.why, minutes: null, date: todayKey(), status: "pending" };
+    savePriority(p);
+    focusState.linkedPriorityId = null;
+    focusPrepShownForPriorityId = null;
     return p;
   }
 
@@ -160,6 +309,7 @@
       pendingAdjustmentNote = status === "completed" ? "Nice — you finished it. Pick today's priority." : "Pick today's priority.";
     }
     focusState.linkedPriorityId = null;
+    pickerStep = { view: "main", bodyPart: null };
     renderHome();
   }
 
@@ -170,8 +320,179 @@
       savePriority(null);
     }
     focusState.linkedPriorityId = null;
+    pickerStep = { view: "main", bodyPart: null };
     stopFocus();
+    stopSalahCountdown();
     renderHome();
+  }
+
+  // ---------- PICKER STEPS (multi-step selection for Study/Fitness/Salah) ----------
+
+  var pickerStep = { view: "main", bodyPart: null };
+
+  function buildDurationChipPicker(options, onPick) {
+    var wrap = document.createElement("div");
+    wrap.className = "focus-duration-row";
+    options.forEach(function (mins) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "duration-chip";
+      chip.textContent = mins;
+      chip.addEventListener("click", function () { onPick(mins); });
+      wrap.appendChild(chip);
+    });
+    var input = document.createElement("input");
+    input.type = "number";
+    input.className = "duration-custom-input";
+    input.placeholder = "Custom";
+    input.min = "1";
+    input.max = "180";
+    wrap.appendChild(input);
+    var setBtn = document.createElement("button");
+    setBtn.type = "button";
+    setBtn.className = "duration-chip";
+    setBtn.textContent = "Set";
+    setBtn.addEventListener("click", function () {
+      var val = Math.round(Number(input.value));
+      if (val > 0 && val <= 180) onPick(val);
+      else showToast("Enter a number of minutes between 1 and 180");
+    });
+    wrap.appendChild(setBtn);
+    return wrap;
+  }
+
+  function addStepBack(stepEl) {
+    var back = document.createElement("button");
+    back.type = "button";
+    back.className = "picker-step-back";
+    back.textContent = "← Back";
+    back.addEventListener("click", function () { pickerStep = { view: "main", bodyPart: null }; renderPickerStep(); });
+    stepEl.appendChild(back);
+  }
+
+  function renderPickerStep() {
+    var mainEl = document.getElementById("priority-picker-main");
+    var stepEl = document.getElementById("priority-picker-step");
+    stepEl.innerHTML = "";
+
+    if (pickerStep.view === "main") {
+      mainEl.classList.remove("hidden");
+      stepEl.classList.add("hidden");
+      return;
+    }
+    mainEl.classList.add("hidden");
+    stepEl.classList.remove("hidden");
+    addStepBack(stepEl);
+
+    if (pickerStep.view === "study-duration") {
+      var t1 = document.createElement("p");
+      t1.className = "picker-step-title";
+      t1.textContent = "How long do you want to study?";
+      stepEl.appendChild(t1);
+      stepEl.appendChild(buildDurationChipPicker([15, 25, 30, 45, 60], function (mins) {
+        setTodaysStudyPriority(mins);
+        pendingAdjustmentNote = null;
+        pickerStep = { view: "main", bodyPart: null };
+        renderHome();
+      }));
+    } else if (pickerStep.view === "fitness-bodypart") {
+      var t2 = document.createElement("p");
+      t2.className = "picker-step-title";
+      t2.textContent = "What are you training today?";
+      stepEl.appendChild(t2);
+      var grid = document.createElement("div");
+      grid.className = "preset-plan-grid";
+      FITNESS_BODY_PARTS.forEach(function (bp) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "preset-plan-chip";
+        btn.textContent = bp.label;
+        btn.addEventListener("click", function () {
+          pickerStep = { view: "fitness-duration", bodyPart: bp.key };
+          renderPickerStep();
+        });
+        grid.appendChild(btn);
+      });
+      stepEl.appendChild(grid);
+    } else if (pickerStep.view === "fitness-duration") {
+      var t3 = document.createElement("p");
+      t3.className = "picker-step-title";
+      t3.textContent = "How much time do you have?";
+      stepEl.appendChild(t3);
+      stepEl.appendChild(buildDurationChipPicker([5, 10, 20, 30, 45], function (mins) {
+        setTodaysFitnessPriority(pickerStep.bodyPart, mins);
+        pendingAdjustmentNote = null;
+        pickerStep = { view: "main", bodyPart: null };
+        renderHome();
+      }));
+    } else if (pickerStep.view === "salah-setup") {
+      var text = document.createElement("p");
+      text.className = "salah-setup-text";
+      text.textContent = "NURA uses your location only to calculate local prayer times.";
+      stepEl.appendChild(text);
+      var allowBtn = document.createElement("button");
+      allowBtn.type = "button";
+      allowBtn.className = "btn btn-primary btn-full";
+      allowBtn.textContent = "Allow Location";
+      allowBtn.addEventListener("click", function () {
+        if (!navigator.geolocation) { showToast("Location isn't available on this device — use manual setup instead"); return; }
+        showToast("Getting your location…");
+        navigator.geolocation.getCurrentPosition(function (pos) {
+          savePrayerSettings({ mode: "auto", lat: pos.coords.latitude, lon: pos.coords.longitude, method: 1 });
+          setTodaysSalahPriority();
+          pendingAdjustmentNote = null;
+          pickerStep = { view: "main", bodyPart: null };
+          renderHome();
+        }, function () {
+          showToast("Location permission denied — use manual setup instead");
+        }, { timeout: 10000 });
+      });
+      stepEl.appendChild(allowBtn);
+      var manualBtn = document.createElement("button");
+      manualBtn.type = "button";
+      manualBtn.className = "btn btn-outline btn-full";
+      manualBtn.textContent = "Enter city manually";
+      manualBtn.addEventListener("click", function () {
+        pickerStep = { view: "salah-manual", bodyPart: null };
+        renderPickerStep();
+      });
+      stepEl.appendChild(manualBtn);
+    } else if (pickerStep.view === "salah-manual") {
+      var cityInput = document.createElement("input");
+      cityInput.type = "text";
+      cityInput.className = "text-input";
+      cityInput.placeholder = "City";
+      var countryInput = document.createElement("input");
+      countryInput.type = "text";
+      countryInput.className = "text-input";
+      countryInput.placeholder = "Country";
+      var methodSelect = document.createElement("select");
+      methodSelect.className = "text-input";
+      PRAYER_METHODS.forEach(function (m) {
+        var opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = m.label;
+        methodSelect.appendChild(opt);
+      });
+      var saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "btn btn-primary btn-full";
+      saveBtn.textContent = "Save and continue";
+      saveBtn.addEventListener("click", function () {
+        var city = cityInput.value.trim();
+        var country = countryInput.value.trim();
+        if (!city || !country) { showToast("Enter both city and country"); return; }
+        savePrayerSettings({ mode: "manual", city: city, country: country, method: Number(methodSelect.value) });
+        setTodaysSalahPriority();
+        pendingAdjustmentNote = null;
+        pickerStep = { view: "main", bodyPart: null };
+        renderHome();
+      });
+      stepEl.appendChild(cityInput);
+      stepEl.appendChild(countryInput);
+      stepEl.appendChild(methodSelect);
+      stepEl.appendChild(saveBtn);
+    }
   }
 
   function renderPresetPicker() {
@@ -182,9 +503,26 @@
       btn.className = "preset-plan-chip";
       btn.textContent = plan.label;
       btn.addEventListener("click", function () {
-        setTodaysPriority(plan.key, null);
-        pendingAdjustmentNote = null;
-        renderHome();
+        if (plan.key === "study") {
+          pickerStep = { view: "study-duration", bodyPart: null };
+          renderPickerStep();
+        } else if (plan.key === "fitness") {
+          pickerStep = { view: "fitness-bodypart", bodyPart: null };
+          renderPickerStep();
+        } else if (plan.key === "salah") {
+          if (getPrayerSettings()) {
+            setTodaysSalahPriority();
+            pendingAdjustmentNote = null;
+            renderHome();
+          } else {
+            pickerStep = { view: "salah-setup", bodyPart: null };
+            renderPickerStep();
+          }
+        } else {
+          setTodaysPriority(plan.key, null);
+          pendingAdjustmentNote = null;
+          renderHome();
+        }
       });
       grid.appendChild(btn);
     });
@@ -195,32 +533,248 @@
     } else {
       note.classList.add("hidden");
     }
+    renderPickerStep();
+  }
+
+  // ---------- TODAY'S PROGRESS RING ----------
+
+  function computeProgressPercent(p) {
+    if (!p || p.status !== "pending") return p ? 100 : 0;
+    if (p.kind === "salah") {
+      var completions = getSalahCompletions();
+      var doneCount = PRAYER_ORDER.filter(function (n) { return completions[n]; }).length;
+      return Math.round((doneCount / PRAYER_ORDER.length) * 100);
+    }
+    if (focusState.linkedPriorityId === p.id && p.minutes && (p.kind !== "fitness" || p.warmupDone)) {
+      var total = focusSecondsTotal();
+      var elapsed = total - focusState.remaining;
+      return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+    }
+    return 0;
+  }
+
+  function renderProgressRing(p) {
+    var pct = computeProgressPercent(p);
+    var circumference = 213.6;
+    document.getElementById("progress-ring-fill").style.strokeDashoffset = circumference * (1 - pct / 100);
+    document.getElementById("progress-ring-percent").textContent = pct + "%";
   }
 
   function renderProgressLine(p) {
     var line = document.getElementById("progress-line");
+    renderProgressRing(p);
     if (!p) { line.textContent = "Choose today's priority above to begin."; return; }
+    if (p.kind === "salah") {
+      var completions = getSalahCompletions();
+      var doneCount = PRAYER_ORDER.filter(function (n) { return completions[n]; }).length;
+      line.textContent = doneCount + " of 5 prayers marked complete today.";
+      return;
+    }
     if (p.status !== "pending") { line.textContent = "Completed today ✓"; return; }
     if (focusState.linkedPriorityId === p.id && focusState.running) { line.textContent = "In progress — timer running."; return; }
     if (focusState.linkedPriorityId === p.id && focusState.remaining !== focusSecondsTotal()) { line.textContent = "Paused — pick up when ready."; return; }
     line.textContent = "Not started yet.";
   }
 
+  // ---------- SALAH VIEW ----------
+
+  var salahCountdownIntervalId = null;
+
+  function stopSalahCountdown() {
+    if (salahCountdownIntervalId) { clearInterval(salahCountdownIntervalId); salahCountdownIntervalId = null; }
+  }
+
+  function startSalahCountdown(targetTime) {
+    stopSalahCountdown();
+    function tick() {
+      var el = document.getElementById("salah-countdown-text");
+      if (!el) { stopSalahCountdown(); return; }
+      var diff = targetTime - new Date();
+      if (diff <= 0) {
+        stopSalahCountdown();
+        renderHome();
+        return;
+      }
+      var h = Math.floor(diff / 3600000);
+      var m = Math.floor((diff % 3600000) / 60000);
+      var s = Math.floor((diff % 60000) / 1000);
+      el.textContent = String(h).padStart(2, "0") + "h " + String(m).padStart(2, "0") + "m " + String(s).padStart(2, "0") + "s";
+    }
+    tick();
+    salahCountdownIntervalId = setInterval(tick, 1000);
+  }
+
+  function buildSalahCard(container, timings) {
+    container.innerHTML = "";
+    var next = getNextPrayer(timings);
+    var completions = getSalahCompletions();
+
+    var label = document.createElement("p");
+    label.className = "salah-next-label";
+    label.textContent = next.tomorrow ? "Next Salah (tomorrow)" : "Next Salah";
+    container.appendChild(label);
+
+    var name = document.createElement("p");
+    name.className = "salah-next-name";
+    name.textContent = next.name;
+    container.appendChild(name);
+
+    var clock = document.createElement("p");
+    clock.className = "salah-next-clock";
+    clock.textContent = next.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    container.appendChild(clock);
+
+    var countdown = document.createElement("p");
+    countdown.className = "salah-countdown";
+    countdown.id = "salah-countdown-text";
+    container.appendChild(countdown);
+
+    var lastPassed = null;
+    for (var i = PRAYER_ORDER.length - 1; i >= 0; i--) {
+      if (parseTimeToday(timings[PRAYER_ORDER[i]]) <= new Date()) { lastPassed = PRAYER_ORDER[i]; break; }
+    }
+    if (!lastPassed) lastPassed = "Isha";
+
+    var markBtn = document.createElement("button");
+    markBtn.className = "btn btn-primary btn-full";
+    if (completions[lastPassed]) {
+      markBtn.textContent = lastPassed + " marked complete ✓";
+      markBtn.disabled = true;
+    } else {
+      markBtn.textContent = "Mark " + lastPassed + " Complete";
+      markBtn.addEventListener("click", function () {
+        setSalahComplete(lastPassed);
+        renderHome();
+      });
+    }
+    container.appendChild(markBtn);
+
+    if (lastPassed !== "Fajr" && !completions[lastPassed] && PRAYER_ORDER.slice(0, PRAYER_ORDER.indexOf(lastPassed)).some(function (n) { return !completions[n]; })) {
+      var recovery = document.createElement("p");
+      recovery.className = "salah-recovery-note";
+      recovery.textContent = "The next Salah is still an opportunity.";
+      container.appendChild(recovery);
+    }
+
+    var dayList = document.createElement("div");
+    dayList.className = "salah-day-list";
+    PRAYER_ORDER.forEach(function (n) {
+      var item = document.createElement("div");
+      item.className = "salah-day-item" + (completions[n] ? " done" : "") + (n === next.name && !next.tomorrow ? " current" : "");
+      var nm = document.createElement("span");
+      nm.className = "salah-day-name";
+      nm.textContent = n;
+      var mk = document.createElement("span");
+      mk.className = "salah-day-mark";
+      mk.textContent = completions[n] ? "✓" : "—";
+      item.appendChild(nm);
+      item.appendChild(mk);
+      dayList.appendChild(item);
+    });
+    container.appendChild(dayList);
+
+    startSalahCountdown(next.time);
+  }
+
+  function renderSalahView(container) {
+    var settings = getPrayerSettings();
+    if (!settings) {
+      container.innerHTML = '<p class="quran-error-note">Prayer location isn’t set up. Tap “Choose a different priority” and pick Salah Consistency again.</p>';
+      return;
+    }
+    container.innerHTML = '<p class="quran-loading-note">Loading prayer times…</p>';
+    fetchPrayerTimesForToday().then(function (timings) {
+      buildSalahCard(container, timings);
+    }).catch(function () {
+      container.innerHTML = '<p class="quran-error-note">Could not load prayer times. Check your internet connection and try again.</p>';
+    });
+  }
+
+  // ---------- FITNESS VIEW ----------
+
+  function renderFitnessExtra(p, container) {
+    container.innerHTML = "";
+    var bp = FITNESS_BODY_PARTS.find(function (b) { return b.key === p.bodyPart; }) || FITNESS_BODY_PARTS[0];
+
+    var meta = document.createElement("p");
+    meta.className = "fitness-meta-line";
+    meta.textContent = bp.label + " • " + p.minutes + " min";
+    container.appendChild(meta);
+
+    if (!p.warmupDone && bp.warmup.length) {
+      var wTitle = document.createElement("p");
+      wTitle.className = "picker-step-title";
+      wTitle.textContent = "Warm-up first:";
+      container.appendChild(wTitle);
+      var list = document.createElement("ul");
+      list.className = "fitness-warmup-list";
+      bp.warmup.forEach(function (w) {
+        var li = document.createElement("li");
+        li.textContent = w;
+        list.appendChild(li);
+      });
+      container.appendChild(list);
+
+      var doneBtn = document.createElement("button");
+      doneBtn.className = "btn btn-primary btn-full";
+      doneBtn.textContent = "Warm-up done — start workout";
+      doneBtn.addEventListener("click", function () {
+        p.warmupDone = true;
+        savePriority(p);
+        renderHome();
+      });
+      container.appendChild(doneBtn);
+
+      var skipBtn = document.createElement("button");
+      skipBtn.className = "priority-change-link";
+      skipBtn.textContent = "Skip warm-up";
+      skipBtn.addEventListener("click", function () {
+        p.warmupDone = true;
+        savePriority(p);
+        renderHome();
+      });
+      container.appendChild(skipBtn);
+
+      document.getElementById("priority-timer-wrap").classList.add("hidden");
+      return;
+    }
+
+    var wTitle2 = document.createElement("p");
+    wTitle2.className = "picker-step-title";
+    wTitle2.textContent = "Workout:";
+    container.appendChild(wTitle2);
+    var list2 = document.createElement("ul");
+    list2.className = "fitness-warmup-list";
+    bp.workout.forEach(function (w) {
+      var li = document.createElement("li");
+      li.textContent = w;
+      list2.appendChild(li);
+    });
+    container.appendChild(list2);
+  }
+
   function renderTodaysPriority() {
     var checkinEl = document.getElementById("priority-checkin");
     var pickerEl = document.getElementById("priority-picker");
     var activeEl = document.getElementById("priority-active");
+    var genericEl = document.getElementById("priority-view-generic");
+    var salahEl = document.getElementById("priority-view-salah");
     checkinEl.classList.add("hidden");
     pickerEl.classList.add("hidden");
     activeEl.classList.add("hidden");
+    genericEl.classList.add("hidden");
+    salahEl.classList.add("hidden");
+    document.getElementById("priority-extra-content").innerHTML = "";
+    document.getElementById("focus-duration-row").classList.add("hidden");
+    stopSalahCountdown();
 
     if (focusState.adhocLabel) {
       document.getElementById("priority-title").textContent = focusState.adhocLabel;
       document.getElementById("priority-why").textContent = "A quick session started from Bhai AI — not today's chosen priority.";
       activeEl.classList.remove("hidden");
+      genericEl.classList.remove("hidden");
       document.getElementById("priority-timer-wrap").classList.remove("hidden");
       document.getElementById("priority-done-text").classList.add("hidden");
-      document.getElementById("focus-duration-row").classList.add("hidden");
       document.getElementById("priority-change-btn").classList.add("hidden");
       updateFocusUI();
       document.getElementById("progress-line").textContent = focusState.running ? "In progress — timer running." : "Paused — pick up when ready.";
@@ -232,8 +786,10 @@
     var today = todayKey();
 
     if (p && p.date !== today && p.status === "pending") {
-      document.getElementById("priority-checkin-text").textContent =
-        "Yesterday you planned: “" + p.title + "”. What happened?";
+      var checkinText = p.kind === "salah"
+        ? "Yesterday's Salah Consistency — " + PRAYER_ORDER.filter(function (n) { return (readJSON("nc_salah_completions", {})[p.date] || {})[n]; }).length + " of 5 prayers marked complete. What happened overall?"
+        : "Yesterday you planned: “" + p.title + "”. What happened?";
+      document.getElementById("priority-checkin-text").textContent = checkinText;
       checkinEl.classList.remove("hidden");
       renderProgressLine(null);
       return;
@@ -250,6 +806,15 @@
     document.getElementById("priority-why").textContent = "Why this? " + p.why;
     activeEl.classList.remove("hidden");
 
+    if (p.kind === "salah") {
+      salahEl.classList.remove("hidden");
+      renderSalahView(salahEl);
+      renderProgressLine(p);
+      return;
+    }
+
+    genericEl.classList.remove("hidden");
+
     if (focusState.linkedPriorityId !== p.id) {
       focusState.linkedPriorityId = p.id;
       if (!focusState.running) {
@@ -258,12 +823,17 @@
       }
     }
 
+    if (p.kind === "fitness") {
+      renderFitnessExtra(p, document.getElementById("priority-extra-content"));
+    }
+
     var timerWrap = document.getElementById("priority-timer-wrap");
     var doneText = document.getElementById("priority-done-text");
     var isPending = p.status === "pending";
-    timerWrap.classList.toggle("hidden", !isPending);
+    var showTimer = isPending && (p.kind !== "fitness" || p.warmupDone);
+    timerWrap.classList.toggle("hidden", !showTimer);
     doneText.classList.toggle("hidden", isPending);
-    document.getElementById("focus-duration-row").classList.toggle("hidden", !!p.minutes);
+    if (showTimer) document.getElementById("focus-duration-row").classList.toggle("hidden", !!p.minutes);
 
     updateFocusUI();
     renderProgressLine(p);
@@ -301,6 +871,19 @@
     });
 
     document.getElementById("priority-change-btn").addEventListener("click", chooseDifferentPriority);
+
+    document.getElementById("focus-prep-continue-btn").addEventListener("click", function () {
+      document.getElementById("modal-focus-prep").classList.add("hidden");
+      if (focusPrepPendingStart) {
+        var p = getCurrentPriority();
+        if (p) focusPrepShownForPriorityId = p.id;
+        focusPrepPendingStart = false;
+        startFocusForPriority();
+      }
+    });
+    document.getElementById("focus-prep-settings-btn").addEventListener("click", function () {
+      showToast("Open your phone's Settings app → Sound / Focus → turn on Do Not Disturb");
+    });
   }
 
   // ---------- FOCUS TIMER ----------
@@ -445,7 +1028,14 @@
 
   function initFocusTimer() {
     document.getElementById("focus-start-btn").addEventListener("click", function () {
-      if (getCurrentPriority()) { startFocusForPriority(); }
+      var p = getCurrentPriority();
+      if (!p) return;
+      if (p.kind === "study" && !focusPrepShownForPriorityId) {
+        focusPrepPendingStart = true;
+        document.getElementById("modal-focus-prep").classList.remove("hidden");
+        return;
+      }
+      startFocusForPriority();
     });
     document.getElementById("focus-pause-btn").addEventListener("click", pauseFocus);
     document.getElementById("focus-stop-btn").addEventListener("click", function () { stopFocus(); renderHome(); });
@@ -2391,7 +2981,6 @@
   }
 
   function initShield() {
-    document.getElementById("open-shield").addEventListener("click", openShield);
     document.getElementById("shield-close").addEventListener("click", closeShield);
     document.getElementById("shield-begin-btn").addEventListener("click", beginShieldPause);
     document.getElementById("shield-done-btn").addEventListener("click", function () {

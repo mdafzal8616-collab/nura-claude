@@ -2,6 +2,26 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — Home Screen Implementation Update: functional progress ring, Study/Salah/Fitness made real
+
+The owner's follow-up prompt assumed a "3 permanent priority cards" Home layout that doesn't match what's actually built (single priority at a time, chosen from 6 presets). Confirmed with the owner before building: **keep the single-priority picker**, and give Study Focus / Salah Consistency / Fitness Basics this full rich behavior specifically when one of those three is the active priority, rather than restructuring Home around 3 always-visible cards.
+
+**Today's Progress ring** — replaced the plain text-only progress line with a real circular SVG ring (`stroke-dasharray`/`stroke-dashoffset`), functional not decorative: 0% not started, live-updating percentage (elapsed/total) while a timed session runs, jumps to 100% on completion. For Salah specifically, the ring reflects prayers-marked-complete / 5 today (tested: marking 1 of 5 shows exactly 20%). Entirely independent of the Change Journey Day counter, as required.
+
+**Shield prompt removed from Home** — deleted the "Need a pause? Open Shield" button and its now-dead JS listener. Verified Shield itself stays reachable (AI Chat's "I'm getting an urge" → "Open Shield now" button still exists) before removing the only other entry point.
+
+**Study Focus** — no more fixed 25 minutes. Picking the preset now opens a duration step (15/25/30/45/60/Custom) before creating today's priority; the card then shows the chosen duration in its title (e.g. "Study Focus — 45 minutes") and the timer starts at that length. Tested end-to-end with a real 45-minute selection.
+
+**Focus Preparation modal** — shows once per Study Focus session, before the timer actually starts: "Ready to focus?" with Continue / Open Settings. Implemented Open Settings honestly rather than faking a working deep link — no web API can reliably jump to a phone's Do Not Disturb settings across browsers/platforms, so it shows clear instructions instead ("Open your phone's Settings app → Sound / Focus → turn on Do Not Disturb"). Continue always proceeds; nothing is blocked if DND isn't enabled.
+
+**Salah Consistency — real Next Salah system.** Prayer times come from Aladhan (api.aladhan.com), a free, keyless, widely-used API — same pattern already used for Quran translations/ruku data: no hard-coded city, no secret keys in client code. First use asks "NURA uses your location only to calculate local prayer times," with Allow Location (browser geolocation) or manual city/country + calculation-method entry (6 common methods offered) as a fallback if permission is denied. Verified live against real coordinates (Delhi): correctly identified Asr as the next prayer with an accurate live countdown (updates every second, tested a real ~40 second countdown) and "Mark Dhuhr Complete" for the prayer whose window is currently open — exactly matching the spec's own worked example. Tapping Mark Complete updates a 5-prayer day strip immediately. Times re-fetch (and re-cache) per local calendar day and per location signature, never hard-coded to one place.
+
+**Fitness Basics — user-controlled.** Picking the preset now asks "What are you training today?" (9 body-part options including Stretching) then "How much time do you have?" Each body part has its own original, beginner-friendly warm-up and workout list (verified Chest and generic body parts show genuinely different content — not a copy-pasted routine) with a skip option on the warm-up. The shared timer only appears once warm-up is done or skipped.
+
+**Progress ring / Today's Progress persistence** — backed by the same `nc_priority_current`/`nc_salah_completions` localStorage records already used elsewhere in Home, so it survives navigating away and correctly resets at local-day boundaries (a new day means a new priority pick, and salah completions are stored per calendar date).
+
+Tested: full regression pass across Sunnah/Quran/AI Chat/Vault/More — zero breakage; zero console errors confirmed on a fresh tab.
+
 ## 2026-09-17 — Home Screen + Self-Improvement Master Update: light green/gold theme, single "Today's Priority", Change Journey Day
 
 The owner sent a full "Home Screen + Self-Improvement Master Update" prompt describing a different, more curated Home experience than what was built the previous turn. Two real conflicts were flagged and resolved with the owner before building: (1) the new light/white/deep-green/gold visual identity vs. the app's existing dark midnight/mint theme — owner chose **whole app**, not just Home; (2) the new single "Today's Priority" vs. the 2-action CHOOSE/DO/TRACK/RESET system built last turn — owner chose **replace**, not layer on top.

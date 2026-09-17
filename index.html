@@ -55,37 +55,47 @@
 
         <div id="priority-picker" class="hidden">
           <p class="muted-line hidden" id="priority-adjustment-note"></p>
-          <p class="muted-line">Pick what matters most today, or create your own.</p>
-          <div class="preset-plan-grid" id="preset-plan-grid"></div>
-          <div class="priority-custom-row">
-            <input type="text" class="text-input" id="priority-custom-input" placeholder="Create your own goal..." maxlength="60">
-            <button class="btn btn-primary" id="priority-custom-btn">Set</button>
+          <div id="priority-picker-main">
+            <p class="muted-line">Pick what matters most today, or create your own.</p>
+            <div class="preset-plan-grid" id="preset-plan-grid"></div>
+            <div class="priority-custom-row">
+              <input type="text" class="text-input" id="priority-custom-input" placeholder="Create your own goal..." maxlength="60">
+              <button class="btn btn-primary" id="priority-custom-btn">Set</button>
+            </div>
           </div>
+          <div id="priority-picker-step" class="hidden"></div>
         </div>
 
         <div id="priority-active" class="hidden">
           <p class="priority-title" id="priority-title"></p>
           <p class="priority-why" id="priority-why"></p>
-          <div id="priority-timer-wrap">
-            <div class="focus-duration-row hidden" id="focus-duration-row">
-              <button class="duration-chip" data-minutes="5">5</button>
-              <button class="duration-chip" data-minutes="10">10</button>
-              <button class="duration-chip" data-minutes="15">15</button>
-              <button class="duration-chip" data-minutes="20">20</button>
-              <button class="duration-chip" data-minutes="25">25</button>
-              <button class="duration-chip" data-minutes="30">30</button>
-              <button class="duration-chip" data-minutes="45">45</button>
-              <button class="duration-chip" data-minutes="60">60</button>
-              <input type="number" id="focus-duration-custom" class="duration-custom-input" placeholder="Custom" min="1" max="180">
+
+          <div id="priority-view-generic">
+            <div id="priority-extra-content"></div>
+            <div id="priority-timer-wrap">
+              <div class="focus-duration-row hidden" id="focus-duration-row">
+                <button class="duration-chip" data-minutes="5">5</button>
+                <button class="duration-chip" data-minutes="10">10</button>
+                <button class="duration-chip" data-minutes="15">15</button>
+                <button class="duration-chip" data-minutes="20">20</button>
+                <button class="duration-chip" data-minutes="25">25</button>
+                <button class="duration-chip" data-minutes="30">30</button>
+                <button class="duration-chip" data-minutes="45">45</button>
+                <button class="duration-chip" data-minutes="60">60</button>
+                <input type="number" id="focus-duration-custom" class="duration-custom-input" placeholder="Custom" min="1" max="180">
+              </div>
+              <p class="focus-clock" id="focus-clock">20:00</p>
+              <div class="focus-controls">
+                <button class="btn btn-primary btn-full" id="focus-start-btn">Start Now</button>
+                <button class="btn btn-outline btn-full hidden" id="focus-pause-btn">Pause</button>
+                <button class="btn btn-outline btn-full hidden" id="focus-stop-btn">Finish</button>
+              </div>
             </div>
-            <p class="focus-clock" id="focus-clock">20:00</p>
-            <div class="focus-controls">
-              <button class="btn btn-primary btn-full" id="focus-start-btn">Start Now</button>
-              <button class="btn btn-outline btn-full hidden" id="focus-pause-btn">Pause</button>
-              <button class="btn btn-outline btn-full hidden" id="focus-stop-btn">Finish</button>
-            </div>
+            <p class="priority-done-text hidden" id="priority-done-text">Completed today ✓</p>
           </div>
-          <p class="priority-done-text hidden" id="priority-done-text">Completed today ✓</p>
+
+          <div id="priority-view-salah" class="hidden"></div>
+
           <button class="priority-change-link" id="priority-change-btn">Choose a different priority</button>
         </div>
       </div>
@@ -93,12 +103,19 @@
 
     <section class="card">
       <div class="card-row">
-        <h2>Today</h2>
+        <h2>Today's Progress</h2>
       </div>
-      <p class="muted-line" id="progress-line">Not started yet.</p>
+      <div class="progress-ring-row">
+        <div class="progress-ring-wrap">
+          <svg viewBox="0 0 80 80" class="progress-ring-svg">
+            <circle cx="40" cy="40" r="34" class="progress-ring-track"/>
+            <circle cx="40" cy="40" r="34" class="progress-ring-fill" id="progress-ring-fill"/>
+          </svg>
+          <span class="progress-ring-percent" id="progress-ring-percent">0%</span>
+        </div>
+        <p class="muted-line" id="progress-line">Not started yet.</p>
+      </div>
     </section>
-
-    <button class="btn btn-shield btn-full" id="open-shield">Need a pause? Open Shield</button>
   </main>
 
   <!-- SUNNAH -->
@@ -429,6 +446,17 @@
     <p class="modal-sub" id="focus-check-text">Did you actually finish the task, or just the timer?</p>
     <button class="btn btn-primary btn-full" id="focus-check-done">Yes, I finished it</button>
     <button class="btn btn-outline btn-full" id="focus-check-notdone">No, still working on it</button>
+  </div>
+</div>
+
+<!-- FOCUS PREPARATION MODAL -->
+<div class="modal-overlay hidden" id="modal-focus-prep">
+  <div class="modal-sheet">
+    <h2>Ready to focus?</h2>
+    <p class="modal-sub">For a better focus session, turn on Do Not Disturb / Focus Mode.</p>
+    <p class="modal-sub">Reducing distractions also helps — try silent mode, or Airplane Mode if you don't need internet.</p>
+    <button class="btn btn-outline btn-full" id="focus-prep-settings-btn">Open Settings</button>
+    <button class="btn btn-primary btn-full" id="focus-prep-continue-btn">Continue</button>
   </div>
 </div>
 

@@ -82,6 +82,31 @@ html, body {
 .priority-checkin-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 
 .priority-done-text { font-size: 15px; font-weight: 700; color: var(--mint); text-align: center; margin: 8px 0 4px; }
+
+/* TODAY'S PROGRESS RING */
+.progress-ring-row { display: flex; align-items: center; gap: 16px; }
+.progress-ring-wrap { position: relative; width: 76px; height: 76px; flex-shrink: 0; }
+.progress-ring-svg { width: 76px; height: 76px; transform: rotate(-90deg); }
+.progress-ring-track { fill: none; stroke: var(--surface-2); stroke-width: 8; }
+.progress-ring-fill {
+  fill: none;
+  stroke: var(--mint);
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: 213.6;
+  stroke-dashoffset: 213.6;
+  transition: stroke-dashoffset 0.4s ease;
+}
+.progress-ring-percent {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
 #priority-adjustment-note { background: var(--surface-2); border: 1px dashed var(--border); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
 
 .priority-title { font-size: 18px; font-weight: 700; margin: 0 0 6px; color: var(--text); }
@@ -123,6 +148,37 @@ html, body {
 
 .priority-custom-row { display: flex; gap: 8px; }
 .priority-custom-row .text-input { margin-bottom: 0; flex: 1; }
+
+/* PICKER SUB-STEPS (study duration, fitness body part/duration, salah setup) */
+.picker-step-back {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 0 0 10px;
+  font-family: inherit;
+}
+.picker-step-title { font-size: 14px; font-weight: 600; margin: 0 0 10px; }
+
+/* SALAH */
+.salah-next-label { font-size: 11.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 0 0 2px; }
+.salah-next-name { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+.salah-next-clock { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+.salah-countdown { font-size: 32px; font-weight: 700; text-align: center; margin: 6px 0 16px; color: var(--mint); font-variant-numeric: tabular-nums; }
+.salah-day-list { display: flex; justify-content: space-between; gap: 6px; margin: 14px 0 16px; }
+.salah-day-item { flex: 1; text-align: center; padding: 8px 2px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.salah-day-item.done { border-color: var(--mint); background: rgba(27, 94, 63, 0.08); }
+.salah-day-item.current { border-color: var(--gold); }
+.salah-day-name { display: block; font-size: 10.5px; color: var(--muted); margin-bottom: 3px; }
+.salah-day-mark { display: block; font-size: 13px; }
+.salah-setup-text { font-size: 13.5px; line-height: 1.6; margin: 0 0 14px; color: var(--muted); }
+.salah-recovery-note { font-size: 12.5px; color: var(--mint-soft); margin: 0 0 12px; }
+
+/* FITNESS */
+.fitness-warmup-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fitness-warmup-list li { font-size: 13.5px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; }
+.fitness-meta-line { font-size: 12.5px; color: var(--muted); margin: 0 0 12px; }
 
 .avatar-btn {
   width: 38px;
