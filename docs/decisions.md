@@ -2,6 +2,19 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-17 — Jumu'ah (Friday) added as its own Routine section
+
+Read "jumman special thing" as Jumu'ah (Friday) — the app had no Friday-specific content at all, and Friday genuinely has a distinct set of sunnahs beyond a normal Dhuhr. Added a new "Jumu'ah (Friday)" section (id `jumuah`) between Dhuhr and Asr, with 7 actions, each hadith verified live on sunnah.com before being added:
+- Take ghusl before Jumu'ah — Sahih al-Bukhari 877
+- Go early to the masjid — Sahih al-Bukhari 881
+- Recite Surah Al-Kahf — Mustadrak al-Hakim, graded Sahih in Sahih at-Targhib wa at-Tarhib 736 (also links straight to Surah 18 in the new full-Quran reader via `action.link.surah`, extending the existing link mechanism)
+- Send extra salawat on the Prophet ﷺ — Sunan Abi Dawud 1047, graded Sahih (Al-Albani) — has a free tasbih counter
+- Pray Jumu'ah (plain toggle, no citation needed)
+- Stay silent during the khutbah — Sahih al-Bukhari 934
+- Make dua in the hour of acceptance — Sahih al-Bukhari 935
+
+Tested: section renders between Dhuhr/Asr with correct item count, all citations expand correctly, Al-Kahf link opens the Quran tab directly on Surah 18, salawat counter works, completion badge updates correctly, zero regressions across Akhlaq/Quran/Hadith, zero console errors. (Caught and fixed one self-introduced typo — a stray non-Arabic glyph where ﷺ should have been in one item's name — before shipping.)
+
 ## 2026-09-17 — Full Quran (114 surahs) with English + Urdu translation, and Witr's Dua Qunoot added
 
 **Full Quran browsing.** The Quran tab was a single daily-verse proof of concept; it now also has a full surah list (searchable) → surah detail view with every ayah. Data sourcing, kept consistent with how the rest of this app sources Islamic content:

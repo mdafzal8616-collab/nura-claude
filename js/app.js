@@ -469,6 +469,58 @@
       { id: "dh-dhikr", name: "Dhikr after salah", items: AFTER_SALAH_DHIKR_ITEMS },
       { id: "dh-after", name: "Sunnah after Dhuhr" }
     ]},
+    { id: "jumuah", title: "Jumu'ah (Friday)", actions: [
+      { id: "jm-ghusl", name: "Take ghusl before Jumu'ah", items: [
+        {
+          arabic: "إِذَا جَاءَ أَحَدُكُمُ الْجُمُعَةَ فَلْيَغْتَسِلْ",
+          transliteration: "Idha ja'a ahadukumul-Jumu'ata falyaghtasil",
+          meaning: "Anyone of you attending the Friday (prayer) should take a bath.",
+          source: "Sahih al-Bukhari 877, narrated by Abdullah ibn Umar"
+        }
+      ] },
+      { id: "jm-early", name: "Go early to the masjid", items: [
+        {
+          arabic: "مَنِ اغْتَسَلَ يَوْمَ الْجُمُعَةِ غُسْلَ الْجَنَابَةِ ثُمَّ رَاحَ فَكَأَنَّمَا قَرَّبَ بَدَنَةً",
+          transliteration: "Man ightasala yawmal-Jumu'ati ghusla-l-janabati thumma rah, fa ka'annama qarraba badanah...",
+          meaning: "Whoever takes a bath on Friday like the bath for major ritual impurity and then goes early (in the first hour), it is as if he sacrificed a camel; going later each hour is likened to a smaller sacrifice, down to just an egg in the last hour before the khutbah begins.",
+          source: "Sahih al-Bukhari 881, narrated by Abu Hurairah"
+        }
+      ] },
+      { id: "jm-kahf", name: "Recite Surah Al-Kahf", link: { subtab: "quran", label: "Open Al-Kahf", surah: 18 }, items: [
+        {
+          arabic: "مَنْ قَرَأَ سُورَةَ الْكَهْفِ فِي يَوْمِ الْجُمُعَةِ أَضَاءَ لَهُ النُّورُ مَا بَيْنَ الْجُمُعَتَيْنِ",
+          transliteration: "Man qara'a Surata-l-Kahfi fi yawmi-l-Jumu'ati adaa'a lahun-nuru ma baynal-Jumu'atayn",
+          meaning: "Whoever reads Surah al-Kahf on the day of Jumu'ah, a light will shine for him between the two Fridays.",
+          source: "Mustadrak al-Hakim; graded Sahih in Sahih at-Targhib wa at-Tarhib 736, narrated by Abu Sa'id al-Khudri"
+        }
+      ] },
+      { id: "jm-salawat", name: "Send extra salawat on the Prophet ﷺ", items: [
+        {
+          arabic: "إِنَّ مِنْ أَفْضَلِ أَيَّامِكُمْ يَوْمَ الْجُمُعَةِ ... فَأَكْثِرُوا عَلَىَّ مِنَ الصَّلاَةِ فِيهِ",
+          transliteration: "Inna min afdali ayyamikum yawmal-Jumu'ah ... fa akthiru 'alayya minas-salati fih",
+          meaning: "Among the most excellent of your days is Friday, so send more blessings (salawat) upon me on that day, for your blessings are presented to me.",
+          source: "Sunan Abi Dawud 1047, graded Sahih (Al-Albani), narrated by Aws ibn Aws",
+          tasbih: { mode: "free" }
+        }
+      ] },
+      { id: "jm-pray", name: "Pray Jumu'ah" },
+      { id: "jm-quiet", name: "Stay silent and listen during the khutbah", items: [
+        {
+          arabic: "إِذَا قُلْتَ لِصَاحِبِكَ يَوْمَ الْجُمُعَةِ أَنْصِتْ وَالإِمَامُ يَخْطُبُ فَقَدْ لَغَوْتَ",
+          transliteration: "Idha qulta li-sahibika yawmal-Jumu'ati ansit wal-imamu yakhtubu faqad laghawt",
+          meaning: "If you even tell your companion to 'be quiet' while the Imam is delivering the khutbah, you have spoken needlessly (and reduced your reward).",
+          source: "Sahih al-Bukhari 934, narrated by Abu Hurairah"
+        }
+      ] },
+      { id: "jm-dua-hour", name: "Make dua — there's an hour of acceptance", items: [
+        {
+          arabic: "فِيهِ سَاعَةٌ لاَ يُوَافِقُهَا عَبْدٌ مُسْلِمٌ وَهْوَ قَائِمٌ يُصَلِّي يَسْأَلُ اللَّهَ تَعَالَى شَيْئًا إِلاَّ أَعْطَاهُ إِيَّاهُ",
+          transliteration: "Fihi sa'atun la yuwafiquha 'abdun Muslimun wa huwa qa'imun yusalli yas'alu-llaha ta'ala shay'an illa a'tahu iyyah",
+          meaning: "There is an hour on Friday in which, if a Muslim prays and asks Allah for something, He will give it to him. The Prophet ﷺ indicated it is a short time (commonly held to be in the last hour before Maghrib).",
+          source: "Sahih al-Bukhari 935, narrated by Abu Hurairah"
+        }
+      ] }
+    ]},
     { id: "asr", title: "Asr", actions: [
       { id: "as-pray", name: "Pray Asr on time" },
       { id: "as-dhikr", name: "Dhikr after salah", items: AFTER_SALAH_DHIKR_ITEMS }
@@ -799,6 +851,7 @@
       linkBtn.textContent = action.link.label || "Open";
       linkBtn.addEventListener("click", function () {
         switchSunnahSubtab(action.link.subtab);
+        if (action.link.surah) openQuranSurah(action.link.surah);
       });
       item.appendChild(linkBtn);
     }
