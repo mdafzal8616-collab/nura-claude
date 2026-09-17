@@ -47,344 +47,260 @@
     return prefix + "-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
   }
 
-  // ---------- TODAY'S ACTIONS (Home) ----------
-  // Core loop: CHOOSE (max 2/day) -> DO (Start Now) -> TRACK (done/partial/
-  // skipped) -> RESET (smaller recovery action, never destroys history) ->
-  // REVIEW (end-of-day 3 questions + weekly pattern) -> REPEAT.
+  // ---------- CHANGE JOURNEY DAY ----------
+  // Calendar days since the user's first day, +1. Never a streak: never
+  // reset by a missed day, never dependent on habit completion.
 
-  function getActions() {
-    return readJSON("nc_actions", []);
+  function ensureJourneyStarted() {
+    if (!localStorage.getItem("nc_journey_start")) {
+      localStorage.setItem("nc_journey_start", todayKey());
+    }
   }
 
-  function saveActions(actions) {
-    writeJSON("nc_actions", actions);
+  function getJourneyDay() {
+    var startKey = localStorage.getItem("nc_journey_start") || todayKey();
+    var start = new Date(startKey + "T00:00:00");
+    var now = new Date(todayKey() + "T00:00:00");
+    var diffDays = Math.round((now - start) / 86400000);
+    return Math.max(1, diffDays + 1);
   }
+
+  // ---------- MOTIVATIONAL LINE ----------
+  // One line, stable for the whole day (picked deterministically from the
+  // date), not re-randomized on every render.
+
+  var MOTIVATION_LINES = [
+    "Today's small step still counts.",
+    "Progress starts with what you do next.",
+    "One focused action can change your day.",
+    "Improve a little. Repeat it tomorrow.",
+    "You don't need a perfect day, just one honest step."
+  ];
+
+  function getTodaysMotivationLine() {
+    var key = todayKey();
+    var seed = 0;
+    for (var i = 0; i < key.length; i++) seed += key.charCodeAt(i);
+    return MOTIVATION_LINES[seed % MOTIVATION_LINES.length];
+  }
+
+  // ---------- TODAY'S PRIORITY ----------
+  // Core loop: CHOOSE (one priority) -> DO (Start Now) -> TRACK -> REVIEW
+  // (next-day accountability, realistic adjustment) -> REPEAT. No streaks,
+  // no reset-mode, no multi-item checklist.
+
+  var PRESET_PLANS = [
+    { key: "study", label: "Study Focus", why: "You chose Study Focus as what matters most today.", actionTitle: "Study for 25 minutes", minutes: 25 },
+    { key: "sleep", label: "Better Sleep", why: "You chose Better Sleep as what matters most today.", actionTitle: "Start winding down 30 minutes before bed", minutes: 30 },
+    { key: "phone", label: "Reduce Phone Use", why: "You chose Reduce Phone Use as what matters most today.", actionTitle: "Keep your phone away for the next 30 minutes", minutes: 30 },
+    { key: "salah", label: "Salah Consistency", why: "You chose Salah Consistency as what matters most today.", actionTitle: "Pray the next Salah on time", minutes: null },
+    { key: "fitness", label: "Fitness Basics", why: "You chose Fitness Basics as what matters most today.", actionTitle: "Take a 15-minute walk", minutes: 15 },
+    { key: "morning", label: "Morning Routine", why: "You chose Morning Routine as what matters most today.", actionTitle: "Do your full morning routine", minutes: 15 }
+  ];
+
+  var pendingAdjustmentNote = null;
 
   function parseMinutesFromTitle(title) {
     var m = title.match(/(\d+)\s*min/i);
     return m ? Number(m[1]) : null;
   }
 
-  function todaysMainActions() {
-    var key = todayKey();
-    return getActions().filter(function (a) { return a.date === key && !a.parentId; });
+  function getCurrentPriority() {
+    return readJSON("nc_priority_current", null);
   }
 
-  function addAction(title) {
-    if (todaysMainActions().length >= 2) return false;
-    var actions = getActions();
-    actions.push({
-      id: uid("act"),
-      date: todayKey(),
-      title: title,
-      minutes: parseMinutesFromTitle(title),
-      status: "pending",
-      parentId: null,
-      createdAt: Date.now(),
-      completedAt: null
+  function savePriority(p) {
+    writeJSON("nc_priority_current", p);
+  }
+
+  function appendPriorityLog(entry) {
+    var log = readJSON("nc_priority_log", []);
+    log.push(entry);
+    writeJSON("nc_priority_log", log);
+  }
+
+  function setTodaysPriority(planKey, customTitle) {
+    var plan = planKey ? PRESET_PLANS.find(function (pl) { return pl.key === planKey; }) : null;
+    var p;
+    if (plan) {
+      p = { id: uid("pri"), planKey: plan.key, title: plan.actionTitle, why: plan.why, minutes: plan.minutes, date: todayKey(), status: "pending" };
+    } else {
+      var title = customTitle.trim();
+      p = { id: uid("pri"), planKey: null, title: title, why: "You chose this as what matters most today.", minutes: parseMinutesFromTitle(title), date: todayKey(), status: "pending" };
+    }
+    savePriority(p);
+    focusState.linkedPriorityId = null;
+    return p;
+  }
+
+  function markPriorityStatusToday(status) {
+    var p = getCurrentPriority();
+    if (!p) return;
+    p.status = status;
+    savePriority(p);
+  }
+
+  function submitAccountability(status) {
+    var p = getCurrentPriority();
+    if (!p) return;
+    appendPriorityLog({ date: p.date, planKey: p.planKey, title: p.title, minutes: p.minutes, status: status });
+
+    if (status === "partial" && p.minutes) {
+      var half = Math.max(5, Math.round(p.minutes / 2));
+      var newTitle = p.title.replace(/\d+\s*min(ute)?s?/i, half + " min");
+      savePriority({ id: uid("pri"), planKey: p.planKey, title: newTitle, why: "Adjusted from yesterday — a smaller target, same goal.", minutes: half, date: todayKey(), status: "pending" });
+      showToast("Yesterday's target was " + p.minutes + " min. Today's: " + half + " min.");
+    } else if (status === "not-yet" && p.minutes) {
+      var smaller = Math.max(5, Math.round(p.minutes * 0.7));
+      var newTitle2 = p.title.replace(/\d+\s*min(ute)?s?/i, smaller + " min");
+      savePriority({ id: uid("pri"), planKey: p.planKey, title: newTitle2, why: "Let's try again with a smaller, doable target.", minutes: smaller, date: todayKey(), status: "pending" });
+      showToast("No worries — today's target: " + smaller + " min.");
+    } else {
+      savePriority(null);
+      pendingAdjustmentNote = status === "completed" ? "Nice — you finished it. Pick today's priority." : "Pick today's priority.";
+    }
+    focusState.linkedPriorityId = null;
+    renderHome();
+  }
+
+  function chooseDifferentPriority() {
+    var p = getCurrentPriority();
+    if (p) {
+      appendPriorityLog({ date: p.date, planKey: p.planKey, title: p.title, minutes: p.minutes, status: p.status === "pending" ? "not-yet" : p.status });
+      savePriority(null);
+    }
+    focusState.linkedPriorityId = null;
+    stopFocus();
+    renderHome();
+  }
+
+  function renderPresetPicker() {
+    var grid = document.getElementById("preset-plan-grid");
+    grid.innerHTML = "";
+    PRESET_PLANS.forEach(function (plan) {
+      var btn = document.createElement("button");
+      btn.className = "preset-plan-chip";
+      btn.textContent = plan.label;
+      btn.addEventListener("click", function () {
+        setTodaysPriority(plan.key, null);
+        pendingAdjustmentNote = null;
+        renderHome();
+      });
+      grid.appendChild(btn);
     });
-    saveActions(actions);
-    return true;
+    var note = document.getElementById("priority-adjustment-note");
+    if (pendingAdjustmentNote) {
+      note.textContent = pendingAdjustmentNote;
+      note.classList.remove("hidden");
+    } else {
+      note.classList.add("hidden");
+    }
   }
 
-  function setActionStatus(id, status) {
-    var actions = getActions();
-    actions.forEach(function (a) {
-      if (a.id === id) {
-        a.status = status;
-        if (status === "done") a.completedAt = Date.now();
+  function renderProgressLine(p) {
+    var line = document.getElementById("progress-line");
+    if (!p) { line.textContent = "Choose today's priority above to begin."; return; }
+    if (p.status !== "pending") { line.textContent = "Completed today ✓"; return; }
+    if (focusState.linkedPriorityId === p.id && focusState.running) { line.textContent = "In progress — timer running."; return; }
+    if (focusState.linkedPriorityId === p.id && focusState.remaining !== focusSecondsTotal()) { line.textContent = "Paused — pick up when ready."; return; }
+    line.textContent = "Not started yet.";
+  }
+
+  function renderTodaysPriority() {
+    var checkinEl = document.getElementById("priority-checkin");
+    var pickerEl = document.getElementById("priority-picker");
+    var activeEl = document.getElementById("priority-active");
+    checkinEl.classList.add("hidden");
+    pickerEl.classList.add("hidden");
+    activeEl.classList.add("hidden");
+
+    if (focusState.adhocLabel) {
+      document.getElementById("priority-title").textContent = focusState.adhocLabel;
+      document.getElementById("priority-why").textContent = "A quick session started from Bhai AI — not today's chosen priority.";
+      activeEl.classList.remove("hidden");
+      document.getElementById("priority-timer-wrap").classList.remove("hidden");
+      document.getElementById("priority-done-text").classList.add("hidden");
+      document.getElementById("focus-duration-row").classList.add("hidden");
+      document.getElementById("priority-change-btn").classList.add("hidden");
+      updateFocusUI();
+      document.getElementById("progress-line").textContent = focusState.running ? "In progress — timer running." : "Paused — pick up when ready.";
+      return;
+    }
+    document.getElementById("priority-change-btn").classList.remove("hidden");
+
+    var p = getCurrentPriority();
+    var today = todayKey();
+
+    if (p && p.date !== today && p.status === "pending") {
+      document.getElementById("priority-checkin-text").textContent =
+        "Yesterday you planned: “" + p.title + "”. What happened?";
+      checkinEl.classList.remove("hidden");
+      renderProgressLine(null);
+      return;
+    }
+
+    if (!p || p.date !== today) {
+      renderPresetPicker();
+      pickerEl.classList.remove("hidden");
+      renderProgressLine(null);
+      return;
+    }
+
+    document.getElementById("priority-title").textContent = p.title;
+    document.getElementById("priority-why").textContent = "Why this? " + p.why;
+    activeEl.classList.remove("hidden");
+
+    if (focusState.linkedPriorityId !== p.id) {
+      focusState.linkedPriorityId = p.id;
+      if (!focusState.running) {
+        if (p.minutes) setFocusDurationMinutes(p.minutes);
+        focusState.remaining = focusSecondsTotal();
       }
-    });
-    saveActions(actions);
-  }
-
-  function deletePendingAction(id) {
-    var actions = getActions();
-    var target = actions.find(function (a) { return a.id === id; });
-    if (!target || target.status !== "pending") return; // never erase a recorded outcome
-    saveActions(actions.filter(function (a) { return a.id !== id; }));
-  }
-
-  function buildRecoveryFrom(original) {
-    var m = original.title.match(/(\d+)\s*min/i);
-    if (m) {
-      var mins = Number(m[1]);
-      var smaller = mins > 5 ? 5 : Math.max(1, mins - 1);
-      return { title: original.title.replace(/\d+\s*min(ute)?s?/i, smaller + " min"), minutes: smaller };
-    }
-    return { title: "A small part of it, right now: " + original.title, minutes: null };
-  }
-
-  function createRecoveryAction(parent) {
-    var actions = getActions();
-    var already = actions.find(function (a) { return a.parentId === parent.id; });
-    if (already) return; // one recovery step per action, not an endless chain
-    var rec = buildRecoveryFrom(parent);
-    actions.push({
-      id: uid("act"),
-      date: todayKey(),
-      title: rec.title,
-      minutes: rec.minutes,
-      status: "pending",
-      parentId: parent.id,
-      createdAt: Date.now(),
-      completedAt: null
-    });
-    saveActions(actions);
-  }
-
-  function buildActionButtons(action) {
-    var wrap = document.createElement("div");
-    wrap.className = "action-buttons";
-
-    var startBtn = document.createElement("button");
-    startBtn.className = "action-btn primary";
-    startBtn.textContent = "Start Now";
-    startBtn.addEventListener("click", function () { startFocusForAction(action.id); });
-    wrap.appendChild(startBtn);
-
-    var doneBtn = document.createElement("button");
-    doneBtn.className = "action-btn";
-    doneBtn.textContent = "Done";
-    doneBtn.addEventListener("click", function () { setActionStatus(action.id, "done"); renderHome(); });
-    wrap.appendChild(doneBtn);
-
-    var partialBtn = document.createElement("button");
-    partialBtn.className = "action-btn";
-    partialBtn.textContent = "Partial";
-    partialBtn.addEventListener("click", function () { setActionStatus(action.id, "partial"); renderHome(); });
-    wrap.appendChild(partialBtn);
-
-    var skipBtn = document.createElement("button");
-    skipBtn.className = "action-btn warn";
-    skipBtn.textContent = "Skip";
-    skipBtn.addEventListener("click", function () { setActionStatus(action.id, "skipped"); renderHome(); });
-    wrap.appendChild(skipBtn);
-
-    if (!action.parentId) {
-      var del = document.createElement("button");
-      del.className = "action-btn";
-      del.textContent = "✕";
-      del.setAttribute("aria-label", "Remove");
-      del.addEventListener("click", function () { deletePendingAction(action.id); renderHome(); });
-      wrap.appendChild(del);
     }
 
-    return wrap;
-  }
+    var timerWrap = document.getElementById("priority-timer-wrap");
+    var doneText = document.getElementById("priority-done-text");
+    var isPending = p.status === "pending";
+    timerWrap.classList.toggle("hidden", !isPending);
+    doneText.classList.toggle("hidden", isPending);
+    document.getElementById("focus-duration-row").classList.toggle("hidden", !!p.minutes);
 
-  function buildActionItem(action, todaysActions) {
-    var item = document.createElement("div");
-    item.className = "action-item" + (action.status === "done" ? " done" : "");
-
-    var top = document.createElement("div");
-    top.className = "action-item-top";
-    var title = document.createElement("span");
-    title.className = "action-title";
-    title.textContent = action.title;
-    var status = document.createElement("span");
-    status.className = "action-status " + action.status;
-    status.textContent = action.status.charAt(0).toUpperCase() + action.status.slice(1);
-    top.appendChild(title);
-    top.appendChild(status);
-    item.appendChild(top);
-
-    if (action.status === "pending") {
-      item.appendChild(buildActionButtons(action));
-    } else if (!action.parentId && action.status !== "done") {
-      var already = todaysActions.find(function (a) { return a.parentId === action.id; });
-      if (!already) {
-        var resetBtn = document.createElement("button");
-        resetBtn.className = "action-btn primary";
-        resetBtn.textContent = "Reset → smaller step";
-        resetBtn.addEventListener("click", function () { createRecoveryAction(action); renderHome(); });
-        item.appendChild(resetBtn);
-      }
-    }
-
-    var child = todaysActions.find(function (a) { return a.parentId === action.id; });
-    if (child) {
-      var recWrap = document.createElement("div");
-      recWrap.className = "action-recovery";
-      var label = document.createElement("p");
-      label.className = "action-recovery-label";
-      label.textContent = "Smaller step:";
-      recWrap.appendChild(label);
-      recWrap.appendChild(buildActionItem(child, todaysActions));
-      item.appendChild(recWrap);
-    }
-
-    return item;
-  }
-
-  function renderActions() {
-    var key = todayKey();
-    var todaysActions = getActions().filter(function (a) { return a.date === key; });
-    var mainActions = todaysActions.filter(function (a) { return !a.parentId; });
-    var doneCount = mainActions.filter(function (a) { return a.status === "done"; }).length;
-
-    document.getElementById("actions-count-badge").textContent = doneCount + " of " + mainActions.length;
-
-    var list = document.getElementById("action-list");
-    list.innerHTML = "";
-    mainActions.forEach(function (a) {
-      list.appendChild(buildActionItem(a, todaysActions));
-    });
-
-    var full = mainActions.length >= 2;
-    document.getElementById("add-action-row").classList.toggle("hidden", full);
-    document.getElementById("actions-full-note").classList.toggle("hidden", !full);
-
-    var nextAction = mainActions.find(function (a) { return a.status === "pending"; });
-    document.getElementById("next-action-text").textContent = nextAction
-      ? nextAction.title
-      : (mainActions.length ? "Today's actions are handled." : "Nothing chosen yet — add 1-2 actions below.");
+    updateFocusUI();
+    renderProgressLine(p);
   }
 
   function renderHome() {
+    ensureJourneyStarted();
     document.getElementById("home-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
     var name = localStorage.getItem("nc_user_name");
     document.getElementById("home-greeting").textContent = name ? ("Assalamu Alaikum, " + name) : "Assalamu Alaikum";
     document.getElementById("avatar-initial").textContent = name ? name.charAt(0).toUpperCase() : "N";
+    document.getElementById("home-motivation").textContent = getTodaysMotivationLine();
+    document.getElementById("journey-badge-text").textContent = "DAY " + getJourneyDay() + " OF YOUR CHANGE JOURNEY";
 
-    renderActions();
-    renderFocusTargetLine();
-    renderReflectionCard();
-    renderWeekReview();
+    renderTodaysPriority();
   }
 
-  function initActionForm() {
-    var input = document.getElementById("action-input");
-    var btn = document.getElementById("add-action-btn");
+  function initPriorityUI() {
+    document.getElementById("checkin-completed-btn").addEventListener("click", function () { submitAccountability("completed"); });
+    document.getElementById("checkin-partly-btn").addEventListener("click", function () { submitAccountability("partial"); });
+    document.getElementById("checkin-notyet-btn").addEventListener("click", function () { submitAccountability("not-yet"); });
 
-    function save() {
+    function saveCustom() {
+      var input = document.getElementById("priority-custom-input");
       var val = input.value.trim();
       if (!val) return;
-      if (todaysMainActions().length >= 2) {
-        showToast("Only 1-2 actions a day — finish or skip one first");
-        return;
-      }
-      addAction(val);
+      setTodaysPriority(null, val);
       input.value = "";
+      pendingAdjustmentNote = null;
       renderHome();
     }
-
-    btn.addEventListener("click", save);
-    input.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") save();
-    });
-  }
-
-  // ---------- END-OF-DAY REFLECTION ----------
-
-  function getReflections() {
-    return readJSON("nc_reflections", {});
-  }
-
-  function saveReflectionForToday(data) {
-    var all = getReflections();
-    all[todayKey()] = data;
-    writeJSON("nc_reflections", all);
-  }
-
-  function renderReflectionCard() {
-    var key = todayKey();
-    var hasActions = todaysMainActions().length > 0;
-    var card = document.getElementById("reflection-card");
-    card.classList.toggle("hidden", !hasActions);
-    if (!hasActions) return;
-    var existing = getReflections()[key];
-    document.getElementById("reflection-status-line").textContent = existing
-      ? "Saved — tap to review or edit."
-      : "Three quick questions — takes under a minute.";
-    document.getElementById("reflection-open-btn").textContent = existing ? "View / edit reflection" : "Reflect on today";
-  }
-
-  function openReflectionModal() {
-    var existing = getReflections()[todayKey()] || { completed: "", blocked: "", change: "" };
-    document.getElementById("reflection-completed").value = existing.completed;
-    document.getElementById("reflection-blocked").value = existing.blocked;
-    document.getElementById("reflection-change").value = existing.change;
-    document.getElementById("modal-reflection").classList.remove("hidden");
-  }
-
-  function initReflection() {
-    document.getElementById("reflection-open-btn").addEventListener("click", openReflectionModal);
-    document.getElementById("reflection-close").addEventListener("click", function () {
-      document.getElementById("modal-reflection").classList.add("hidden");
-    });
-    document.getElementById("reflection-save-btn").addEventListener("click", function () {
-      saveReflectionForToday({
-        completed: document.getElementById("reflection-completed").value.trim(),
-        blocked: document.getElementById("reflection-blocked").value.trim(),
-        change: document.getElementById("reflection-change").value.trim(),
-        savedAt: Date.now()
-      });
-      document.getElementById("modal-reflection").classList.add("hidden");
-      renderReflectionCard();
-      showToast("Reflection saved");
-    });
-  }
-
-  // ---------- WEEKLY REVIEW ----------
-
-  function getLastNDateKeys(n) {
-    var out = [];
-    for (var i = 0; i < n; i++) {
-      var d = new Date();
-      d.setDate(d.getDate() - i);
-      out.push(todayKey(d));
-    }
-    return out;
-  }
-
-  function normalizeActionTitle(title) {
-    return title.toLowerCase().replace(/\d+\s*min(ute)?s?/gi, "").replace(/\s+/g, " ").trim();
-  }
-
-  function renderWeekReview() {
-    var dates = getLastNDateKeys(7);
-    var actions = getActions().filter(function (a) { return !a.parentId && dates.indexOf(a.date) !== -1; });
-    var card = document.getElementById("week-review-card");
-    if (!actions.length) {
-      card.classList.add("hidden");
-      return;
-    }
-    card.classList.remove("hidden");
-
-    var done = actions.filter(function (a) { return a.status === "done"; }).length;
-    var partial = actions.filter(function (a) { return a.status === "partial"; }).length;
-    var skipped = actions.filter(function (a) { return a.status === "skipped"; }).length;
-    var total = actions.length;
-
-    var summary = "Completed " + done + " of " + total + " actions this week";
-    var extras = [];
-    if (partial) extras.push(partial + " partial");
-    if (skipped) extras.push(skipped + " skipped");
-    if (extras.length) summary += " (" + extras.join(", ") + ")";
-    document.getElementById("week-review-summary").textContent = summary + ".";
-
-    var missCounts = {};
-    actions.forEach(function (a) {
-      if (a.status === "skipped" || a.status === "partial") {
-        var norm = normalizeActionTitle(a.title);
-        missCounts[norm] = (missCounts[norm] || 0) + 1;
-      }
-    });
-    var worst = null, worstCount = 0;
-    Object.keys(missCounts).forEach(function (k) {
-      if (missCounts[k] > worstCount) { worst = k; worstCount = missCounts[k]; }
+    document.getElementById("priority-custom-btn").addEventListener("click", saveCustom);
+    document.getElementById("priority-custom-input").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") saveCustom();
     });
 
-    var suggestion;
-    if (worst && worstCount >= 2) {
-      suggestion = "“" + worst + "” was missed " + worstCount + " times this week — next time, tap Reset right away instead of skipping it entirely.";
-    } else if (total > 0 && done / total < 0.5) {
-      suggestion = "Less than half of this week's actions were completed. Try picking just 1 action on your harder days instead of 2.";
-    } else {
-      suggestion = "Solid week — keep choosing just 1-2 actions a day.";
-    }
-    document.getElementById("week-review-suggestion").textContent = suggestion;
+    document.getElementById("priority-change-btn").addEventListener("click", chooseDifferentPriority);
   }
 
   // ---------- FOCUS TIMER ----------
@@ -404,7 +320,7 @@
     return getFocusDurationMinutes() * 60;
   }
 
-  var focusState = { remaining: focusSecondsTotal(), running: false, intervalId: null, linkedActionId: null, adhocLabel: null };
+  var focusState = { remaining: focusSecondsTotal(), running: false, intervalId: null, linkedPriorityId: null, adhocLabel: null };
 
   function formatClock(seconds) {
     var m = Math.floor(seconds / 60);
@@ -412,30 +328,21 @@
     return m + ":" + String(s).padStart(2, "0");
   }
 
-  function renderFocusTargetLine() {
-    var line = document.getElementById("focus-target-line");
-    var fallback = "Tap \"Start Now\" on an action above, or start a plain session below.";
-    if (focusState.linkedActionId) {
-      var action = getActions().find(function (a) { return a.id === focusState.linkedActionId; });
-      line.textContent = action ? ("Focusing on: " + action.title) : fallback;
-    } else if (focusState.adhocLabel) {
-      line.textContent = "Focusing on: " + focusState.adhocLabel;
-    } else {
-      line.textContent = fallback;
-    }
-  }
-
   function updateFocusUI() {
     var total = focusSecondsTotal();
-    document.getElementById("focus-clock").textContent = formatClock(focusState.remaining);
-    document.getElementById("focus-status-badge").textContent = focusState.running ? "Running" : (focusState.remaining < total ? "Paused" : "Ready");
-    document.getElementById("focus-start-btn").classList.toggle("hidden", focusState.running || focusState.remaining < total);
-    document.getElementById("focus-pause-btn").classList.toggle("hidden", !focusState.running);
-    document.getElementById("focus-stop-btn").classList.toggle("hidden", focusState.remaining === total && !focusState.running);
+    var clock = document.getElementById("focus-clock");
+    if (clock) clock.textContent = formatClock(focusState.remaining);
+    var startBtn = document.getElementById("focus-start-btn");
+    var pauseBtn = document.getElementById("focus-pause-btn");
+    var stopBtn = document.getElementById("focus-stop-btn");
+    if (!startBtn) return;
+    startBtn.classList.toggle("hidden", focusState.running);
+    pauseBtn.classList.toggle("hidden", !focusState.running);
+    stopBtn.classList.toggle("hidden", focusState.remaining === total && !focusState.running);
     var resumeShown = !focusState.running && focusState.remaining > 0 && focusState.remaining < total;
-    document.getElementById("focus-start-btn").textContent = resumeShown ? "Resume" : ("Start " + getFocusDurationMinutes() + " min focus");
-    document.getElementById("focus-start-btn").classList.toggle("hidden", focusState.running);
+    startBtn.textContent = resumeShown ? "Resume" : "Start Now";
     renderFocusDurationUI();
+    if (getCurrentPriority()) renderProgressLine(getCurrentPriority());
   }
 
   function renderFocusDurationUI() {
@@ -448,6 +355,7 @@
       chip.disabled = lockedIn;
     });
     var customInput = document.getElementById("focus-duration-custom");
+    if (!customInput) return;
     customInput.disabled = lockedIn;
     if (document.activeElement !== customInput) {
       customInput.value = DURATION_PRESETS.indexOf(mins) === -1 ? mins : "";
@@ -478,24 +386,15 @@
     focusState.running = true;
     stopFocusInterval();
     focusState.intervalId = setInterval(tickFocus, 1000);
-    renderFocusTargetLine();
     updateFocusUI();
   }
 
-  function startFocus() {
-    var mainActions = todaysMainActions();
-    var nextAction = mainActions.find(function (a) { return a.status === "pending"; });
-    focusState.linkedActionId = nextAction ? nextAction.id : null;
-    focusState.adhocLabel = null;
-    beginFocusInterval();
-  }
-
-  function startFocusForAction(actionId) {
-    var action = getActions().find(function (a) { return a.id === actionId; });
-    if (!action) return;
-    if (action.minutes) setFocusDurationMinutes(action.minutes);
+  function startFocusForPriority() {
+    var p = getCurrentPriority();
+    if (!p) return;
+    if (p.minutes) setFocusDurationMinutes(p.minutes);
     focusState.remaining = focusSecondsTotal();
-    focusState.linkedActionId = actionId;
+    focusState.linkedPriorityId = p.id;
     focusState.adhocLabel = null;
     beginFocusInterval();
     var clock = document.getElementById("focus-clock");
@@ -505,7 +404,7 @@
   function startAdhocFocus(label, minutes) {
     if (minutes) setFocusDurationMinutes(minutes);
     focusState.remaining = focusSecondsTotal();
-    focusState.linkedActionId = null;
+    focusState.linkedPriorityId = null;
     focusState.adhocLabel = label;
     beginFocusInterval();
   }
@@ -520,15 +419,13 @@
     focusState.running = false;
     stopFocusInterval();
     focusState.remaining = focusSecondsTotal();
-    focusState.linkedActionId = null;
     focusState.adhocLabel = null;
-    renderFocusTargetLine();
     updateFocusUI();
   }
 
   function openFocusCheckModal() {
-    var action = focusState.linkedActionId ? getActions().find(function (a) { return a.id === focusState.linkedActionId; }) : null;
-    var label = action ? action.title : focusState.adhocLabel;
+    var p = focusState.linkedPriorityId ? getCurrentPriority() : null;
+    var label = (p && p.id === focusState.linkedPriorityId) ? p.title : focusState.adhocLabel;
     document.getElementById("focus-check-text").textContent = label
       ? ("Did you actually finish “" + label + "”, or just the timer?")
       : "Did you actually finish what you were working on, or just the timer?";
@@ -547,9 +444,11 @@
   }
 
   function initFocusTimer() {
-    document.getElementById("focus-start-btn").addEventListener("click", startFocus);
+    document.getElementById("focus-start-btn").addEventListener("click", function () {
+      if (getCurrentPriority()) { startFocusForPriority(); }
+    });
     document.getElementById("focus-pause-btn").addEventListener("click", pauseFocus);
-    document.getElementById("focus-stop-btn").addEventListener("click", stopFocus);
+    document.getElementById("focus-stop-btn").addEventListener("click", function () { stopFocus(); renderHome(); });
 
     document.querySelectorAll(".duration-chip").forEach(function (chip) {
       chip.addEventListener("click", function () {
@@ -569,8 +468,8 @@
     });
 
     document.getElementById("focus-check-done").addEventListener("click", function () {
-      if (focusState.linkedActionId) {
-        setActionStatus(focusState.linkedActionId, "done");
+      if (focusState.linkedPriorityId) {
+        markPriorityStatusToday("completed");
       }
       document.getElementById("modal-focus-check").classList.add("hidden");
       stopFocus();
@@ -578,9 +477,6 @@
     });
 
     document.getElementById("focus-check-notdone").addEventListener("click", function () {
-      if (focusState.linkedActionId) {
-        setActionStatus(focusState.linkedActionId, "partial");
-      }
       document.getElementById("modal-focus-check").classList.add("hidden");
       stopFocus();
       renderHome();
@@ -2453,18 +2349,8 @@
   }
 
   function quickStartFocusFromChat(title, minutes) {
-    var startedActionId = null;
-    if (todaysMainActions().length < 2) {
-      addAction(title);
-      var todays = todaysMainActions();
-      startedActionId = todays[todays.length - 1].id;
-    }
+    startAdhocFocus(title, minutes);
     setActiveView("home");
-    if (startedActionId) {
-      startFocusForAction(startedActionId);
-    } else {
-      startAdhocFocus(title, minutes);
-    }
   }
 
   // ---------- SHIELD ----------
@@ -2663,8 +2549,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     initNav();
     initNameModal();
-    initActionForm();
-    initReflection();
+    initPriorityUI();
     initFocusTimer();
     initSunnahSubtabs();
     initDuasUI();

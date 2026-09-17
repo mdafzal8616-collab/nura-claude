@@ -22,64 +22,80 @@
       </button>
     </header>
 
-    <section class="card next-action-card">
-      <p class="eyebrow">Next up</p>
-      <p class="next-action-text" id="next-action-text">Nothing scheduled yet — add your first task below.</p>
+    <p class="home-motivation" id="home-motivation">Today's small step still counts.</p>
+
+    <div class="journey-badge">
+      <span class="journey-badge-text" id="journey-badge-text">DAY 1 OF YOUR CHANGE JOURNEY</span>
+    </div>
+
+    <div class="journey-visual" aria-hidden="true">
+      <svg viewBox="0 0 300 90" class="journey-svg">
+        <path d="M0 80 Q 90 80 140 55 T 300 15" fill="none" stroke="var(--border)" stroke-width="2"/>
+        <path d="M0 80 Q 90 80 140 55 T 210 32" fill="none" stroke="var(--mint)" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="210" cy="32" r="5" fill="var(--mint)"/>
+        <circle cx="270" cy="18" r="14" fill="var(--gold-soft)" opacity="0.55"/>
+        <circle cx="270" cy="18" r="7" fill="var(--gold)"/>
+      </svg>
+    </div>
+
+    <section class="card priority-card">
+      <div class="card-row">
+        <h2>Today's Priority</h2>
+      </div>
+
+      <div id="priority-content">
+        <div id="priority-checkin" class="hidden">
+          <p class="priority-checkin-text" id="priority-checkin-text"></p>
+          <div class="priority-checkin-buttons">
+            <button class="action-btn primary" id="checkin-completed-btn">Completed</button>
+            <button class="action-btn" id="checkin-partly-btn">Partly</button>
+            <button class="action-btn warn" id="checkin-notyet-btn">Not yet</button>
+          </div>
+        </div>
+
+        <div id="priority-picker" class="hidden">
+          <p class="muted-line hidden" id="priority-adjustment-note"></p>
+          <p class="muted-line">Pick what matters most today, or create your own.</p>
+          <div class="preset-plan-grid" id="preset-plan-grid"></div>
+          <div class="priority-custom-row">
+            <input type="text" class="text-input" id="priority-custom-input" placeholder="Create your own goal..." maxlength="60">
+            <button class="btn btn-primary" id="priority-custom-btn">Set</button>
+          </div>
+        </div>
+
+        <div id="priority-active" class="hidden">
+          <p class="priority-title" id="priority-title"></p>
+          <p class="priority-why" id="priority-why"></p>
+          <div id="priority-timer-wrap">
+            <div class="focus-duration-row hidden" id="focus-duration-row">
+              <button class="duration-chip" data-minutes="5">5</button>
+              <button class="duration-chip" data-minutes="10">10</button>
+              <button class="duration-chip" data-minutes="15">15</button>
+              <button class="duration-chip" data-minutes="20">20</button>
+              <button class="duration-chip" data-minutes="25">25</button>
+              <button class="duration-chip" data-minutes="30">30</button>
+              <button class="duration-chip" data-minutes="45">45</button>
+              <button class="duration-chip" data-minutes="60">60</button>
+              <input type="number" id="focus-duration-custom" class="duration-custom-input" placeholder="Custom" min="1" max="180">
+            </div>
+            <p class="focus-clock" id="focus-clock">20:00</p>
+            <div class="focus-controls">
+              <button class="btn btn-primary btn-full" id="focus-start-btn">Start Now</button>
+              <button class="btn btn-outline btn-full hidden" id="focus-pause-btn">Pause</button>
+              <button class="btn btn-outline btn-full hidden" id="focus-stop-btn">Finish</button>
+            </div>
+          </div>
+          <p class="priority-done-text hidden" id="priority-done-text">Completed today ✓</p>
+          <button class="priority-change-link" id="priority-change-btn">Choose a different priority</button>
+        </div>
+      </div>
     </section>
 
     <section class="card">
       <div class="card-row">
-        <h2>Today's Actions</h2>
-        <span class="count-badge" id="actions-count-badge">0 of 2</span>
+        <h2>Today</h2>
       </div>
-      <p class="muted-line">Choose 1–2 small, specific actions. Not a to-do list — just what actually matters today.</p>
-      <div class="action-list" id="action-list"></div>
-      <div class="add-task-row" id="add-action-row">
-        <input type="text" id="action-input" class="text-input" placeholder="e.g. Study for 20 minutes" maxlength="60">
-        <button class="btn btn-primary" id="add-action-btn">Add</button>
-      </div>
-      <p class="muted-line hidden" id="actions-full-note">Today's 2 actions are set. Finish what's here, or come back tomorrow to choose again.</p>
-    </section>
-
-    <section class="card">
-      <div class="card-row">
-        <h2>Focus Timer</h2>
-        <span class="count-badge" id="focus-status-badge">Ready</span>
-      </div>
-      <p class="muted-line" id="focus-target-line">Tap "Start Now" on an action above, or start a plain session below.</p>
-      <div class="focus-duration-row" id="focus-duration-row">
-        <button class="duration-chip" data-minutes="5">5</button>
-        <button class="duration-chip" data-minutes="10">10</button>
-        <button class="duration-chip" data-minutes="15">15</button>
-        <button class="duration-chip" data-minutes="20">20</button>
-        <button class="duration-chip" data-minutes="25">25</button>
-        <button class="duration-chip" data-minutes="30">30</button>
-        <button class="duration-chip" data-minutes="45">45</button>
-        <button class="duration-chip" data-minutes="60">60</button>
-        <input type="number" id="focus-duration-custom" class="duration-custom-input" placeholder="Custom" min="1" max="180">
-      </div>
-      <p class="focus-clock" id="focus-clock">20:00</p>
-      <div class="focus-controls">
-        <button class="btn btn-primary btn-full" id="focus-start-btn">Start 20 min focus</button>
-        <button class="btn btn-outline btn-full hidden" id="focus-pause-btn">Pause</button>
-        <button class="btn btn-outline btn-full hidden" id="focus-stop-btn">Stop</button>
-      </div>
-    </section>
-
-    <section class="card hidden" id="reflection-card">
-      <div class="card-row">
-        <h2>How was today?</h2>
-      </div>
-      <p class="muted-line" id="reflection-status-line">Three quick questions — takes under a minute.</p>
-      <button class="btn btn-outline btn-full" id="reflection-open-btn">Reflect on today</button>
-    </section>
-
-    <section class="card hidden" id="week-review-card">
-      <div class="card-row">
-        <h2>This Week</h2>
-      </div>
-      <p class="muted-line" id="week-review-summary"></p>
-      <p class="muted-line" id="week-review-suggestion"></p>
+      <p class="muted-line" id="progress-line">Not started yet.</p>
     </section>
 
     <button class="btn btn-shield btn-full" id="open-shield">Need a pause? Open Shield</button>
@@ -416,23 +432,6 @@
   </div>
 </div>
 
-<!-- END-OF-DAY REFLECTION MODAL -->
-<div class="modal-overlay hidden" id="modal-reflection">
-  <div class="modal-sheet">
-    <div class="modal-header-row">
-      <h2>Today's reflection</h2>
-      <button class="icon-btn" id="reflection-close" aria-label="Close">&#10005;</button>
-    </div>
-    <p class="modal-sub">What did you complete?</p>
-    <textarea id="reflection-completed" class="text-input reflection-textarea" maxlength="200" rows="2"></textarea>
-    <p class="modal-sub">What stopped you?</p>
-    <textarea id="reflection-blocked" class="text-input reflection-textarea" maxlength="200" rows="2"></textarea>
-    <p class="modal-sub">What is one thing you'll change tomorrow?</p>
-    <textarea id="reflection-change" class="text-input reflection-textarea" maxlength="200" rows="2"></textarea>
-    <button class="btn btn-primary btn-full" id="reflection-save-btn">Save</button>
-  </div>
-</div>
-
 <!-- SHIELD MODAL -->
 <div class="modal-overlay hidden" id="modal-shield">
   <div class="modal-sheet">
@@ -452,7 +451,7 @@
       <p class="modal-sub">A small grounding step:</p>
       <p class="shield-grounding">Take three slow breaths. Unclench your jaw and shoulders. Notice one thing you can see, hear, and feel right now.</p>
       <button class="btn btn-primary btn-full" id="shield-done-btn">I'm okay, close this</button>
-      <button class="btn btn-outline btn-full" id="shield-goal-btn">Take me to today's tasks</button>
+      <button class="btn btn-outline btn-full" id="shield-goal-btn">Take me to today's priority</button>
     </div>
   </div>
 </div>
