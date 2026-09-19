@@ -2,6 +2,22 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-19 — Money Habits: savings goals only grow when the user confirms money was saved
+
+**Problem**: goals could be created but there was no honest way to grow them — avoided purchases either auto-counted or went to a vague "general" bucket, and there was only one goal.
+
+**Fix**: four things are now tracked separately and never mixed — (A) money avoided, (B) money actually saved (added to a goal, or kept as unallocated savings), (C) money added to savings goals, (D) money spent (logged expenses plus avoided money the user says was spent elsewhere). A goal's saved amount is always the sum of its contribution ledger (`nc_money_contribs`), so it can't drift; unallocated savings (`nc_money_unalloc`) and expenses (`nc_money_expenses`) are their own ledgers.
+
+Every "avoided money" event (I avoided a purchase / Should I buy this? → Don't buy it / habit check-in reduction) now ends at one shared screen: "You avoided spending ₹X. What happened to this ₹X?" → (1) add to a savings goal (pick which goal), (2) I spent it somewhere else (goal stays unchanged), (3) I kept it but don't want to add it to a goal yet (unallocated, movable later). Options 1 and 3 accept a smaller amount; the remainder is recorded as spent elsewhere (so avoiding ₹1,000 and adding ₹400 shows avoided ₹1,000 / allocated ₹400 / spent ₹600). Avoided money the user hasn't decided on is shown on the dashboard as "what happened to this money?" and is never counted as saved.
+
+Added: multiple goals; a goal screen (target, actually saved, remaining, %, bar, recent contributions like "+ ₹800 — Avoided shoes purchase"); "+ Add Money" with an optional source (Salary/income, Avoided purchase, Smoking reduction, Other bad habit reduction, Gift, Cash saved, Other); "Log an expense"; "Move unallocated to a goal"; the four Quick Actions. "Should I buy this?" is now item → price → Need/Want → a decision check (afford without touching essential money? delays a goal? — shows the real % of what's left on each goal — still want it?) → Buy it (offers to log the expense) / Don't buy it (→ the allocation question) / Decide later / Wait 24 hours (non-needs only). Decisions to revisit show on the dashboard. Editing a habit check-in removes its earlier allocation before re-recording. Weekly report shows Money avoided / actually saved / spent / added to goals separately, plus goal progress; the 7-day graph now plots actually-saved, not avoided.
+
+**Migration**: data from the earlier version (goal running totals, "general savings") is converted once (`nc_money_v2`): a goal's old total becomes an "Earlier savings" contribution, "general" savings become unallocated savings. Old date-based totals for goal money will show at the goal's creation date.
+
+**Tested** (fresh storage, in a browser): the exact scenario requested — Phone ₹50,000; avoid ₹800 → "spent elsewhere" → goal stays ₹0; avoid ₹1,000 → add to Phone → ₹1,000; manually add ₹500 → ₹1,500. Also: partial split, keep → unallocated → move (and over-move rejected), every Should-I-Buy outcome, expenses, weekly report numbers vs. hand calculation (avoided ₹5,099 / saved ₹4,199 / spent ₹2,150 / to goals ₹4,199), reload persistence, habit reduction + edit reversal, migration of old-format data (idempotent), two goals with a goal chooser, goal completion, no console errors, Recovery / Plan My Day / Phone Control unaffected.
+
+**Not done**: no editing or deleting a goal or an individual contribution/expense (mistakes need a new entry); the 24-hour wait is a reminder on the Money screen, not a notification; the Android APK still contains the older website until rebuilt.
+
 ## 2026-09-19 — Habits & Discipline → Recovery (bad-habit recovery system)
 
 Added a private "Recovery" section reached from Habits & Discipline (existing habit list untouched). Choose Pornography / Masturbation / Smoking / Cannabis / Excessive social media / Gaming / Junk food / Other (custom name), with an optional private nickname that replaces the habit name everywhere. Start wizard: habit → start date (today/tomorrow/pick) → why → triggers → optional goal → (smoking only) cigarettes/day, cost per cigarette or per pack, optional saving goal.

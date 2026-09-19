@@ -4325,9 +4325,12 @@
   }
 
   // ---- Money Habits ----
-  // QUESTION -> ACTION -> MONEY SAVED -> TRACK IT -> SEE PROGRESS.
-  // Every number shown must come from something the user actually logged —
-  // never fabricated. See docs/decisions.md for the full rebuild notes.
+  // Four different things are tracked separately and never mixed:
+  //   A. money AVOIDED (something you didn't buy / a habit you reduced)
+  //   B. money ACTUALLY SAVED (added to a goal, or kept as unallocated savings)
+  //   C. money ADDED TO SAVINGS GOALS (the contributions ledger)
+  //   D. money SPENT (logged expenses + avoided money the user says went elsewhere)
+  // A goal only grows when the user confirms money went into it.
 
   var MONEY_HABIT_CATEGORIES = [
     "Smoking", "Tobacco", "Alcohol", "Recreational drugs", "Junk food",
@@ -4338,6 +4341,22 @@
   var MONEY_GOAL_PRESETS = [
     "Emergency fund", "Phone", "Laptop", "Course", "Gym membership", "Travel", "Family", "Business"
   ];
+  var MONEY_SOURCES = [
+    { key: "income", label: "Salary / income" },
+    { key: "avoided-purchase", label: "Avoided purchase" },
+    { key: "smoking", label: "Smoking reduction" },
+    { key: "habit", label: "Other bad habit reduction" },
+    { key: "gift", label: "Gift" },
+    { key: "cash", label: "Cash saved" },
+    { key: "other", label: "Other" }
+  ];
+  function moneySourceLabel(key) {
+    if (key === "unallocated") return "Moved from unallocated savings";
+    if (key === "legacy") return "Earlier savings";
+    if (key === "manual") return "Added manually";
+    var s = MONEY_SOURCES.filter(function (x) { return x.key === key; })[0];
+    return s ? s.label : "Added manually";
+  }
 
   var moneyView = { screen: "dashboard" };
 
@@ -4353,65 +4372,49 @@
     return "₹" + n.toLocaleString("en-IN");
   }
 
-  // -- data accessors --
+  function mEl(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function mBtn(label, cls, fn) {
+    var b = mEl("button", cls, label);
+    b.type = "button";
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function mRows(rows) {
+    var box = mEl("div", "money-cost-breakdown");
+    rows.forEach(function (r) {
+      var row = mEl("div", "row" + (r[2] ? " highlight" : ""));
+      row.appendChild(mEl("span", "", r[0]));
+      row.appendChild(mEl("span", "", r[1]));
+      box.appendChild(row);
+    });
+    return box;
+  }
+  function mNumInput(placeholder, value, onInput) {
+    var i = mEl("input", "text-input");
+    i.type = "number";
+    i.min = "0";
+    i.placeholder = placeholder;
+    i.value = value || "";
+    i.addEventListener("input", function () { onInput(i.value); });
+    return i;
+  }
+
+  // -- data accessors (all local, all persisted) --
   function getMoneyGoals() { return readJSON("nc_money_goals", []); }
   function saveMoneyGoals(arr) { writeJSON("nc_money_goals", arr); }
-  function getActiveGoalId() { return readJSON("nc_money_active_goal_id", null); }
-  function setActiveGoalId(id) { writeJSON("nc_money_active_goal_id", id); }
-  function getActiveGoal() {
-    var id = getActiveGoalId();
-    if (!id) return null;
-    return getMoneyGoals().find(function (g) { return g.id === id; }) || null;
-  }
-  function markGoalCelebrationSeen(goalId) {
-    var goals = getMoneyGoals();
-    var g = goals.find(function (x) { return x.id === goalId; });
-    if (g) g.celebrationSeen = true;
-    saveMoneyGoals(goals);
-  }
-  function createMoneyGoal(name, targetAmount) {
-    var goals = getMoneyGoals();
-    var goal = { id: uid("goal"), name: name, targetAmount: targetAmount, currentSavedAmount: 0, createdAt: new Date().toISOString(), completedAt: null, celebrationSeen: false };
-    goals.push(goal);
-    saveMoneyGoals(goals);
-    setActiveGoalId(goal.id);
-    return goal;
-  }
-  function addToGoal(goalId, amount) {
-    if (!goalId || goalId === "general" || !amount || amount <= 0) return null;
-    var goals = getMoneyGoals();
-    var goal = goals.find(function (g) { return g.id === goalId; });
-    if (!goal || goal.completedAt) return null;
-    goal.currentSavedAmount = (goal.currentSavedAmount || 0) + amount;
-    var justCompleted = false;
-    if (goal.currentSavedAmount >= goal.targetAmount) {
-      goal.currentSavedAmount = goal.targetAmount;
-      goal.completedAt = new Date().toISOString();
-      justCompleted = true;
-    }
-    saveMoneyGoals(goals);
-    return { goal: goal, justCompleted: justCompleted };
-  }
-  // Undoes a prior addToGoal — used when a check-in that already moved
-  // money into a goal gets edited, so the goal never silently keeps money
-  // its own daily log no longer accounts for.
-  function reverseFromGoal(goalId, amount) {
-    if (!goalId || goalId === "general" || !amount) return;
-    var goals = getMoneyGoals();
-    var goal = goals.find(function (g) { return g.id === goalId; });
-    if (!goal) return;
-    goal.currentSavedAmount = Math.max(0, (goal.currentSavedAmount || 0) - amount);
-    if (goal.completedAt && goal.currentSavedAmount < goal.targetAmount) goal.completedAt = null;
-    saveMoneyGoals(goals);
-  }
-
+  function getContribs() { return readJSON("nc_money_contribs", []); }
+  function saveContribs(a) { writeJSON("nc_money_contribs", a); }
+  function getUnalloc() { return readJSON("nc_money_unalloc", []); }
+  function saveUnalloc(a) { writeJSON("nc_money_unalloc", a); }
+  function getExpenses() { return readJSON("nc_money_expenses", []); }
+  function saveExpenses(a) { writeJSON("nc_money_expenses", a); }
   function getMoneyHabits() { return readJSON("nc_money_habits", []); }
   function saveMoneyHabits(arr) { writeJSON("nc_money_habits", arr); }
-  function moneyHabitCosts(habit) {
-    var daily = habit.normalDailyQuantity * habit.costPerUnit;
-    return { daily: daily, weekly: daily * 7, monthly: daily * 30, yearly: daily * 365 };
-  }
-
   function getMoneyDailyLogs() { return readJSON("nc_money_daily_logs", {}); }
   function saveMoneyDailyLogs(obj) { writeJSON("nc_money_daily_logs", obj); }
   function getDailyLogEntry(habitId, dateKey) {
@@ -4424,49 +4427,218 @@
     logs[dateKey][habitId] = entry;
     saveMoneyDailyLogs(logs);
   }
-
   function getAvoidedPurchases() { return readJSON("nc_money_avoided_purchases", []); }
   function saveAvoidedPurchases(arr) { writeJSON("nc_money_avoided_purchases", arr); }
   function getPurchaseDecisions() { return readJSON("nc_money_purchase_decisions", []); }
   function savePurchaseDecisions(arr) { writeJSON("nc_money_purchase_decisions", arr); }
 
-  // Sums real logged savings in [fromDateKey, toDateKey] (either bound may be
-  // null for unbounded), optionally restricted to a single goal's money.
-  // This is the one place "money saved" is computed — never guessed.
-  function computeMoneySaved(fromDateKey, toDateKey, goalIdFilter) {
-    var total = 0, fromHabits = 0, fromPurchases = 0, fromDecisions = 0;
-    function inRange(dateKey) {
-      if (fromDateKey && dateKey < fromDateKey) return false;
-      if (toDateKey && dateKey > toDateKey) return false;
-      return true;
-    }
+  function moneyHabitCosts(habit) {
+    var daily = habit.normalDailyQuantity * habit.costPerUnit;
+    return { daily: daily, weekly: daily * 7, monthly: daily * 30, yearly: daily * 365 };
+  }
+
+  // Older builds stored a running total on each goal and a "general savings"
+  // destination. Convert once so nothing the user already logged is lost.
+  function moneyMigrateV2() {
+    if (localStorage.getItem("nc_money_v2")) return;
+    var contribs = getContribs(), unalloc = getUnalloc();
+    getMoneyGoals().forEach(function (g) {
+      var has = contribs.some(function (c) { return c.goalId === g.id; });
+      if (!has && g.currentSavedAmount > 0) {
+        contribs.push({ id: uid("contrib"), goalId: g.id, amount: g.currentSavedAmount, source: "legacy", sourceLabel: "Earlier savings", note: "Earlier savings", date: (g.createdAt || new Date().toISOString()).slice(0, 10), at: g.createdAt || new Date().toISOString(), refId: null });
+      }
+    });
+    var purchases = getAvoidedPurchases();
+    purchases.forEach(function (p) {
+      if (p.resolved !== undefined) return;
+      p.resolved = !!p.destination;
+      p.goalAmount = p.destination && p.destination !== "general" ? p.amount : 0;
+      p.goalId = p.destination && p.destination !== "general" ? p.destination : null;
+      p.unallocAmount = p.destination === "general" ? p.amount : 0;
+      p.spentAmount = 0;
+      if (p.destination === "general") unalloc.push({ id: uid("keep"), amount: p.amount, movedAmount: 0, note: "Avoided " + p.itemName, source: "avoided-purchase", date: p.date, at: p.createdAt || new Date().toISOString(), refId: p.id });
+    });
+    var decisions = getPurchaseDecisions();
+    decisions.forEach(function (d) {
+      if (d.status !== undefined) return;
+      d.status = d.decision === "waiting" ? "waiting" : d.decision === "avoided" ? "avoided" : "bought";
+      d.resolved = d.status === "avoided" ? !!d.destination : true;
+      d.goalAmount = d.destination && d.destination !== "general" ? d.moneyAvoided : 0;
+      d.goalId = d.destination && d.destination !== "general" ? d.destination : null;
+      d.unallocAmount = d.destination === "general" ? d.moneyAvoided : 0;
+      d.spentAmount = 0;
+      if (d.status === "avoided" && d.destination === "general") unalloc.push({ id: uid("keep"), amount: d.moneyAvoided, movedAmount: 0, note: "Didn't buy " + d.itemName, source: "avoided-purchase", date: d.decidedAt ? d.decidedAt.slice(0, 10) : todayKey(), at: d.decidedAt || new Date().toISOString(), refId: d.id });
+    });
     var logs = getMoneyDailyLogs();
     Object.keys(logs).forEach(function (dateKey) {
-      if (!inRange(dateKey)) return;
-      var dayLogs = logs[dateKey];
-      Object.keys(dayLogs).forEach(function (habitId) {
-        var e = dayLogs[habitId];
-        if (!e || !e.amountAvoided) return;
-        if (goalIdFilter && e.destination !== goalIdFilter) return;
-        total += e.amountAvoided;
-        fromHabits += e.amountAvoided;
+      Object.keys(logs[dateKey]).forEach(function (hid) {
+        var e = logs[dateKey][hid];
+        if (e.resolved !== undefined || !e.amountAvoided) return;
+        e.resolved = !!e.destination;
+        e.goalAmount = e.destination && e.destination !== "general" ? e.amountAvoided : 0;
+        e.goalId = e.destination && e.destination !== "general" ? e.destination : null;
+        e.unallocAmount = e.destination === "general" ? e.amountAvoided : 0;
+        e.spentAmount = 0;
+        if (e.destination === "general") unalloc.push({ id: uid("keep"), amount: e.amountAvoided, movedAmount: 0, note: "Habit reduction", source: "habit", date: dateKey, at: e.createdAt || new Date().toISOString(), refId: "log:" + hid + ":" + dateKey });
+      });
+    });
+    saveContribs(contribs);
+    saveUnalloc(unalloc);
+    saveAvoidedPurchases(purchases);
+    savePurchaseDecisions(decisions);
+    saveMoneyDailyLogs(logs);
+    localStorage.setItem("nc_money_v2", "1");
+  }
+
+  // A goal's saved amount is always the sum of its contributions.
+  function syncGoals() {
+    var goals = getMoneyGoals(), contribs = getContribs(), changed = false;
+    goals.forEach(function (g) {
+      var s = 0;
+      contribs.forEach(function (c) { if (c.goalId === g.id) s += c.amount; });
+      if (g.currentSavedAmount !== s) { g.currentSavedAmount = s; changed = true; }
+      if (s >= g.targetAmount && !g.completedAt) { g.completedAt = new Date().toISOString(); g.celebrationSeen = false; changed = true; }
+      else if (s < g.targetAmount && g.completedAt) { g.completedAt = null; g.celebrationSeen = false; changed = true; }
+    });
+    if (changed) saveMoneyGoals(goals);
+    return goals;
+  }
+  function getGoal(id) { return getMoneyGoals().filter(function (g) { return g.id === id; })[0] || null; }
+  function getActiveGoal() {
+    var goals = getMoneyGoals();
+    return goals.filter(function (g) { return !g.completedAt; })[0] || null;
+  }
+  function markGoalCelebrationSeen(goalId) {
+    var goals = getMoneyGoals();
+    goals.forEach(function (g) { if (g.id === goalId) g.celebrationSeen = true; });
+    saveMoneyGoals(goals);
+  }
+  function createMoneyGoal(name, targetAmount) {
+    var goals = getMoneyGoals();
+    var goal = { id: uid("goal"), name: name, targetAmount: targetAmount, currentSavedAmount: 0, createdAt: new Date().toISOString(), completedAt: null, celebrationSeen: false };
+    goals.push(goal);
+    saveMoneyGoals(goals);
+    return goal;
+  }
+  function goalPct(g) { return g.targetAmount ? Math.min(100, Math.floor((g.currentSavedAmount / g.targetAmount) * 100)) : 0; }
+
+  function addContribution(goalId, amount, sourceKey, note, refId) {
+    var list = getContribs();
+    list.push({ id: uid("contrib"), goalId: goalId, amount: amount, source: sourceKey, sourceLabel: moneySourceLabel(sourceKey), note: note || "", date: todayKey(), at: new Date().toISOString(), refId: refId || null });
+    saveContribs(list);
+    syncGoals();
+  }
+  function unallocatedTotal() {
+    var t = 0;
+    getUnalloc().forEach(function (e) { t += e.amount - (e.movedAmount || 0); });
+    return t;
+  }
+
+  // Removes whatever was previously allocated from one avoided-money event
+  // (used when that event is re-decided or a check-in is edited).
+  function moneyUnallocateRef(refId) {
+    saveContribs(getContribs().filter(function (c) { return c.refId !== refId; }));
+    saveUnalloc(getUnalloc().filter(function (e) { return e.refId !== refId; }));
+    syncGoals();
+  }
+
+  // choice: "goal" | "spent" | "keep". requested = how much goes to the goal /
+  // is kept; whatever is left of the avoided amount is recorded as spent elsewhere.
+  function moneyAllocate(ctx, choice, goalId, requested) {
+    moneyUnallocateRef(ctx.refId);
+    var goalAmt = 0, keepAmt = 0;
+    var req = Math.max(0, Math.min(ctx.amount, requested));
+    if (choice === "goal") goalAmt = req;
+    else if (choice === "keep") keepAmt = req;
+    var spent = ctx.amount - goalAmt - keepAmt;
+    if (goalAmt > 0) addContribution(goalId, goalAmt, ctx.sourceKey, ctx.label, ctx.refId);
+    if (keepAmt > 0) {
+      var u = getUnalloc();
+      u.push({ id: uid("keep"), amount: keepAmt, movedAmount: 0, note: ctx.label, source: ctx.sourceKey, date: todayKey(), at: new Date().toISOString(), refId: ctx.refId });
+      saveUnalloc(u);
+    }
+    var res = { goalAmount: goalAmt, goalId: goalAmt > 0 ? goalId : null, unallocAmount: keepAmt, spentAmount: spent, resolved: true };
+    if (ctx.kind === "purchase") {
+      var ps = getAvoidedPurchases();
+      ps.forEach(function (p) { if (p.id === ctx.id) { for (var k in res) p[k] = res[k]; } });
+      saveAvoidedPurchases(ps);
+    } else if (ctx.kind === "decision") {
+      var ds = getPurchaseDecisions();
+      ds.forEach(function (d) { if (d.id === ctx.id) { for (var k in res) d[k] = res[k]; } });
+      savePurchaseDecisions(ds);
+    } else if (ctx.kind === "habit") {
+      var e = getDailyLogEntry(ctx.habitId, ctx.dateKey);
+      if (e) { for (var k in res) e[k] = res[k]; saveDailyLogEntry(ctx.habitId, ctx.dateKey, e); }
+    }
+    return res;
+  }
+
+  // Avoided money the user hasn't yet said what happened to.
+  function pendingAvoided() {
+    var out = [];
+    getAvoidedPurchases().forEach(function (p) {
+      if (!p.resolved && p.amount > 0) out.push({ label: "Avoided " + p.itemName, ctx: { kind: "purchase", id: p.id, refId: p.id, amount: p.amount, label: "Avoided " + p.itemName + " purchase", sourceKey: "avoided-purchase" } });
+    });
+    getPurchaseDecisions().forEach(function (d) {
+      if (d.status === "avoided" && !d.resolved && d.moneyAvoided > 0) out.push({ label: "Didn't buy " + d.itemName, ctx: { kind: "decision", id: d.id, refId: d.id, amount: d.moneyAvoided, label: "Didn't buy " + d.itemName, sourceKey: "avoided-purchase" } });
+    });
+    var habits = getMoneyHabits();
+    var logs = getMoneyDailyLogs();
+    Object.keys(logs).forEach(function (dateKey) {
+      Object.keys(logs[dateKey]).forEach(function (hid) {
+        var e = logs[dateKey][hid];
+        if (e.resolved || !e.amountAvoided) return;
+        var h = habits.filter(function (x) { return x.id === hid; })[0];
+        if (!h) return;
+        out.push({ label: "Reduced " + (h.customName || h.category), ctx: moneyHabitCtx(h, dateKey, e.amountAvoided) });
+      });
+    });
+    return out;
+  }
+  function moneyHabitCtx(habit, dateKey, amount) {
+    var smoke = habit.category === "Smoking" || habit.category === "Tobacco";
+    return { kind: "habit", habitId: habit.id, dateKey: dateKey, refId: "log:" + habit.id + ":" + dateKey, amount: amount, label: smoke ? "Smoking reduction" : (habit.customName || habit.category) + " reduction", sourceKey: smoke ? "smoking" : "habit" };
+  }
+
+  // The single place money totals are computed for a date range (either bound
+  // may be null). Keeps avoided / saved / spent / added-to-goals apart.
+  function moneyStats(from, to) {
+    function inR(k) { return !(from && k < from) && !(to && k > to); }
+    var r = { avoided: 0, saved: 0, toGoals: 0, expenses: 0, spentElsewhere: 0, kept: 0 };
+    var logs = getMoneyDailyLogs();
+    Object.keys(logs).forEach(function (dateKey) {
+      if (!inR(dateKey)) return;
+      Object.keys(logs[dateKey]).forEach(function (hid) {
+        var e = logs[dateKey][hid];
+        r.avoided += e.amountAvoided || 0;
+        r.spentElsewhere += e.spentAmount || 0;
       });
     });
     getAvoidedPurchases().forEach(function (p) {
-      if (!inRange(p.date)) return;
-      if (goalIdFilter && p.destination !== goalIdFilter) return;
-      total += p.amount;
-      fromPurchases += p.amount;
+      if (!inR(p.date)) return;
+      r.avoided += p.amount || 0;
+      r.spentElsewhere += p.spentAmount || 0;
     });
     getPurchaseDecisions().forEach(function (d) {
-      if (d.decision !== "avoided" || !d.moneyAvoided) return;
+      if (d.status !== "avoided") return;
       var dk = d.decidedAt ? todayKey(new Date(d.decidedAt)) : null;
-      if (!dk || !inRange(dk)) return;
-      if (goalIdFilter && d.destination !== goalIdFilter) return;
-      total += d.moneyAvoided;
-      fromDecisions += d.moneyAvoided;
+      if (!dk || !inR(dk)) return;
+      r.avoided += d.moneyAvoided || 0;
+      r.spentElsewhere += d.spentAmount || 0;
     });
-    return { total: total, fromHabits: fromHabits, fromPurchases: fromPurchases, fromDecisions: fromDecisions };
+    getContribs().forEach(function (c) {
+      if (!inR(c.date)) return;
+      r.toGoals += c.amount;
+      if (c.source !== "unallocated") r.saved += c.amount;
+    });
+    getUnalloc().forEach(function (e) {
+      if (!inR(e.date)) return;
+      r.saved += e.amount;
+      r.kept += e.amount;
+    });
+    getExpenses().forEach(function (x) { if (inR(x.date)) r.expenses += x.amount; });
+    r.spent = r.expenses + r.spentElsewhere;
+    return r;
   }
 
   function buildMoneyBack(content, onBack) {
@@ -4501,14 +4673,11 @@
     var wrap = document.createElement("div");
     var today = todayKey();
     var dayTotals = getLastNDateKeys(7).slice().reverse().map(function (dateKey) {
-      return { dateKey: dateKey, amount: computeMoneySaved(dateKey, dateKey, null).total };
+      return { dateKey: dateKey, amount: moneyStats(dateKey, dateKey).saved };
     });
     var anyData = dayTotals.some(function (d) { return d.amount > 0; });
     if (!anyData) {
-      var empty = document.createElement("p");
-      empty.className = "progress-graph-empty";
-      empty.textContent = "Log a saving to start your weekly graph.";
-      wrap.appendChild(empty);
+      wrap.appendChild(mEl("p", "progress-graph-empty", "Money you actually save will show here."));
       return wrap;
     }
     var row = document.createElement("div");
@@ -4534,37 +4703,19 @@
   // -- Dashboard --
 
   function renderMoneyHabitCard(habit) {
-    var card = document.createElement("div");
-    card.className = "money-habit-card";
-    var displayName = (habit.customName || habit.category) + (habit.privacyEnabled ? " 🔒" : "");
-    var nameEl = document.createElement("p");
-    nameEl.className = "name";
-    nameEl.textContent = displayName;
-    card.appendChild(nameEl);
-
+    var card = mEl("div", "money-habit-card");
+    card.appendChild(mEl("p", "name", (habit.customName || habit.category) + (habit.privacyEnabled ? " 🔒" : "")));
     var costs = moneyHabitCosts(habit);
-    var costLine = document.createElement("p");
-    costLine.className = "cost-line";
-    costLine.textContent = fmtRupee(costs.daily) + "/day if unchanged · usual " + habit.normalDailyQuantity + "/day";
-    card.appendChild(costLine);
-
+    card.appendChild(mEl("p", "cost-line", fmtRupee(costs.daily) + "/day if unchanged · usual " + habit.normalDailyQuantity + "/day"));
     var todayEntry = getDailyLogEntry(habit.id, todayKey());
-    var statusLine = document.createElement("p");
-    statusLine.className = "cost-line";
+    var statusLine = mEl("p", "cost-line");
     if (todayEntry) {
-      statusLine.textContent = todayEntry.amountAvoided > 0 ? "Today: saved " + fmtRupee(todayEntry.amountAvoided) : "Today: no saving recorded";
+      statusLine.textContent = todayEntry.amountAvoided > 0 ? "Today: avoided " + fmtRupee(todayEntry.amountAvoided) : "Today: no reduction recorded";
       statusLine.style.color = todayEntry.amountAvoided > 0 ? "var(--mint)" : "var(--muted)";
-    } else {
-      statusLine.textContent = "Not checked in today";
-    }
+    } else statusLine.textContent = "Not checked in today";
     card.appendChild(statusLine);
-
-    var actionsRow = document.createElement("div");
-    actionsRow.className = "money-quick-actions";
-    var checkinBtn = document.createElement("button");
-    checkinBtn.className = "action-btn primary";
-    checkinBtn.textContent = todayEntry ? "Update Check-in" : "Check In";
-    checkinBtn.addEventListener("click", function () {
+    var row = mEl("div", "money-quick-actions");
+    row.appendChild(mBtn(todayEntry ? "Update Check-in" : "Check In", "action-btn primary", function () {
       var existing = getDailyLogEntry(habit.id, todayKey());
       goMoneyScreen("habit-checkin", {
         habitId: habit.id,
@@ -4572,273 +4723,409 @@
         actualQuantity: existing ? existing.actualQuantity : null,
         phase: "input"
       });
-    });
-    actionsRow.appendChild(checkinBtn);
-    var editBtn = document.createElement("button");
-    editBtn.className = "action-btn";
-    editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", function () {
-      goMoneyScreen("habit-setup", {
-        step: 1, editHabitId: habit.id,
-        data: { category: habit.category, customName: habit.customName, privacyEnabled: habit.privacyEnabled, normalDailyQuantity: habit.normalDailyQuantity, costPerUnit: habit.costPerUnit }
-      });
-    });
-    actionsRow.appendChild(editBtn);
-    card.appendChild(actionsRow);
+    }));
+    row.appendChild(mBtn("Edit", "action-btn", function () {
+      goMoneyScreen("habit-setup", { step: 1, editHabitId: habit.id, data: { category: habit.category, customName: habit.customName, privacyEnabled: habit.privacyEnabled, normalDailyQuantity: habit.normalDailyQuantity, costPerUnit: habit.costPerUnit } });
+    }));
+    card.appendChild(row);
     return card;
   }
 
-  function handleWaitingDecision(decisionId, stillWant) {
-    var decisions = getPurchaseDecisions();
-    var d = decisions.find(function (x) { return x.id === decisionId; });
-    if (!d) return;
-    if (stillWant) {
-      d.decision = "bought";
-      d.moneyAvoided = 0;
-      d.decidedAt = new Date().toISOString();
-      savePurchaseDecisions(decisions);
-      showToast("Noted");
-      renderDuniyaMoney();
-    } else {
-      d.decision = "avoided";
-      d.moneyAvoided = d.amount;
-      d.decidedAt = new Date().toISOString();
-      savePurchaseDecisions(decisions);
-      goMoneyScreen("should-i-buy-result", { decisionId: decisionId });
-    }
+  function renderMoneyGoalCard(g) {
+    var card = mEl("div", "money-habit-card");
+    card.appendChild(mEl("p", "name", g.name + (g.completedAt ? " ✓" : "")));
+    card.appendChild(mEl("p", "money-goal-amount", fmtRupee(g.currentSavedAmount) + " / " + fmtRupee(g.targetAmount)));
+    var track = mEl("div", "plan-progress-track");
+    var fill = mEl("div", "plan-progress-fill");
+    fill.style.width = goalPct(g) + "%";
+    track.appendChild(fill);
+    card.appendChild(track);
+    card.appendChild(mEl("p", "muted-line", goalPct(g) + "% · " + fmtRupee(Math.max(0, g.targetAmount - g.currentSavedAmount)) + " remaining"));
+    var row = mEl("div", "money-quick-actions");
+    row.appendChild(mBtn("Open", "action-btn primary", function () { goMoneyScreen("goal", { goalId: g.id }); }));
+    row.appendChild(mBtn("+ Add Money", "action-btn", function () { goMoneyScreen("add-money", { goalId: g.id }); }));
+    card.appendChild(row);
+    return card;
   }
 
   function renderMoneyDashboard(content) {
-    var waitingReady = getPurchaseDecisions().filter(function (d) { return d.decision === "waiting" && d.decideAfter && Date.now() >= d.decideAfter; });
-    waitingReady.forEach(function (d) {
-      var banner = document.createElement("div");
-      banner.className = "money-wait-banner";
-      var q = document.createElement("p");
+    // things waiting on the user
+    pendingAvoided().forEach(function (p) {
+      var b = mEl("div", "money-wait-banner");
+      var q = mEl("p", "", fmtRupee(p.ctx.amount) + " avoided (" + p.label + ") — what happened to this money?");
       q.style.margin = "0 0 8px";
-      q.textContent = "Do you still want: " + d.itemName + " (" + fmtRupee(d.amount) + ")?";
-      banner.appendChild(q);
-      var row = document.createElement("div");
-      row.className = "money-quick-actions";
-      row.style.margin = "0";
-      var yesBtn = document.createElement("button");
-      yesBtn.className = "action-btn";
-      yesBtn.textContent = "Yes, still want it";
-      yesBtn.addEventListener("click", function () { handleWaitingDecision(d.id, true); });
-      row.appendChild(yesBtn);
-      var noBtn = document.createElement("button");
-      noBtn.className = "action-btn primary";
-      noBtn.textContent = "No, skip it";
-      noBtn.addEventListener("click", function () { handleWaitingDecision(d.id, false); });
-      row.appendChild(noBtn);
-      banner.appendChild(row);
-      content.appendChild(banner);
+      b.appendChild(q);
+      b.appendChild(mBtn("Decide", "action-btn primary", function () { goMoneyScreen("allocate", { ctx: p.ctx, choice: null }); }));
+      content.appendChild(b);
+    });
+    getPurchaseDecisions().filter(function (d) { return d.status === "later" || d.status === "waiting"; }).forEach(function (d) {
+      var b = mEl("div", "money-wait-banner");
+      var ready = d.status === "later" || (d.decideAfter && Date.now() >= d.decideAfter);
+      var hrs = d.decideAfter ? Math.max(1, Math.ceil((d.decideAfter - Date.now()) / 3600000)) : 0;
+      var q = mEl("p", "", (ready ? "Decide: " : "Waiting: ") + d.itemName + " (" + fmtRupee(d.amount) + ")" + (ready ? "" : " — ready in about " + hrs + "h"));
+      q.style.margin = "0 0 8px";
+      b.appendChild(q);
+      b.appendChild(mBtn(ready ? "Review" : "Review anyway", "action-btn primary", function () { goMoneyScreen("should-i-buy", { phase: "check", decisionId: d.id }); }));
+      content.appendChild(b);
     });
 
-    // My Saving Goal
-    var goal = getActiveGoal();
-    var goalSection = document.createElement("div");
-    goalSection.className = "money-goal-block";
-    var goalTitle = document.createElement("h2");
-    goalTitle.textContent = "My Saving Goal";
-    goalSection.appendChild(goalTitle);
-
-    if (!goal) {
-      var noGoalP = document.createElement("p");
-      noGoalP.className = "muted-line";
-      noGoalP.textContent = "You haven't set a saving goal yet.";
-      goalSection.appendChild(noGoalP);
-      var createGoalBtn = document.createElement("button");
-      createGoalBtn.className = "btn btn-primary btn-full";
-      createGoalBtn.textContent = "Create a Saving Goal";
-      createGoalBtn.addEventListener("click", function () { goMoneyScreen("new-goal"); });
-      goalSection.appendChild(createGoalBtn);
+    // Savings goals
+    content.appendChild(mEl("h2", "", "Savings Goals"));
+    var goals = getMoneyGoals();
+    if (!goals.length) {
+      content.appendChild(mEl("p", "muted-line", "You haven't set a savings goal yet."));
     } else {
-      var nameP = document.createElement("p");
-      nameP.className = "money-goal-name";
-      nameP.textContent = goal.name;
-      goalSection.appendChild(nameP);
-      var amountP = document.createElement("p");
-      amountP.className = "money-goal-amount";
-      amountP.textContent = fmtRupee(goal.currentSavedAmount) + " / " + fmtRupee(goal.targetAmount);
-      goalSection.appendChild(amountP);
-      var track = document.createElement("div");
-      track.className = "plan-progress-track";
-      var fill = document.createElement("div");
-      fill.className = "plan-progress-fill";
-      var pct = goal.targetAmount ? Math.min(100, Math.round((goal.currentSavedAmount / goal.targetAmount) * 100)) : 0;
-      fill.style.width = pct + "%";
-      track.appendChild(fill);
-      goalSection.appendChild(track);
-      var metaP = document.createElement("p");
-      metaP.className = "muted-line";
-      metaP.textContent = pct + "% completed · " + fmtRupee(Math.max(0, goal.targetAmount - goal.currentSavedAmount)) + " remaining";
-      goalSection.appendChild(metaP);
-      if (goal.completedAt) {
-        var doneP = document.createElement("p");
-        doneP.className = "money-goal-name";
-        doneP.style.color = "var(--mint)";
-        doneP.textContent = "🎉 Goal completed";
-        goalSection.appendChild(doneP);
-      }
-      var changeGoalLink = document.createElement("button");
-      changeGoalLink.className = "priority-change-link";
-      changeGoalLink.textContent = goal.completedAt ? "Start a new goal" : "Change goal";
-      changeGoalLink.addEventListener("click", function () { goMoneyScreen("new-goal"); });
-      goalSection.appendChild(changeGoalLink);
+      goals.forEach(function (g) { content.appendChild(renderMoneyGoalCard(g)); });
     }
-    content.appendChild(goalSection);
+    content.appendChild(mBtn(goals.length ? "+ New goal" : "Create a Savings Goal", goals.length ? "btn btn-outline btn-full" : "btn btn-primary btn-full", function () { goMoneyScreen("new-goal"); }));
 
-    // Money Saved Today / This Week / This Month
+    var pool = unallocatedTotal();
+    if (pool > 0) {
+      var ub = mEl("div", "money-avoided-total");
+      ub.style.marginTop = "12px";
+      ub.appendChild(document.createTextNode("Unallocated savings: "));
+      var us = mEl("strong", "", fmtRupee(pool));
+      ub.appendChild(us);
+      if (goals.length) {
+        var mv = mBtn("Move to a goal", "priority-change-link", function () { goMoneyScreen("move-unalloc", {}); });
+        ub.appendChild(document.createElement("br"));
+        ub.appendChild(mv);
+      }
+      content.appendChild(ub);
+    }
+
+    // Actually saved vs avoided — kept apart
     var today = todayKey();
     var weekStart = getLastNDateKeys(7).slice(-1)[0];
     var monthStart = getLastNDateKeys(30).slice(-1)[0];
-    var savedToday = computeMoneySaved(today, null, null).total;
-    var savedWeek = computeMoneySaved(weekStart, null, null).total;
-    var savedMonth = computeMoneySaved(monthStart, null, null).total;
-    var allTime = computeMoneySaved(null, null, null).total;
-
-    var statGrid = document.createElement("div");
-    statGrid.className = "money-stat-grid";
-    [["Today", savedToday], ["This Week", savedWeek], ["This Month", savedMonth]].forEach(function (pair) {
-      var tile = document.createElement("div");
-      tile.className = "money-stat-tile";
-      var big = document.createElement("span");
-      big.className = "big";
-      big.textContent = fmtRupee(pair[1]);
-      var lbl = document.createElement("span");
-      lbl.className = "lbl";
-      lbl.textContent = pair[0];
-      tile.appendChild(big);
-      tile.appendChild(lbl);
-      statGrid.appendChild(tile);
+    var h = mEl("h2", "", "Actually saved");
+    h.style.marginTop = "18px";
+    content.appendChild(h);
+    var grid = mEl("div", "money-stat-grid");
+    [["Today", moneyStats(today, null).saved], ["This Week", moneyStats(weekStart, null).saved], ["This Month", moneyStats(monthStart, null).saved]].forEach(function (pair) {
+      var tile = mEl("div", "money-stat-tile");
+      tile.appendChild(mEl("span", "big", fmtRupee(pair[1])));
+      tile.appendChild(mEl("span", "lbl", pair[0]));
+      grid.appendChild(tile);
     });
-    content.appendChild(statGrid);
+    content.appendChild(grid);
+    var all = moneyStats(null, null);
+    var av = mEl("p", "money-avoided-total");
+    av.appendChild(document.createTextNode("Avoided spending, all time: "));
+    av.appendChild(mEl("strong", "", fmtRupee(all.avoided)));
+    av.appendChild(document.createElement("br"));
+    av.appendChild(mEl("span", "muted-line", "Avoided is not the same as saved. Only money you add to a goal or keep counts as saved."));
+    content.appendChild(av);
 
-    // Money I Avoided Wasting (all-time)
-    var avoidedTotalP = document.createElement("p");
-    avoidedTotalP.className = "money-avoided-total";
-    var strongAmt = document.createElement("strong");
-    strongAmt.textContent = fmtRupee(allTime);
-    avoidedTotalP.appendChild(strongAmt);
-    avoidedTotalP.appendChild(document.createTextNode(" money I avoided wasting — all time"));
-    content.appendChild(avoidedTotalP);
-
-    // My Money Habits
-    var habitsHeader = document.createElement("h2");
-    habitsHeader.style.marginTop = "18px";
-    habitsHeader.textContent = "My Money Habits";
-    content.appendChild(habitsHeader);
-
-    var habits = getMoneyHabits().filter(function (h) { return !h.archived; });
-    if (!habits.length) {
-      var noHabitsP = document.createElement("p");
-      noHabitsP.className = "muted-line";
-      noHabitsP.textContent = "Track a spending habit to see its real cost and reduce it.";
-      content.appendChild(noHabitsP);
-    } else {
-      habits.forEach(function (habit) { content.appendChild(renderMoneyHabitCard(habit)); });
-    }
-    var addHabitBtn = document.createElement("button");
-    addHabitBtn.className = "btn btn-outline btn-full";
-    addHabitBtn.textContent = "+ Track a money habit";
-    addHabitBtn.addEventListener("click", function () {
+    // habits
+    var hh = mEl("h2", "", "My Money Habits");
+    hh.style.marginTop = "18px";
+    content.appendChild(hh);
+    var habits = getMoneyHabits().filter(function (x) { return !x.archived; });
+    if (!habits.length) content.appendChild(mEl("p", "muted-line", "Track a spending habit to see its real cost and reduce it."));
+    else habits.forEach(function (habit) { content.appendChild(renderMoneyHabitCard(habit)); });
+    content.appendChild(mBtn("+ Track a money habit", "btn btn-outline btn-full", function () {
       goMoneyScreen("habit-setup", { step: 1, data: { category: null, customName: "", privacyEnabled: false, normalDailyQuantity: null, costPerUnit: null } });
-    });
-    content.appendChild(addHabitBtn);
+    }));
 
-    // Weekly Progress
-    var weekHeader = document.createElement("h2");
-    weekHeader.style.marginTop = "18px";
-    weekHeader.textContent = "Weekly Progress";
-    content.appendChild(weekHeader);
+    // weekly
+    var wh = mEl("h2", "", "Weekly Progress");
+    wh.style.marginTop = "18px";
+    content.appendChild(wh);
     content.appendChild(renderMoneyWeekGraph());
-    var viewReportBtn = document.createElement("button");
-    viewReportBtn.className = "priority-change-link";
-    viewReportBtn.textContent = "View full weekly report";
-    viewReportBtn.addEventListener("click", function () { goMoneyScreen("weekly-report"); });
-    content.appendChild(viewReportBtn);
+    content.appendChild(mBtn("View full weekly report", "priority-change-link", function () { goMoneyScreen("weekly-report"); }));
 
-    // Quick Actions
-    var quickHeader = document.createElement("h2");
-    quickHeader.style.marginTop = "18px";
-    quickHeader.textContent = "Quick Actions";
-    content.appendChild(quickHeader);
-    var quickGrid = document.createElement("div");
-    quickGrid.className = "money-quick-actions";
-    var avoidBtn = document.createElement("button");
-    avoidBtn.className = "preset-plan-chip";
-    avoidBtn.textContent = "+ I avoided a purchase";
-    avoidBtn.addEventListener("click", function () { goMoneyScreen("avoided-purchase", { itemName: "", amount: "" }); });
-    quickGrid.appendChild(avoidBtn);
-    var shouldIBuyBtn = document.createElement("button");
-    shouldIBuyBtn.className = "preset-plan-chip";
-    shouldIBuyBtn.textContent = "Should I buy this?";
-    shouldIBuyBtn.addEventListener("click", function () { goMoneyScreen("should-i-buy", { phase: "entry" }); });
-    quickGrid.appendChild(shouldIBuyBtn);
-    content.appendChild(quickGrid);
+    // quick actions
+    var qh = mEl("h2", "", "Quick Actions");
+    qh.style.marginTop = "18px";
+    content.appendChild(qh);
+    var q = mEl("div", "money-quick-actions");
+    q.appendChild(mBtn("+ I avoided a purchase", "preset-plan-chip", function () { goMoneyScreen("avoided-purchase", { itemName: "", amount: "" }); }));
+    q.appendChild(mBtn("Should I buy this?", "preset-plan-chip", function () { goMoneyScreen("should-i-buy", { phase: "entry" }); }));
+    q.appendChild(mBtn("Add money to savings", "preset-plan-chip", function () {
+      if (!getMoneyGoals().length) { showToast("Create a savings goal first"); goMoneyScreen("new-goal", { returnTo: { screen: "add-money" } }); return; }
+      goMoneyScreen("add-money", {});
+    }));
+    q.appendChild(mBtn("Log an expense", "preset-plan-chip", function () { goMoneyScreen("expense", {}); }));
+    content.appendChild(q);
   }
 
-  // -- New Goal --
+  // -- New goal --
 
   function renderMoneyNewGoal(content) {
+    var back = moneyView.returnTo;
     buildMoneyBack(content, function () { goMoneyScreen("dashboard"); });
-    var h2 = document.createElement("h2");
-    h2.textContent = "What are you saving for?";
-    content.appendChild(h2);
-
-    var chipsWrap = document.createElement("div");
-    chipsWrap.className = "money-quick-actions";
+    content.appendChild(mEl("h2", "", "What are you saving for?"));
+    var chipsWrap = mEl("div", "money-quick-actions");
     var chosenName = moneyView.goalName || "";
     MONEY_GOAL_PRESETS.forEach(function (preset) {
-      var chip = document.createElement("button");
-      chip.className = "preset-plan-chip" + (chosenName === preset ? " active-chip" : "");
-      chip.textContent = preset;
-      chip.addEventListener("click", function () { moneyView.goalName = preset; renderDuniyaMoney(); });
-      chipsWrap.appendChild(chip);
+      chipsWrap.appendChild(mBtn(preset, "preset-plan-chip" + (chosenName === preset ? " active-chip" : ""), function () { moneyView.goalName = preset; renderDuniyaMoney(); }));
     });
     content.appendChild(chipsWrap);
-
-    var customLabel = document.createElement("p");
-    customLabel.className = "muted-line";
-    customLabel.style.marginTop = "12px";
-    customLabel.textContent = "Or name your own goal";
-    content.appendChild(customLabel);
-    var nameInput = document.createElement("input");
+    var cl = mEl("p", "muted-line", "Or name your own goal");
+    cl.style.marginTop = "12px";
+    content.appendChild(cl);
+    var nameInput = mEl("input", "text-input");
     nameInput.type = "text";
-    nameInput.className = "text-input";
     nameInput.placeholder = "e.g. New phone";
     nameInput.value = MONEY_GOAL_PRESETS.indexOf(chosenName) === -1 ? chosenName : "";
     nameInput.addEventListener("input", function () { moneyView.goalName = nameInput.value; });
     content.appendChild(nameInput);
-
-    var amountLabel = document.createElement("p");
-    amountLabel.className = "muted-line";
-    amountLabel.style.marginTop = "12px";
-    amountLabel.textContent = "Target amount";
-    content.appendChild(amountLabel);
-    var amountInput = document.createElement("input");
-    amountInput.type = "number";
-    amountInput.min = "1";
-    amountInput.className = "text-input";
-    amountInput.placeholder = "₹5000";
-    amountInput.value = moneyView.goalAmount || "";
-    amountInput.addEventListener("input", function () { moneyView.goalAmount = amountInput.value; });
-    content.appendChild(amountInput);
-
-    var saveBtn = document.createElement("button");
-    saveBtn.className = "btn btn-primary btn-full";
-    saveBtn.style.marginTop = "14px";
-    saveBtn.textContent = "Save Goal";
-    saveBtn.addEventListener("click", function () {
+    var al = mEl("p", "muted-line", "Target amount");
+    al.style.marginTop = "12px";
+    content.appendChild(al);
+    content.appendChild(mNumInput("₹50000", moneyView.goalAmount, function (v) { moneyView.goalAmount = v; }));
+    var save = mBtn("Save Goal", "btn btn-primary btn-full", function () {
       var name = (moneyView.goalName || "").trim();
       var amount = parseFloat(moneyView.goalAmount);
       if (!name) { showToast("Give your goal a name"); return; }
       if (!amount || amount <= 0) { showToast("Enter a target amount"); return; }
-      createMoneyGoal(name, amount);
-      showToast("Saving goal created");
-      goMoneyScreen("dashboard");
+      var g = createMoneyGoal(name, amount);
+      showToast("Savings goal created");
+      if (back) goMoneyScreen(back.screen, back.extra || { goalId: g.id });
+      else goMoneyScreen("goal", { goalId: g.id });
     });
-    content.appendChild(saveBtn);
+    save.style.marginTop = "14px";
+    content.appendChild(save);
+  }
+
+  // -- Goal screen --
+
+  function renderMoneyGoal(content) {
+    var g = getGoal(moneyView.goalId);
+    if (!g) { goMoneyScreen("dashboard"); return; }
+    buildMoneyBack(content, function () { goMoneyScreen("dashboard"); });
+    content.appendChild(mEl("h2", "", g.name));
+    var amt = mEl("p", "money-goal-amount", fmtRupee(g.currentSavedAmount) + " saved");
+    content.appendChild(amt);
+    var track = mEl("div", "plan-progress-track");
+    var fill = mEl("div", "plan-progress-fill");
+    fill.style.width = goalPct(g) + "%";
+    track.appendChild(fill);
+    content.appendChild(track);
+    content.appendChild(mRows([
+      ["Target", fmtRupee(g.targetAmount)],
+      ["Actually saved", fmtRupee(g.currentSavedAmount)],
+      ["Remaining", fmtRupee(Math.max(0, g.targetAmount - g.currentSavedAmount))],
+      ["Progress", goalPct(g) + "% complete", true]
+    ]));
+    if (g.completedAt) content.appendChild(mEl("p", "rec-note", "🎉 You reached this goal."));
+    var add = mBtn("+ Add Money", "btn btn-primary btn-full", function () { goMoneyScreen("add-money", { goalId: g.id, fromGoal: true }); });
+    content.appendChild(add);
+    if (unallocatedTotal() > 0) {
+      content.appendChild(mBtn("Move unallocated savings here (" + fmtRupee(unallocatedTotal()) + ")", "btn btn-outline btn-full", function () { goMoneyScreen("move-unalloc", { goalId: g.id }); }));
+    }
+    var rh = mEl("h2", "", "Recent activity");
+    rh.style.marginTop = "16px";
+    content.appendChild(rh);
+    var recent = getContribs().filter(function (c) { return c.goalId === g.id; }).sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 10);
+    if (!recent.length) content.appendChild(mEl("p", "muted-line", "Nothing added yet. This only grows when you confirm money went in."));
+    recent.forEach(function (c) {
+      var d = new Date(c.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      var line = mEl("p", "muted-line", "+ " + fmtRupee(c.amount) + " — " + (c.note || c.sourceLabel) + " · " + d);
+      line.style.marginBottom = "4px";
+      content.appendChild(line);
+    });
+  }
+
+  // -- Add money manually --
+
+  function renderMoneyAddMoney(content) {
+    var goals = getMoneyGoals();
+    if (!goals.length) { goMoneyScreen("new-goal", { returnTo: { screen: "add-money" } }); return; }
+    if (!moneyView.goalId) moneyView.goalId = goals[0].id;
+    buildMoneyBack(content, function () { goMoneyScreen(moneyView.fromGoal ? "goal" : "dashboard", { goalId: moneyView.goalId }); });
+    content.appendChild(mEl("h2", "", "How much are you adding?"));
+    content.appendChild(mNumInput("₹500", moneyView.amount, function (v) { moneyView.amount = v; }));
+    if (goals.length > 1) {
+      var gl = mEl("p", "muted-line", "Which goal?");
+      gl.style.marginTop = "12px";
+      content.appendChild(gl);
+      var chips = mEl("div", "money-quick-actions");
+      goals.forEach(function (g) {
+        chips.appendChild(mBtn(g.name + " — " + fmtRupee(g.currentSavedAmount) + " / " + fmtRupee(g.targetAmount), "preset-plan-chip" + (moneyView.goalId === g.id ? " active-chip" : ""), function () { moneyView.goalId = g.id; renderDuniyaMoney(); }));
+      });
+      content.appendChild(chips);
+    } else {
+      var only = mEl("p", "muted-line", "Goal: " + goals[0].name);
+      only.style.marginTop = "8px";
+      content.appendChild(only);
+    }
+    var sl = mEl("p", "muted-line", "Where did this money come from? (optional)");
+    sl.style.marginTop = "12px";
+    content.appendChild(sl);
+    var srow = mEl("div", "money-quick-actions");
+    MONEY_SOURCES.forEach(function (s) {
+      srow.appendChild(mBtn(s.label, "preset-plan-chip" + (moneyView.source === s.key ? " active-chip" : ""), function () { moneyView.source = moneyView.source === s.key ? null : s.key; renderDuniyaMoney(); }));
+    });
+    content.appendChild(srow);
+    var save = mBtn("Add to goal", "btn btn-primary btn-full", function () {
+      var amount = parseFloat(moneyView.amount);
+      if (!amount || amount <= 0) { showToast("Enter an amount"); return; }
+      var g = getGoal(moneyView.goalId);
+      addContribution(g.id, amount, moneyView.source || "manual", "", null);
+      goMoneyScreen("alloc-done", { kind: "goal", amount: amount, goalId: g.id });
+    });
+    save.style.marginTop = "14px";
+    content.appendChild(save);
+  }
+
+  // -- Log an expense --
+
+  function renderMoneyExpense(content) {
+    buildMoneyBack(content, function () { goMoneyScreen("dashboard"); });
+    content.appendChild(mEl("h2", "", "Log an expense"));
+    content.appendChild(mNumInput("₹ amount", moneyView.amount, function (v) { moneyView.amount = v; }));
+    var l = mEl("input", "text-input");
+    l.type = "text";
+    l.placeholder = "What was it for? (optional)";
+    l.value = moneyView.label || "";
+    l.addEventListener("input", function () { moneyView.label = l.value; });
+    content.appendChild(l);
+    var save = mBtn("Save expense", "btn btn-primary btn-full", function () {
+      var amount = parseFloat(moneyView.amount);
+      if (!amount || amount <= 0) { showToast("Enter an amount"); return; }
+      var list = getExpenses();
+      list.push({ id: uid("exp"), amount: amount, label: (moneyView.label || "").trim().slice(0, 60), date: todayKey(), at: new Date().toISOString(), refId: null });
+      saveExpenses(list);
+      showToast(fmtRupee(amount) + " logged");
+      goMoneyScreen("expense", {});
+    });
+    save.style.marginTop = "6px";
+    content.appendChild(save);
+    var recent = getExpenses().slice().sort(function (a, b) { return a.at < b.at ? 1 : -1; }).slice(0, 5);
+    if (recent.length) {
+      var rh = mEl("h2", "", "Recent expenses");
+      rh.style.marginTop = "18px";
+      content.appendChild(rh);
+      recent.forEach(function (x) {
+        var line = mEl("p", "muted-line", fmtRupee(x.amount) + (x.label ? " — " + x.label : "") + " · " + new Date(x.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }));
+        line.style.marginBottom = "4px";
+        content.appendChild(line);
+      });
+    }
+  }
+
+  // -- "What happened to this money?" (used by every avoided-money flow) --
+
+  function renderMoneyAllocate(content) {
+    var ctx = moneyView.ctx;
+    if (!ctx) { goMoneyScreen("dashboard"); return; }
+    var goals = getMoneyGoals();
+    buildMoneyBack(content, function () { goMoneyScreen("dashboard"); });
+    content.appendChild(mEl("h2", "", "You avoided spending " + fmtRupee(ctx.amount) + "."));
+    if (ctx.note) content.appendChild(mEl("p", "muted-line", ctx.note));
+    content.appendChild(mEl("p", "muted-line", "This isn't counted as saved yet."));
+    var q = mEl("p", "", "What happened to this " + fmtRupee(ctx.amount) + "?");
+    q.style.fontWeight = "600";
+    q.style.margin = "12px 0 8px";
+    content.appendChild(q);
+
+    function opt(key, label) {
+      var b = mBtn(label, "rec-action" + (moneyView.choice === key ? " done" : ""), function () { moneyView.choice = key; renderDuniyaMoney(); });
+      content.appendChild(b);
+    }
+    opt("goal", "Add " + fmtRupee(ctx.amount) + " to my savings goal");
+    opt("spent", "I spent this money somewhere else");
+    opt("keep", "I kept the money, but don't want to add it to a goal yet");
+
+    var choice = moneyView.choice;
+    if (choice === "goal") {
+      if (!goals.length) {
+        content.appendChild(mEl("p", "muted-line", "You need a savings goal first."));
+        content.appendChild(mBtn("Create a savings goal", "btn btn-outline btn-full", function () { goMoneyScreen("new-goal", { returnTo: { screen: "allocate", extra: { ctx: ctx, choice: "goal" } } }); }));
+        return;
+      }
+      if (!moneyView.goalId) moneyView.goalId = goals[0].id;
+      content.appendChild(mEl("p", "muted-line", "Which savings goal?"));
+      goals.forEach(function (g) {
+        content.appendChild(mBtn((moneyView.goalId === g.id ? "● " : "○ ") + g.name + " — " + fmtRupee(g.currentSavedAmount) + " / " + fmtRupee(g.targetAmount), "rec-action" + (moneyView.goalId === g.id ? " done" : ""), function () { moneyView.goalId = g.id; renderDuniyaMoney(); }));
+      });
+    }
+    if (choice === "goal" || choice === "keep") {
+      var lbl = mEl("p", "muted-line", "How much of it? (the rest is recorded as spent elsewhere)");
+      lbl.style.marginTop = "8px";
+      content.appendChild(lbl);
+      if (moneyView.amountStr === undefined) moneyView.amountStr = String(ctx.amount);
+      content.appendChild(mNumInput(fmtRupee(ctx.amount), moneyView.amountStr, function (v) { moneyView.amountStr = v; }));
+    }
+    if (choice) {
+      var confirm = mBtn(choice === "goal" ? "Add to goal" : choice === "keep" ? "Keep as unallocated savings" : "Record", "btn btn-primary btn-full", function () {
+        var amt = choice === "spent" ? 0 : parseFloat(moneyView.amountStr);
+        if (choice !== "spent" && (!amt || amt <= 0)) { showToast("Enter an amount"); return; }
+        if (choice !== "spent" && amt > ctx.amount) { showToast("That's more than " + fmtRupee(ctx.amount)); return; }
+        var res = moneyAllocate(ctx, choice, moneyView.goalId, amt);
+        goMoneyScreen("alloc-done", { kind: choice, ctx: ctx, res: res, goalId: res.goalId });
+      });
+      confirm.style.marginTop = "12px";
+      content.appendChild(confirm);
+    }
+  }
+
+  function renderMoneyAllocDone(content) {
+    var v = moneyView;
+    var g = v.goalId ? getGoal(v.goalId) : null;
+    if (v.kind === "goal" && !v.ctx) {
+      content.appendChild(mEl("h2", "", fmtRupee(v.amount) + " added to your " + (g ? g.name : "savings") + " goal."));
+    } else if (v.kind === "goal") {
+      content.appendChild(mEl("h2", "", fmtRupee(v.res.goalAmount) + " added to your " + (g ? g.name : "savings") + " goal."));
+      if (v.res.spentAmount > 0) content.appendChild(mEl("p", "muted-line", "The other " + fmtRupee(v.res.spentAmount) + " is recorded as spent elsewhere."));
+    } else if (v.kind === "keep") {
+      content.appendChild(mEl("h2", "", fmtRupee(v.res.unallocAmount) + " kept as unallocated savings."));
+      content.appendChild(mEl("p", "muted-line", "You can move it into a goal any time." + (v.res.spentAmount > 0 ? " The other " + fmtRupee(v.res.spentAmount) + " is recorded as spent elsewhere." : "")));
+    } else if (v.kind === "moved") {
+      content.appendChild(mEl("h2", "", fmtRupee(v.amount) + " moved to your " + (g ? g.name : "savings") + " goal."));
+    } else {
+      content.appendChild(mEl("h2", "", "Recorded."));
+      content.appendChild(mEl("p", "muted-line", "Avoided purchase: " + fmtRupee(v.ctx.amount) + ". Saved toward a goal: ₹0."));
+    }
+    if (g) {
+      content.appendChild(mRows([
+        [g.name, fmtRupee(g.currentSavedAmount) + " / " + fmtRupee(g.targetAmount), true],
+        ["Remaining", fmtRupee(Math.max(0, g.targetAmount - g.currentSavedAmount))]
+      ]));
+    }
+    var done = mBtn("Done", "btn btn-primary btn-full", function () { goMoneyScreen("dashboard"); });
+    done.style.marginTop = "12px";
+    content.appendChild(done);
+    if (g) content.appendChild(mBtn("View " + g.name + " goal", "btn btn-outline btn-full", function () { goMoneyScreen("goal", { goalId: g.id }); }));
+  }
+
+  // -- Move unallocated savings into a goal --
+
+  function renderMoneyMoveUnalloc(content) {
+    var goals = getMoneyGoals();
+    var pool = unallocatedTotal();
+    if (!goals.length || pool <= 0) { goMoneyScreen("dashboard"); return; }
+    if (!moneyView.goalId) moneyView.goalId = goals[0].id;
+    buildMoneyBack(content, function () { goMoneyScreen("dashboard"); });
+    content.appendChild(mEl("h2", "", "Move unallocated savings"));
+    content.appendChild(mEl("p", "muted-line", "Available: " + fmtRupee(pool)));
+    goals.forEach(function (g) {
+      content.appendChild(mBtn((moneyView.goalId === g.id ? "● " : "○ ") + g.name + " — " + fmtRupee(g.currentSavedAmount) + " / " + fmtRupee(g.targetAmount), "rec-action" + (moneyView.goalId === g.id ? " done" : ""), function () { moneyView.goalId = g.id; renderDuniyaMoney(); }));
+    });
+    if (moneyView.amountStr === undefined) moneyView.amountStr = String(pool);
+    content.appendChild(mNumInput("How much?", moneyView.amountStr, function (v) { moneyView.amountStr = v; }));
+    var go = mBtn("Move to goal", "btn btn-primary btn-full", function () {
+      var amt = parseFloat(moneyView.amountStr);
+      if (!amt || amt <= 0) { showToast("Enter an amount"); return; }
+      if (amt > pool) { showToast("You only have " + fmtRupee(pool) + " unallocated"); return; }
+      var left = amt;
+      var list = getUnalloc();
+      list.sort(function (a, b) { return a.at < b.at ? -1 : 1; });
+      list.forEach(function (e) {
+        var avail = e.amount - (e.movedAmount || 0);
+        if (left <= 0 || avail <= 0) return;
+        var take = Math.min(avail, left);
+        e.movedAmount = (e.movedAmount || 0) + take;
+        left -= take;
+      });
+      saveUnalloc(list);
+      addContribution(moneyView.goalId, amt, "unallocated", "Moved from unallocated savings", null);
+      goMoneyScreen("alloc-done", { kind: "moved", amount: amt, goalId: moneyView.goalId });
+    });
+    go.style.marginTop = "12px";
+    content.appendChild(go);
   }
 
   // -- Habit setup (4-step) --
@@ -5010,582 +5297,344 @@
 
   // -- Daily check-in --
 
-  function finalizeMoneyCheckin(habitId, res, destination) {
-    var dateKey = todayKey();
-    var entry = getDailyLogEntry(habitId, dateKey);
-    if (entry) {
-      entry.destination = destination;
-      saveDailyLogEntry(habitId, dateKey, entry);
-    }
-    if (destination !== "general") {
-      var r = addToGoal(destination, res.amountAvoided);
-      if (r && r.justCompleted) { goMoneyScreen("goal-completed", { goalId: destination }); return; }
-    }
-    showToast("Saved");
-    goMoneyScreen("dashboard");
-  }
-
   function renderMoneyHabitCheckin(content) {
     var habit = getMoneyHabits().find(function (h) { return h.id === moneyView.habitId; });
     if (!habit) { goMoneyScreen("dashboard"); return; }
     buildMoneyBack(content, function () { goMoneyScreen("dashboard"); });
+    content.appendChild(mEl("h2", "", (habit.customName || habit.category) + " — Check In"));
 
-    var displayName = habit.customName || habit.category;
-    var h2 = document.createElement("h2");
-    h2.textContent = displayName + " — Check In";
-    content.appendChild(h2);
-
-    if (moneyView.phase === "result") {
-      var res = moneyView.result;
-      var banner = document.createElement("div");
-      banner.className = "money-result-banner" + (res.amountAvoided > 0 ? "" : " neutral");
-      if (res.amountAvoided > 0) {
-        var amt = document.createElement("p");
-        amt.className = "amount";
-        amt.textContent = "You saved " + fmtRupee(res.amountAvoided) + " today";
-        banner.appendChild(amt);
-        if (res.targetBeaten) {
-          var tb = document.createElement("p");
-          tb.className = "muted-line";
-          tb.textContent = "Target beaten 🎯";
-          banner.appendChild(tb);
-        }
-      } else {
-        var np = document.createElement("p");
-        np.textContent = "No saving recorded today. You can try again tomorrow.";
-        banner.appendChild(np);
-      }
-      content.appendChild(banner);
-
-      if (res.amountAvoided > 0 && !res.destinationChosen) {
-        var destRow = document.createElement("div");
-        destRow.className = "money-quick-actions";
-        var goal = getActiveGoal();
-        if (goal && !goal.completedAt) {
-          var addBtn = document.createElement("button");
-          addBtn.className = "btn btn-primary btn-full";
-          addBtn.textContent = "Add " + fmtRupee(res.amountAvoided) + " to Saving Goal";
-          addBtn.addEventListener("click", function () { finalizeMoneyCheckin(habit.id, res, goal.id); });
-          destRow.appendChild(addBtn);
-        }
-        var generalBtn = document.createElement("button");
-        generalBtn.className = "btn btn-outline btn-full";
-        generalBtn.textContent = "Keep as General Savings";
-        generalBtn.addEventListener("click", function () { finalizeMoneyCheckin(habit.id, res, "general"); });
-        destRow.appendChild(generalBtn);
-        content.appendChild(destRow);
-      } else {
-        var doneBtn = document.createElement("button");
-        doneBtn.className = "btn btn-primary btn-full";
-        doneBtn.textContent = "Done";
-        doneBtn.addEventListener("click", function () { goMoneyScreen("dashboard"); });
-        content.appendChild(doneBtn);
-      }
+    if (moneyView.phase === "none") {
+      var b = mEl("div", "money-result-banner neutral");
+      b.appendChild(mEl("p", "", "No reduction recorded today. You can try again tomorrow."));
+      content.appendChild(b);
+      content.appendChild(mBtn("Done", "btn btn-primary btn-full", function () { goMoneyScreen("dashboard"); }));
       return;
     }
 
-    var usualP = document.createElement("p");
-    usualP.className = "muted-line";
-    usualP.textContent = "Usual amount: " + habit.normalDailyQuantity + "/day";
-    content.appendChild(usualP);
-
-    var targetLabel = document.createElement("p");
-    targetLabel.className = "muted-line";
-    targetLabel.style.marginTop = "12px";
-    targetLabel.textContent = "Today I want to reduce by (optional)";
-    content.appendChild(targetLabel);
-    var targetChips = document.createElement("div");
-    targetChips.className = "money-quick-actions";
+    content.appendChild(mEl("p", "muted-line", "Usual amount: " + habit.normalDailyQuantity + "/day"));
+    var tl = mEl("p", "muted-line", "Today I want to reduce by (optional)");
+    tl.style.marginTop = "12px";
+    content.appendChild(tl);
+    var chips = mEl("div", "money-quick-actions");
     [1, 2, 3].forEach(function (n) {
-      var chip = document.createElement("button");
-      chip.className = "preset-plan-chip" + (moneyView.reduceBy === n ? " active-chip" : "");
-      chip.textContent = "-" + n;
-      chip.addEventListener("click", function () {
+      chips.appendChild(mBtn("-" + n, "preset-plan-chip" + (moneyView.reduceBy === n ? " active-chip" : ""), function () {
         moneyView.reduceBy = n;
         moneyView.actualQuantity = Math.max(0, habit.normalDailyQuantity - n);
         renderDuniyaMoney();
-      });
-      targetChips.appendChild(chip);
+      }));
     });
-    var skipChip = document.createElement("button");
-    skipChip.className = "preset-plan-chip" + (!moneyView.reduceBy ? " active-chip" : "");
-    skipChip.textContent = "No target";
-    skipChip.addEventListener("click", function () { moneyView.reduceBy = null; renderDuniyaMoney(); });
-    targetChips.appendChild(skipChip);
-    content.appendChild(targetChips);
-
-    var qLabel = document.createElement("p");
-    qLabel.className = "muted-line";
-    qLabel.style.marginTop = "14px";
-    qLabel.textContent = "How many did you use/buy today?";
-    content.appendChild(qLabel);
+    chips.appendChild(mBtn("No target", "preset-plan-chip" + (!moneyView.reduceBy ? " active-chip" : ""), function () { moneyView.reduceBy = null; renderDuniyaMoney(); }));
+    content.appendChild(chips);
+    var ql = mEl("p", "muted-line", "How many did you use/buy today?");
+    ql.style.marginTop = "14px";
+    content.appendChild(ql);
     var actualQ = (moneyView.actualQuantity !== null && moneyView.actualQuantity !== undefined) ? moneyView.actualQuantity : habit.normalDailyQuantity;
     content.appendChild(buildMoneyStepper(actualQ, function (v) { moneyView.actualQuantity = v; renderDuniyaMoney(); }, 0, 200));
 
-    var saveBtn = document.createElement("button");
-    saveBtn.className = "btn btn-primary btn-full";
-    saveBtn.style.marginTop = "14px";
-    saveBtn.textContent = "Save Check-in";
-    saveBtn.addEventListener("click", function () {
-      var actual = actualQ;
+    var save = mBtn("Save Check-in", "btn btn-primary btn-full", function () {
       var normal = habit.normalDailyQuantity;
-      var avoided = Math.max(0, (normal - actual) * habit.costPerUnit);
-      var targetBeaten = moneyView.reduceBy ? (normal - actual) > moneyView.reduceBy : false;
+      var avoided = Math.max(0, (normal - actualQ) * habit.costPerUnit);
+      var targetBeaten = moneyView.reduceBy ? (normal - actualQ) > moneyView.reduceBy : false;
       var dateKey = todayKey();
-      var priorEntry = getDailyLogEntry(habit.id, dateKey);
-      if (priorEntry && priorEntry.destination && priorEntry.destination !== "general") {
-        reverseFromGoal(priorEntry.destination, priorEntry.amountAvoided);
-      }
+      var ctx = moneyHabitCtx(habit, dateKey, avoided);
+      moneyUnallocateRef(ctx.refId);
       saveDailyLogEntry(habit.id, dateKey, {
-        habitId: habit.id, date: dateKey, normalQuantity: normal, actualQuantity: actual,
+        habitId: habit.id, date: dateKey, normalQuantity: normal, actualQuantity: actualQ,
         targetQuantity: moneyView.reduceBy ? Math.max(0, normal - moneyView.reduceBy) : null,
-        amountAvoided: avoided, destination: null, createdAt: new Date().toISOString()
+        amountAvoided: avoided, resolved: avoided === 0, goalAmount: 0, goalId: null, unallocAmount: 0, spentAmount: 0,
+        createdAt: new Date().toISOString()
       });
-      moneyView.phase = "result";
-      moneyView.result = { amountAvoided: avoided, targetBeaten: targetBeaten, destinationChosen: avoided === 0 };
-      renderDuniyaMoney();
+      if (avoided > 0) {
+        ctx.note = targetBeaten ? "Target beaten 🎯" : null;
+        goMoneyScreen("allocate", { ctx: ctx, choice: null });
+      } else {
+        moneyView.phase = "none";
+        renderDuniyaMoney();
+      }
     });
-    content.appendChild(saveBtn);
+    save.style.marginTop = "14px";
+    content.appendChild(save);
   }
 
   // -- "I avoided a purchase" --
 
-  function finalizeAvoidedPurchase(destination) {
-    var purchases = getAvoidedPurchases();
-    purchases.push({
-      id: uid("avoid"), itemName: moneyView.itemNameFinal, category: null,
-      amount: moneyView.amountNum, date: todayKey(), destination: destination, createdAt: new Date().toISOString()
-    });
-    saveAvoidedPurchases(purchases);
-    if (destination !== "general") {
-      var r = addToGoal(destination, moneyView.amountNum);
-      if (r && r.justCompleted) { goMoneyScreen("goal-completed", { goalId: destination }); return; }
-    }
-    showToast(fmtRupee(moneyView.amountNum) + " avoided");
-    goMoneyScreen("dashboard");
-  }
-
   function renderMoneyAvoidedPurchase(content) {
     buildMoneyBack(content, function () { goMoneyScreen("dashboard"); });
-
-    if (moneyView.phase === "result") {
-      var h2r = document.createElement("h2");
-      h2r.textContent = fmtRupee(moneyView.amountNum) + " avoided";
-      content.appendChild(h2r);
-      var whereP = document.createElement("p");
-      whereP.className = "muted-line";
-      whereP.textContent = "Where should this money go?";
-      content.appendChild(whereP);
-      var destRow = document.createElement("div");
-      destRow.className = "money-quick-actions";
-      var goal = getActiveGoal();
-      if (goal && !goal.completedAt) {
-        var addBtn = document.createElement("button");
-        addBtn.className = "btn btn-primary btn-full";
-        addBtn.textContent = "Saving Goal";
-        addBtn.addEventListener("click", function () { finalizeAvoidedPurchase(goal.id); });
-        destRow.appendChild(addBtn);
-      }
-      var genBtn = document.createElement("button");
-      genBtn.className = "btn btn-outline btn-full";
-      genBtn.textContent = "General Savings";
-      genBtn.addEventListener("click", function () { finalizeAvoidedPurchase("general"); });
-      destRow.appendChild(genBtn);
-      content.appendChild(destRow);
-      return;
-    }
-
-    var h2 = document.createElement("h2");
-    h2.textContent = "What did you avoid?";
-    content.appendChild(h2);
-    var nameInput = document.createElement("input");
-    nameInput.type = "text";
-    nameInput.className = "text-input";
-    nameInput.placeholder = "e.g. Food delivery";
-    nameInput.value = moneyView.itemName || "";
-    nameInput.addEventListener("input", function () { moneyView.itemName = nameInput.value; });
-    content.appendChild(nameInput);
-
-    var amtLabel = document.createElement("p");
-    amtLabel.className = "muted-line";
-    amtLabel.style.marginTop = "12px";
-    amtLabel.textContent = "How much would it have cost?";
-    content.appendChild(amtLabel);
-    var amtInput = document.createElement("input");
-    amtInput.type = "number";
-    amtInput.min = "0";
-    amtInput.className = "text-input";
-    amtInput.placeholder = "₹350";
-    amtInput.value = moneyView.amount || "";
-    amtInput.addEventListener("input", function () { moneyView.amount = amtInput.value; });
-    content.appendChild(amtInput);
-
-    var confirmBtn = document.createElement("button");
-    confirmBtn.className = "btn btn-primary btn-full";
-    confirmBtn.style.marginTop = "14px";
-    confirmBtn.textContent = "Confirm";
-    confirmBtn.addEventListener("click", function () {
-      var name = (moneyView.itemName || "").trim();
+    content.appendChild(mEl("h2", "", "What did you avoid buying?"));
+    var name = mEl("input", "text-input");
+    name.type = "text";
+    name.placeholder = "e.g. Shoes";
+    name.value = moneyView.itemName || "";
+    name.addEventListener("input", function () { moneyView.itemName = name.value; });
+    content.appendChild(name);
+    var al = mEl("p", "muted-line", "How much would it have cost?");
+    al.style.marginTop = "12px";
+    content.appendChild(al);
+    content.appendChild(mNumInput("₹800", moneyView.amount, function (v) { moneyView.amount = v; }));
+    var go = mBtn("Continue", "btn btn-primary btn-full", function () {
+      var item = (moneyView.itemName || "").trim();
       var amount = parseFloat(moneyView.amount);
-      if (!name) { showToast("What did you avoid?"); return; }
+      if (!item) { showToast("What did you avoid buying?"); return; }
       if (!amount || amount <= 0) { showToast("Enter an amount"); return; }
-      moneyView.amountNum = amount;
-      moneyView.itemNameFinal = name;
-      moneyView.phase = "result";
-      renderDuniyaMoney();
+      var rec = { id: uid("avoid"), itemName: item, amount: amount, date: todayKey(), at: new Date().toISOString(), resolved: false, goalAmount: 0, goalId: null, unallocAmount: 0, spentAmount: 0 };
+      var list = getAvoidedPurchases();
+      list.push(rec);
+      saveAvoidedPurchases(list);
+      goMoneyScreen("allocate", { ctx: { kind: "purchase", id: rec.id, refId: rec.id, amount: amount, label: "Avoided " + item + " purchase", sourceKey: "avoided-purchase" }, choice: null });
     });
-    content.appendChild(confirmBtn);
+    go.style.marginTop = "14px";
+    content.appendChild(go);
   }
 
   // -- "Should I buy this?" --
 
-  function validateShouldIBuyEntry() {
-    var name = (moneyView.itemName || "").trim();
-    var price = parseFloat(moneyView.price);
-    if (!name) { showToast("Enter the item name"); return null; }
-    if (!price || price <= 0) { showToast("Enter the price"); return null; }
-    return { name: name, price: price };
-  }
-
-  function saveShouldIBuyWait(hours, label) {
-    var decisions = getPurchaseDecisions();
-    decisions.push({
-      id: uid("decision"), itemName: moneyView.itemNameFinal, amount: moneyView.priceNum, needOrWant: moneyView.needOrWant,
-      waitPeriod: hours, decision: "waiting", moneyAvoided: 0, destination: null, createdAt: new Date().toISOString(),
-      decideAfter: Date.now() + hours * 3600000, decidedAt: null
-    });
-    savePurchaseDecisions(decisions);
-    moneyView.phase = "done";
-    moneyView.doneMessage = "We'll ask if you still want it once your " + label + " wait is up — you'll see it right here on your Money Habits home.";
-    renderDuniyaMoney();
-  }
-
-  function saveShouldIBuyImmediateDecision(stillWant) {
-    var decisions = getPurchaseDecisions();
-    var rec = {
-      id: uid("decision"), itemName: moneyView.itemNameFinal, amount: moneyView.priceNum, needOrWant: moneyView.needOrWant,
-      waitPeriod: null, decision: stillWant ? "bought" : "avoided", moneyAvoided: stillWant ? 0 : moneyView.priceNum,
-      destination: null, createdAt: new Date().toISOString(), decideAfter: null, decidedAt: new Date().toISOString()
-    };
-    decisions.push(rec);
-    savePurchaseDecisions(decisions);
-    if (stillWant) {
-      moneyView.phase = "done";
-      moneyView.doneMessage = "Noted.";
-      renderDuniyaMoney();
-    } else {
-      goMoneyScreen("should-i-buy-result", { decisionId: rec.id });
+  function saveDecision(status, extra) {
+    var list = getPurchaseDecisions();
+    var rec = moneyView.decisionId ? list.filter(function (d) { return d.id === moneyView.decisionId; })[0] : null;
+    if (!rec) {
+      rec = { id: uid("decision"), itemName: moneyView.itemNameFinal, amount: moneyView.priceNum, needOrWant: moneyView.needOrWant, createdAt: new Date().toISOString(), moneyAvoided: 0, resolved: true, goalAmount: 0, goalId: null, unallocAmount: 0, spentAmount: 0 };
+      list.push(rec);
     }
-  }
-
-  function handleNeedOrWant(label) {
-    var v = validateShouldIBuyEntry();
-    if (!v) return;
-    moneyView.itemNameFinal = v.name;
-    moneyView.priceNum = v.price;
-    if (label === "Need") {
-      var decisions = getPurchaseDecisions();
-      decisions.push({
-        id: uid("decision"), itemName: v.name, amount: v.price, needOrWant: "Need", waitPeriod: null,
-        decision: "bought", moneyAvoided: 0, destination: null, createdAt: new Date().toISOString(), decideAfter: null, decidedAt: new Date().toISOString()
-      });
-      savePurchaseDecisions(decisions);
-      moneyView.phase = "done";
-      moneyView.doneMessage = "Needs are worth buying. Noted — no saving recorded.";
-      renderDuniyaMoney();
-    } else {
-      moneyView.needOrWant = label;
-      moneyView.phase = "wait";
-      renderDuniyaMoney();
-    }
+    rec.needOrWant = moneyView.needOrWant;
+    rec.checks = moneyView.checks || {};
+    rec.status = status;
+    rec.decideAfter = null;
+    for (var k in (extra || {})) rec[k] = extra[k];
+    savePurchaseDecisions(list);
+    return rec;
   }
 
   function renderMoneyShouldIBuy(content) {
+    if (moneyView.decisionId && !moneyView.itemNameFinal) {
+      var loaded = getPurchaseDecisions().filter(function (d) { return d.id === moneyView.decisionId; })[0];
+      if (!loaded) { goMoneyScreen("dashboard"); return; }
+      moneyView.itemNameFinal = loaded.itemName;
+      moneyView.priceNum = loaded.amount;
+      moneyView.needOrWant = loaded.needOrWant;
+      moneyView.checks = loaded.checks || {};
+    }
     buildMoneyBack(content, function () { goMoneyScreen("dashboard"); });
 
-    if (moneyView.phase === "wait") {
-      var h2w = document.createElement("h2");
-      h2w.textContent = "Wait before buying";
-      content.appendChild(h2w);
-      var p = document.createElement("p");
-      p.className = "muted-line";
-      p.textContent = "Give yourself a little time before deciding on “" + moneyView.itemNameFinal + "”.";
-      content.appendChild(p);
-      var waitRow = document.createElement("div");
-      waitRow.className = "money-quick-actions";
-      [["24 Hours", 24], ["3 Days", 72], ["7 Days", 168]].forEach(function (pair) {
-        var btn = document.createElement("button");
-        btn.className = "preset-plan-chip";
-        btn.textContent = pair[0];
-        btn.addEventListener("click", function () { saveShouldIBuyWait(pair[1], pair[0]); });
-        waitRow.appendChild(btn);
-      });
-      content.appendChild(waitRow);
-      var skipWaitBtn = document.createElement("button");
-      skipWaitBtn.className = "priority-change-link";
-      skipWaitBtn.textContent = "Decide now instead";
-      skipWaitBtn.addEventListener("click", function () { saveShouldIBuyImmediateDecision(false); });
-      content.appendChild(skipWaitBtn);
-      return;
-    }
-
     if (moneyView.phase === "done") {
-      var h2d = document.createElement("h2");
-      h2d.textContent = "Got it";
-      content.appendChild(h2d);
-      var doneMsg = document.createElement("p");
-      doneMsg.className = "muted-line";
-      doneMsg.textContent = moneyView.doneMessage || "Noted.";
-      content.appendChild(doneMsg);
-      var doneBtn = document.createElement("button");
-      doneBtn.className = "btn btn-primary btn-full";
-      doneBtn.textContent = "Back to Money Habits";
-      doneBtn.addEventListener("click", function () { goMoneyScreen("dashboard"); });
-      content.appendChild(doneBtn);
+      content.appendChild(mEl("h2", "", "Saved"));
+      content.appendChild(mEl("p", "muted-line", moneyView.doneMessage || "Noted."));
+      var d1 = mBtn("Back to Money Habits", "btn btn-primary btn-full", function () { goMoneyScreen("dashboard"); });
+      d1.style.marginTop = "12px";
+      content.appendChild(d1);
       return;
     }
 
-    var h2 = document.createElement("h2");
-    h2.textContent = "Should I buy this?";
-    content.appendChild(h2);
-    var itemLabel = document.createElement("p");
-    itemLabel.className = "muted-line";
-    itemLabel.textContent = "Item";
-    content.appendChild(itemLabel);
-    var itemInput = document.createElement("input");
-    itemInput.type = "text";
-    itemInput.className = "text-input";
-    itemInput.placeholder = "e.g. Wireless earbuds";
-    itemInput.value = moneyView.itemName || "";
-    itemInput.addEventListener("input", function () { moneyView.itemName = itemInput.value; });
-    content.appendChild(itemInput);
-
-    var priceLabel = document.createElement("p");
-    priceLabel.className = "muted-line";
-    priceLabel.style.marginTop = "10px";
-    priceLabel.textContent = "Price";
-    content.appendChild(priceLabel);
-    var priceInput = document.createElement("input");
-    priceInput.type = "number";
-    priceInput.min = "0";
-    priceInput.className = "text-input";
-    priceInput.placeholder = "₹1999";
-    priceInput.value = moneyView.price || "";
-    priceInput.addEventListener("input", function () { moneyView.price = priceInput.value; });
-    content.appendChild(priceInput);
-
-    var needLabel = document.createElement("p");
-    needLabel.className = "muted-line";
-    needLabel.style.marginTop = "10px";
-    needLabel.textContent = "Need or Want?";
-    content.appendChild(needLabel);
-    var needRow = document.createElement("div");
-    needRow.className = "money-quick-actions";
-    ["Need", "Want", "Not Sure"].forEach(function (label) {
-      var btn = document.createElement("button");
-      btn.className = "preset-plan-chip";
-      btn.textContent = label;
-      btn.addEventListener("click", function () { handleNeedOrWant(label); });
-      needRow.appendChild(btn);
-    });
-    content.appendChild(needRow);
-  }
-
-  function renderMoneyDecisionResult(content) {
-    var decisions = getPurchaseDecisions();
-    var d = decisions.find(function (x) { return x.id === moneyView.decisionId; });
-    if (!d) { goMoneyScreen("dashboard"); return; }
-    var h2 = document.createElement("h2");
-    h2.textContent = fmtRupee(d.amount) + " avoided";
-    content.appendChild(h2);
-    var whereP = document.createElement("p");
-    whereP.className = "muted-line";
-    whereP.textContent = "Where should this money go?";
-    content.appendChild(whereP);
-    var destRow = document.createElement("div");
-    destRow.className = "money-quick-actions";
-    var goal = getActiveGoal();
-    if (goal && !goal.completedAt) {
-      var addBtn = document.createElement("button");
-      addBtn.className = "btn btn-primary btn-full";
-      addBtn.textContent = "Add to Saving Goal";
-      addBtn.addEventListener("click", function () {
-        d.destination = goal.id;
-        savePurchaseDecisions(decisions);
-        var r = addToGoal(goal.id, d.amount);
-        if (r && r.justCompleted) { goMoneyScreen("goal-completed", { goalId: goal.id }); return; }
-        showToast("Added to Saving Goal");
+    if (moneyView.phase === "bought") {
+      content.appendChild(mEl("h2", "", "You bought " + moneyView.itemNameFinal + "."));
+      content.appendChild(mEl("p", "muted-line", "Want to record the " + fmtRupee(moneyView.priceNum) + " as an expense so your weekly report stays accurate?"));
+      var ex = mBtn("Log " + fmtRupee(moneyView.priceNum) + " as an expense", "btn btn-primary btn-full", function () {
+        var list = getExpenses();
+        list.push({ id: uid("exp"), amount: moneyView.priceNum, label: moneyView.itemNameFinal, date: todayKey(), at: new Date().toISOString(), refId: "decision:" + moneyView.boughtId });
+        saveExpenses(list);
+        showToast("Expense logged");
         goMoneyScreen("dashboard");
       });
-      destRow.appendChild(addBtn);
+      ex.style.marginTop = "12px";
+      content.appendChild(ex);
+      content.appendChild(mBtn("Not now", "btn btn-outline btn-full", function () { goMoneyScreen("dashboard"); }));
+      return;
     }
-    var genBtn = document.createElement("button");
-    genBtn.className = "btn btn-outline btn-full";
-    genBtn.textContent = "General Savings";
-    genBtn.addEventListener("click", function () {
-      d.destination = "general";
-      savePurchaseDecisions(decisions);
-      goMoneyScreen("dashboard");
+
+    if (moneyView.phase === "check") {
+      var isNeed = moneyView.needOrWant === "Need";
+      content.appendChild(mEl("h2", "", moneyView.itemNameFinal + " — " + fmtRupee(moneyView.priceNum)));
+      content.appendChild(mEl("p", "muted-line", moneyView.needOrWant + ". A quick check before you decide:"));
+      moneyView.checks = moneyView.checks || {};
+      function question(key, text, info) {
+        var qp = mEl("p", "", text);
+        qp.style.fontWeight = "600";
+        qp.style.margin = "14px 0 4px";
+        content.appendChild(qp);
+        if (info) content.appendChild(mEl("p", "muted-line", info));
+        var row = mEl("div", "money-quick-actions");
+        ["Yes", "No", "Not sure"].forEach(function (a) {
+          row.appendChild(mBtn(a, "preset-plan-chip" + (moneyView.checks[key] === a ? " active-chip" : ""), function () { moneyView.checks[key] = a; renderDuniyaMoney(); }));
+        });
+        content.appendChild(row);
+      }
+      question("afford", "Can you afford it without touching essential money?", null);
+      var goals = getMoneyGoals().filter(function (g) { return !g.completedAt; });
+      var info = goals.length ? goals.map(function (g) {
+        var left = Math.max(0, g.targetAmount - g.currentSavedAmount);
+        return g.name + ": " + fmtRupee(left) + " still to save. This costs " + (left ? Math.round((moneyView.priceNum / left) * 100) + "% of that." : "more than what's left.");
+      }).join(" ") : "You have no savings goals yet.";
+      question("delay", "Does buying it delay one of your savings goals?", info);
+      question("stillWant", "Do you still want it after thinking about it?", null);
+
+      var buy = mBtn("Buy it", "btn btn-primary btn-full", function () {
+        var rec = saveDecision("bought", { decidedAt: new Date().toISOString(), moneyAvoided: 0, resolved: true });
+        goMoneyScreen("should-i-buy", { phase: "bought", itemNameFinal: rec.itemName, priceNum: rec.amount, boughtId: rec.id });
+      });
+      buy.style.marginTop = "16px";
+      content.appendChild(buy);
+      content.appendChild(mBtn("Don't buy it", "btn btn-outline btn-full", function () {
+        var rec = saveDecision("avoided", { decidedAt: new Date().toISOString(), moneyAvoided: moneyView.priceNum, resolved: false });
+        goMoneyScreen("allocate", { ctx: { kind: "decision", id: rec.id, refId: rec.id, amount: rec.amount, label: "Didn't buy " + rec.itemName, sourceKey: "avoided-purchase" }, choice: null });
+      }));
+      content.appendChild(mBtn("Decide later", "btn btn-outline btn-full", function () {
+        saveDecision("later", {});
+        goMoneyScreen("should-i-buy", { phase: "done", doneMessage: "It's saved under Money Habits. Come back to it when you're ready." });
+      }));
+      if (!isNeed) {
+        content.appendChild(mBtn("Wait 24 hours before deciding", "priority-change-link", function () {
+          saveDecision("waiting", { decideAfter: Date.now() + 24 * 3600000 });
+          goMoneyScreen("should-i-buy", { phase: "done", doneMessage: "We'll show it on your Money Habits home once 24 hours have passed." });
+        }));
+      }
+      return;
+    }
+
+    // entry
+    content.appendChild(mEl("h2", "", "What do you want to buy?"));
+    var item = mEl("input", "text-input");
+    item.type = "text";
+    item.placeholder = "e.g. Wireless earbuds";
+    item.value = moneyView.itemName || "";
+    item.addEventListener("input", function () { moneyView.itemName = item.value; });
+    content.appendChild(item);
+    var pl = mEl("p", "muted-line", "Price?");
+    pl.style.marginTop = "10px";
+    content.appendChild(pl);
+    content.appendChild(mNumInput("₹1999", moneyView.price, function (v) { moneyView.price = v; }));
+    var nl = mEl("p", "muted-line", "Is it a Need or a Want?");
+    nl.style.marginTop = "10px";
+    content.appendChild(nl);
+    var row = mEl("div", "money-quick-actions");
+    ["Need", "Want", "Not Sure"].forEach(function (label) {
+      row.appendChild(mBtn(label, "preset-plan-chip" + (moneyView.needOrWant === label ? " active-chip" : ""), function () { moneyView.needOrWant = label; renderDuniyaMoney(); }));
     });
-    destRow.appendChild(genBtn);
-    content.appendChild(destRow);
+    content.appendChild(row);
+    var next = mBtn("Continue", "btn btn-primary btn-full", function () {
+      var name = (moneyView.itemName || "").trim();
+      var price = parseFloat(moneyView.price);
+      if (!name) { showToast("Enter what you want to buy"); return; }
+      if (!price || price <= 0) { showToast("Enter the price"); return; }
+      if (!moneyView.needOrWant) { showToast("Is it a Need or a Want?"); return; }
+      goMoneyScreen("should-i-buy", { phase: "check", itemNameFinal: name, priceNum: price, needOrWant: moneyView.needOrWant, checks: {} });
+    });
+    next.style.marginTop = "14px";
+    content.appendChild(next);
   }
 
   // -- Weekly report --
 
   function renderMoneyWeeklyReport(content) {
     buildMoneyBack(content, function () { goMoneyScreen("dashboard"); });
-    var h2 = document.createElement("h2");
-    h2.textContent = "This Week";
-    content.appendChild(h2);
-
+    content.appendChild(mEl("h2", "", "This Week"));
     var last7 = getLastNDateKeys(7);
     var weekStart = last7[last7.length - 1];
     var prev7 = getLastNDateKeys(14).slice(7);
+    var s = moneyStats(weekStart, null);
+    content.appendChild(mRows([
+      ["Money avoided", fmtRupee(s.avoided)],
+      ["Money actually saved", fmtRupee(s.saved), true],
+      ["Money spent", fmtRupee(s.spent)],
+      ["Added to savings goals", fmtRupee(s.toGoals)]
+    ]));
+    content.appendChild(mEl("p", "muted-line", "Avoided isn't saved. Saved = added to a goal + kept unallocated. Spent = logged expenses + avoided money you spent elsewhere."));
 
-    var thisWeek = computeMoneySaved(weekStart, null, null);
-    var goal = getActiveGoal();
-    var transferred = goal ? computeMoneySaved(weekStart, null, goal.id).total : 0;
-
-    var avoidedP = document.createElement("p");
-    var avoidedStrong = document.createElement("strong");
-    avoidedStrong.textContent = fmtRupee(thisWeek.total);
-    avoidedP.appendChild(document.createTextNode("Money avoided: "));
-    avoidedP.appendChild(avoidedStrong);
-    content.appendChild(avoidedP);
-    var transferredP = document.createElement("p");
-    var transferredStrong = document.createElement("strong");
-    transferredStrong.textContent = fmtRupee(transferred);
-    transferredP.appendChild(document.createTextNode("Transferred to savings: "));
-    transferredP.appendChild(transferredStrong);
-    content.appendChild(transferredP);
+    var goals = getMoneyGoals();
+    if (goals.length) {
+      var gh = mEl("h2", "", "Savings goals");
+      gh.style.marginTop = "16px";
+      content.appendChild(gh);
+      goals.forEach(function (g) {
+        content.appendChild(mEl("p", "", g.name + ": " + fmtRupee(g.currentSavedAmount) + " / " + fmtRupee(g.targetAmount) + " · " + goalPct(g) + "%"));
+      });
+    }
+    var pool = unallocatedTotal();
+    if (pool > 0) content.appendChild(mEl("p", "muted-line", "Unallocated savings: " + fmtRupee(pool)));
 
     var habits = getMoneyHabits().filter(function (h) { return !h.archived; });
-    var thisWeekSpend = 0, lastWeekSpend = 0;
-    var logs = getMoneyDailyLogs();
-    habits.forEach(function (habit) {
-      last7.forEach(function (dateKey) {
-        var e = logs[dateKey] && logs[dateKey][habit.id];
-        if (e) thisWeekSpend += e.actualQuantity * habit.costPerUnit;
-      });
-      prev7.forEach(function (dateKey) {
-        var e = logs[dateKey] && logs[dateKey][habit.id];
-        if (e) lastWeekSpend += e.actualQuantity * habit.costPerUnit;
-      });
-    });
     if (habits.length) {
-      var spendHeader = document.createElement("p");
-      spendHeader.className = "muted-line";
-      spendHeader.style.marginTop = "14px";
-      spendHeader.textContent = "Habit spending";
-      content.appendChild(spendHeader);
-      var spendBox = document.createElement("div");
-      spendBox.className = "money-cost-breakdown";
-      var diffLess = thisWeekSpend <= lastWeekSpend;
-      var diffAmt = diffLess ? (lastWeekSpend - thisWeekSpend) : (thisWeekSpend - lastWeekSpend);
-      spendBox.innerHTML =
-        '<div class="row"><span>Last week</span><span>' + fmtRupee(lastWeekSpend) + '</span></div>' +
-        '<div class="row"><span>This week</span><span>' + fmtRupee(thisWeekSpend) + '</span></div>' +
-        '<div class="row highlight"><span>Difference</span><span>' + fmtRupee(diffAmt) + (diffLess ? " less spent" : " more spent") + '</span></div>';
-      content.appendChild(spendBox);
-
-      if (diffLess && diffAmt > 0) {
-        var impactP = document.createElement("p");
-        impactP.className = "muted-line";
-        impactP.style.marginTop = "8px";
-        impactP.textContent = "If this continued for 4 weeks: ≈ " + fmtRupee(diffAmt * 4) + " (estimate, not guaranteed).";
-        content.appendChild(impactP);
-      }
+      var logs = getMoneyDailyLogs();
+      var thisSpend = 0, lastSpend = 0;
+      habits.forEach(function (habit) {
+        last7.forEach(function (k) { var e = logs[k] && logs[k][habit.id]; if (e) thisSpend += e.actualQuantity * habit.costPerUnit; });
+        prev7.forEach(function (k) { var e = logs[k] && logs[k][habit.id]; if (e) lastSpend += e.actualQuantity * habit.costPerUnit; });
+      });
+      var hh = mEl("p", "muted-line", "Habit spending");
+      hh.style.marginTop = "14px";
+      content.appendChild(hh);
+      var less = thisSpend <= lastSpend;
+      var diff = less ? lastSpend - thisSpend : thisSpend - lastSpend;
+      content.appendChild(mRows([
+        ["Last week", fmtRupee(lastSpend)],
+        ["This week", fmtRupee(thisSpend)],
+        ["Difference", fmtRupee(diff) + (less ? " less spent" : " more spent"), true]
+      ]));
+      if (less && diff > 0) content.appendChild(mEl("p", "muted-line", "If this continued for 4 weeks: ≈ " + fmtRupee(diff * 4) + " (estimate, not guaranteed)."));
     }
-
-    if (goal) {
-      var goalLine = document.createElement("p");
-      goalLine.style.marginTop = "14px";
-      var goalStrong = document.createElement("strong");
-      goalStrong.textContent = fmtRupee(goal.currentSavedAmount) + " / " + fmtRupee(goal.targetAmount);
-      goalLine.appendChild(document.createTextNode("Saving Goal: "));
-      goalLine.appendChild(goalStrong);
-      content.appendChild(goalLine);
-    }
-
-    var graphHeader = document.createElement("p");
-    graphHeader.className = "muted-line";
-    graphHeader.style.marginTop = "14px";
-    graphHeader.textContent = "Daily savings this week";
-    content.appendChild(graphHeader);
+    var gh2 = mEl("p", "muted-line", "Actually saved each day");
+    gh2.style.marginTop = "14px";
+    content.appendChild(gh2);
     content.appendChild(renderMoneyWeekGraph());
   }
 
   // -- Goal completed --
 
   function renderMoneyGoalCompleted(content) {
-    var goal = getMoneyGoals().find(function (g) { return g.id === moneyView.goalId; });
+    var goal = getGoal(moneyView.goalId);
     if (!goal) { goMoneyScreen("dashboard"); return; }
-    var celebrate = document.createElement("div");
-    celebrate.style.textAlign = "center";
-    var emoji = document.createElement("h2");
-    emoji.textContent = "🎉 " + fmtRupee(goal.targetAmount) + " SAVING GOAL COMPLETED";
-    celebrate.appendChild(emoji);
-    var sub = document.createElement("p");
-    sub.className = "muted-line";
-    sub.textContent = "You reached your target for “" + goal.name + "”.";
-    celebrate.appendChild(sub);
-    content.appendChild(celebrate);
-
+    var box = mEl("div", "");
+    box.style.textAlign = "center";
+    box.appendChild(mEl("h2", "", "🎉 " + fmtRupee(goal.targetAmount) + " SAVINGS GOAL COMPLETED"));
+    box.appendChild(mEl("p", "muted-line", "You reached your target for “" + goal.name + "”."));
+    content.appendChild(box);
     var days = Math.max(1, Math.round((new Date(goal.completedAt) - new Date(goal.createdAt)) / 86400000));
-    var breakdown = computeMoneySaved(null, null, goal.id);
-
-    var stats = document.createElement("div");
-    stats.className = "money-cost-breakdown";
+    var fromAvoided = 0, fromHabits = 0, other = 0;
+    getContribs().forEach(function (c) {
+      if (c.goalId !== goal.id) return;
+      if (c.source === "avoided-purchase") fromAvoided += c.amount;
+      else if (c.source === "smoking" || c.source === "habit") fromHabits += c.amount;
+      else other += c.amount;
+    });
+    var stats = mRows([
+      ["Total saved", fmtRupee(goal.currentSavedAmount), true],
+      ["Days taken", String(days)],
+      ["From avoided purchases", fmtRupee(fromAvoided)],
+      ["From reduced habits", fmtRupee(fromHabits)],
+      ["Added other ways", fmtRupee(other)]
+    ]);
     stats.style.marginTop = "16px";
-    stats.innerHTML =
-      '<div class="row highlight"><span>Total saved</span><span>' + fmtRupee(goal.currentSavedAmount) + '</span></div>' +
-      '<div class="row"><span>Days taken</span><span>' + days + '</span></div>' +
-      '<div class="row"><span>Avoided unnecessary spending</span><span>' + fmtRupee(breakdown.fromPurchases + breakdown.fromDecisions) + '</span></div>' +
-      '<div class="row"><span>Money saved from reduced habits</span><span>' + fmtRupee(breakdown.fromHabits) + '</span></div>';
     content.appendChild(stats);
-
-    var newGoalBtn = document.createElement("button");
-    newGoalBtn.className = "btn btn-primary btn-full";
-    newGoalBtn.style.marginTop = "16px";
-    newGoalBtn.textContent = "Create New Goal";
-    newGoalBtn.addEventListener("click", function () {
-      markGoalCelebrationSeen(goal.id);
-      setActiveGoalId(null);
-      goMoneyScreen("new-goal");
-    });
-    content.appendChild(newGoalBtn);
-
-    var continueBtn = document.createElement("button");
-    continueBtn.className = "btn btn-outline btn-full";
-    continueBtn.textContent = "Continue Saving";
-    continueBtn.addEventListener("click", function () {
-      markGoalCelebrationSeen(goal.id);
-      goMoneyScreen("dashboard");
-    });
-    content.appendChild(continueBtn);
+    var nb = mBtn("Create New Goal", "btn btn-primary btn-full", function () { markGoalCelebrationSeen(goal.id); goMoneyScreen("new-goal"); });
+    nb.style.marginTop = "16px";
+    content.appendChild(nb);
+    content.appendChild(mBtn("Continue Saving", "btn btn-outline btn-full", function () { markGoalCelebrationSeen(goal.id); goMoneyScreen("dashboard"); }));
   }
 
   // -- Router --
 
   function renderDuniyaMoney() {
     var content = document.getElementById("duniya-money-content");
+    moneyMigrateV2();
+    syncGoals();
     if (!moneyView) moneyView = { screen: "dashboard" };
     if (moneyView.screen === "dashboard") {
-      var activeGoal = getActiveGoal();
-      if (activeGoal && activeGoal.completedAt && !activeGoal.celebrationSeen) {
-        moneyView = { screen: "goal-completed", goalId: activeGoal.id };
-      }
+      var done = getMoneyGoals().filter(function (g) { return g.completedAt && !g.celebrationSeen; })[0];
+      if (done) moneyView = { screen: "goal-completed", goalId: done.id };
     }
     content.innerHTML = "";
-    if (moneyView.screen === "new-goal") renderMoneyNewGoal(content);
-    else if (moneyView.screen === "habit-setup") renderMoneyHabitSetup(content);
-    else if (moneyView.screen === "habit-checkin") renderMoneyHabitCheckin(content);
-    else if (moneyView.screen === "avoided-purchase") renderMoneyAvoidedPurchase(content);
-    else if (moneyView.screen === "should-i-buy") renderMoneyShouldIBuy(content);
-    else if (moneyView.screen === "should-i-buy-result") renderMoneyDecisionResult(content);
-    else if (moneyView.screen === "weekly-report") renderMoneyWeeklyReport(content);
-    else if (moneyView.screen === "goal-completed") renderMoneyGoalCompleted(content);
+    var s = moneyView.screen;
+    if (s === "new-goal") renderMoneyNewGoal(content);
+    else if (s === "goal") renderMoneyGoal(content);
+    else if (s === "add-money") renderMoneyAddMoney(content);
+    else if (s === "expense") renderMoneyExpense(content);
+    else if (s === "allocate") renderMoneyAllocate(content);
+    else if (s === "alloc-done") renderMoneyAllocDone(content);
+    else if (s === "move-unalloc") renderMoneyMoveUnalloc(content);
+    else if (s === "habit-setup") renderMoneyHabitSetup(content);
+    else if (s === "habit-checkin") renderMoneyHabitCheckin(content);
+    else if (s === "avoided-purchase") renderMoneyAvoidedPurchase(content);
+    else if (s === "should-i-buy") renderMoneyShouldIBuy(content);
+    else if (s === "weekly-report") renderMoneyWeeklyReport(content);
+    else if (s === "goal-completed") renderMoneyGoalCompleted(content);
     else renderMoneyDashboard(content);
   }
 
