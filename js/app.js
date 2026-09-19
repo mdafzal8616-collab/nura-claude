@@ -868,6 +868,15 @@
       weekEl.appendChild(row);
     });
 
+    rcProgressRows().forEach(function (r) {
+      var row = document.createElement("div");
+      row.className = "progress-detail-row";
+      var l = document.createElement("span"); l.className = "progress-detail-label"; l.textContent = r.label;
+      var v = document.createElement("span"); v.className = "progress-detail-value"; v.textContent = r.value;
+      row.appendChild(l); row.appendChild(v);
+      weekEl.appendChild(row);
+    });
+
     if (pgNative()) {
       var pgStatsAll = pgStats();
       var pgWeek = pgSummarize(pgStatsAll, getLastNDateKeys(7));
@@ -3540,6 +3549,8 @@
     if (name === "duniya-growth") renderDuniyaGrowth();
     if (name === "duniya-plan") renderDuniyaPlan();
     if (name === "duniya-phone-guard") renderPhoneGuard();
+    if (name === "duniya-recovery") renderRecovery();
+    if (name !== "duniya-recovery") rcStopTimer();
   }
 
   function initNav() {
@@ -5969,10 +5980,662 @@
       var vis = document.querySelector(".view:not(.hidden)");
       var name = vis ? vis.dataset.view : "home";
       if (name === "duniya-phone-guard" && pgView.screen !== "main") { pgView = { screen: "main" }; renderPhoneGuard(); return true; }
+      if (name === "duniya-recovery" && rcView.screen !== "main") { rcStopTimer(); rcView = { screen: "main" }; renderRecovery(); return true; }
       if (name === "home") return false;
-      setActiveView(name === "duniya-phone-guard" ? "duniya" : "home");
+      setActiveView(name === "duniya-phone-guard" ? "duniya" : name === "duniya-recovery" ? "duniya-habits" : "home");
       return true;
     };
+  }
+
+  // ---- Recovery (Habits & Discipline → Recovery) ----
+  // Private, local-only. A day counts as successful only when the user checks in
+  // "clean" for it; a missed check-in is neither a success nor a slip. A slip ends
+  // the current streak but never touches best streak, total days or history.
+  // No notifications are sent by this module. Nothing here appears on Home
+  // except neutral totals (no habit names) in Progress Details.
+
+  var RC_HABITS = [
+    { key: "porn", label: "Pornography" },
+    { key: "masturbation", label: "Masturbation" },
+    { key: "smoking", label: "Smoking" },
+    { key: "cannabis", label: "Cannabis" },
+    { key: "social", label: "Excessive social media" },
+    { key: "gaming", label: "Gaming" },
+    { key: "junkfood", label: "Junk food" },
+    { key: "other", label: "Other — custom habit" }
+  ];
+  var RC_TRIGGERS = ["Stress", "Boredom", "Being alone", "Social media", "Late night", "Anger", "Other"];
+  var RC_URGE_ACTIONS = [
+    "Leave the room you're in",
+    "Put your phone away, out of reach",
+    "Take a short walk",
+    "Drink a glass of water",
+    "Make wudu, if that suits you",
+    "Splash cold water on your face",
+    "Do 20 push-ups or a short stretch"
+  ];
+
+  var rcView = { screen: "main" };
+  var rcTimerId = null;
+
+  function rcEl(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function rcBtn(label, cls, fn) {
+    var b = rcEl("button", cls, label);
+    b.type = "button";
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function rcAddDays(key, n) {
+    var d = new Date(key + "T12:00:00");
+    d.setDate(d.getDate() + n);
+    return todayKey(d);
+  }
+  function rcFmtDate(key) {
+    return new Date(key + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+  function rcHabitLabel(key) {
+    var h = RC_HABITS.filter(function (x) { return x.key === key; })[0];
+    return h ? h.label : key;
+  }
+  function rcName(j) {
+    return j.nickname || (j.habit === "other" ? (j.customHabit || "Custom habit") : rcHabitLabel(j.habit));
+  }
+
+  function rcJourneys() { return readJSON("nc_recovery_journeys", []); }
+  function rcSaveJourneys(a) { writeJSON("nc_recovery_journeys", a); }
+  function rcLogsAll() { return readJSON("nc_recovery_logs", {}); }
+  function rcSetLog(journeyId, dateKey, entry) {
+    var all = rcLogsAll();
+    if (!all[journeyId]) all[journeyId] = {};
+    all[journeyId][dateKey] = entry;
+    writeJSON("nc_recovery_logs", all);
+  }
+  function rcUrges() { return readJSON("nc_recovery_urges", []); }
+  function rcContact() { return readJSON("nc_recovery_contact", null); }
+
+  function rcSpan(logs, keys, startDate) {
+    var c = 0, s = 0;
+    keys.forEach(function (k) {
+      if (k < startDate) return;
+      var e = logs[k];
+      if (e && e.status === "clean") c++;
+      else if (e && e.status === "slip") s++;
+    });
+    return { clean: c, slips: s };
+  }
+
+  function rcCompute(j) {
+    var logs = rcLogsAll()[j.id] || {};
+    var today = todayKey();
+    var out = { clean: 0, slips: 0, best: 0, current: 0, started: j.startDate <= today, logs: logs };
+    if (out.started) {
+      var run = 0, d = j.startDate, guard = 0;
+      while (d <= today && guard < 5000) {
+        var e = logs[d];
+        if (e && e.status === "clean") { out.clean++; run++; if (run > out.best) out.best = run; }
+        else { if (e && e.status === "slip") out.slips++; run = 0; }
+        d = rcAddDays(d, 1);
+        guard++;
+      }
+      var k = today;
+      if (!logs[k]) k = rcAddDays(k, -1);
+      while (k >= j.startDate && logs[k] && logs[k].status === "clean") { out.current++; k = rcAddDays(k, -1); }
+    }
+    var last7 = getLastNDateKeys(7);
+    out.weekDays = last7.slice().reverse().map(function (key) {
+      return { key: key, status: key >= j.startDate && logs[key] ? logs[key].status : null };
+    });
+    out.week = rcSpan(logs, last7, j.startDate);
+    out.prev = rcSpan(logs, getLastNDateKeys(14).slice(7), j.startDate);
+    return out;
+  }
+
+  function rcMoney(j, stats) {
+    if (j.habit !== "smoking" || !j.cigsPerDay || !j.costPerCig) return null;
+    var perDay = j.cigsPerDay * j.costPerCig;
+    return {
+      perDay: perDay,
+      cigsAvoided: stats.clean * j.cigsPerDay,
+      total: stats.clean * perDay,
+      week: stats.week.clean * perDay
+    };
+  }
+
+  function rcTriggerCounts(logs, fromKey) {
+    var counts = {}, slips = 0;
+    Object.keys(logs).forEach(function (k) {
+      var e = logs[k];
+      if (e.status !== "slip" || (fromKey && k < fromKey)) return;
+      slips++;
+      var t = e.trigger || "Not recorded";
+      counts[t] = (counts[t] || 0) + 1;
+    });
+    return { counts: counts, slips: slips };
+  }
+  function rcTopTrigger(tc) {
+    var top = null;
+    Object.keys(tc.counts).forEach(function (t) {
+      if (t !== "Not recorded" && (!top || tc.counts[t] > tc.counts[top])) top = t;
+    });
+    return top ? top + " (" + tc.counts[top] + " of " + tc.slips + " slips)" : null;
+  }
+
+  function rcStopTimer() { if (rcTimerId) { clearInterval(rcTimerId); rcTimerId = null; } }
+  function rcGo(screen, extra) {
+    var v = extra || {};
+    v.screen = screen;
+    rcView = v;
+    renderRecovery();
+  }
+
+  function renderRecovery() {
+    var content = document.getElementById("duniya-recovery-content");
+    if (!content) return;
+    if (rcView.screen !== "urge") rcStopTimer();
+    content.innerHTML = "";
+    if (rcView.screen === "start") return renderRcStart(content);
+    if (rcView.screen === "dash") return renderRcDash(content);
+    if (rcView.screen === "slip") return renderRcSlip(content);
+    if (rcView.screen === "urge") return renderRcUrge(content);
+    renderRcMain(content);
+  }
+
+  function rcBack(content, fn) { content.appendChild(rcBtn("← Back", "picker-step-back", fn)); }
+
+  function renderRcMain(content) {
+    var privacy = rcEl("p", "muted-line", "Private to this device. Nothing here shows on your Home screen.");
+    content.appendChild(privacy);
+
+    var urge = rcBtn("I'm having an urge", "btn btn-primary btn-full", function () { startRcUrge(null); });
+    urge.style.marginTop = "14px";
+    content.appendChild(urge);
+
+    var journeys = rcJourneys();
+    if (!journeys.length) {
+      content.appendChild(rcEl("h2", "", "Quit or control a habit")).style.marginTop = "16px";
+      content.appendChild(rcEl("p", "muted-line", "Choose what you want to change. NURA keeps your progress, remembers what triggers you, and helps you restart without shame."));
+    } else {
+      content.appendChild(rcEl("h2", "", "Your recovery")).style.marginTop = "16px";
+      var today = todayKey();
+      journeys.forEach(function (j) {
+        var s = rcCompute(j);
+        var card = rcEl("div", "money-habit-card");
+        card.appendChild(rcEl("p", "name", rcName(j) + " Recovery"));
+        var e = s.logs[today];
+        var line = !s.started ? "Starts " + rcFmtDate(j.startDate)
+          : "Current streak: " + s.current + " day" + (s.current === 1 ? "" : "s") + " · Today: " + (e ? (e.status === "clean" ? "clean" : "slipped") : "not checked in");
+        card.appendChild(rcEl("p", "cost-line", line));
+        var row = rcEl("div", "money-quick-actions");
+        row.appendChild(rcBtn("Open", "action-btn primary", function () { rcGo("dash", { id: j.id }); }));
+        card.appendChild(row);
+        content.appendChild(card);
+      });
+    }
+    var startBtn = rcBtn(journeys.length ? "+ Start another recovery" : "Start Recovery", journeys.length ? "btn btn-outline btn-full" : "btn btn-primary btn-full", function () {
+      rcGo("start", { step: 1, data: { habit: null, customHabit: "", nickname: "", startChoice: "today", startDate: todayKey(), why: "", triggers: [], triggerNote: "", goal: "", cigsPerDay: 10, costMode: "cig", cost: "", packSize: 20, savingGoal: "" } });
+    });
+    startBtn.style.marginTop = "12px";
+    content.appendChild(startBtn);
+  }
+
+  // ---- Start Recovery wizard ----
+
+  function renderRcStart(content) {
+    var d = rcView.data, step = rcView.step;
+    var isSmoking = d.habit === "smoking";
+    var total = isSmoking ? 6 : 5;
+    rcBack(content, function () { if (step > 1) { rcView.step = step - 1; renderRecovery(); } else rcGo("main"); });
+    content.appendChild(rcEl("p", "muted-line", "Step " + step + " of " + total));
+    function next() { rcView.step = step + 1; renderRecovery(); }
+    function nextBtn(label, fn) {
+      var b = rcBtn(label || "Next", "btn btn-primary btn-full", fn || next);
+      b.style.marginTop = "14px";
+      content.appendChild(b);
+    }
+
+    if (step === 1) {
+      content.appendChild(rcEl("h2", "", "What do you want to quit or control?"));
+      var chips = rcEl("div", "money-quick-actions");
+      RC_HABITS.forEach(function (h) {
+        chips.appendChild(rcBtn(h.label, "preset-plan-chip" + (d.habit === h.key ? " active-chip" : ""), function () { d.habit = h.key; renderRecovery(); }));
+      });
+      content.appendChild(chips);
+      if (d.habit === "other") {
+        var custom = rcEl("input", "text-input");
+        custom.type = "text"; custom.placeholder = "Name this habit"; custom.value = d.customHabit;
+        custom.addEventListener("input", function () { d.customHabit = custom.value; });
+        content.appendChild(custom);
+      }
+      content.appendChild(rcEl("p", "muted-line", "Private name (optional) — shown instead of the habit name")).style.marginTop = "12px";
+      var nick = rcEl("input", "text-input");
+      nick.type = "text"; nick.placeholder = "e.g. My challenge"; nick.value = d.nickname;
+      nick.addEventListener("input", function () { d.nickname = nick.value; });
+      content.appendChild(nick);
+      nextBtn("Next", function () {
+        if (!d.habit) { showToast("Choose one to continue"); return; }
+        if (d.habit === "other" && !d.customHabit.trim()) { showToast("Name this habit"); return; }
+        next();
+      });
+    } else if (step === 2) {
+      content.appendChild(rcEl("h2", "", "When do you want to start?"));
+      var row = rcEl("div", "money-quick-actions");
+      row.appendChild(rcBtn("Today", "preset-plan-chip" + (d.startChoice === "today" ? " active-chip" : ""), function () { d.startChoice = "today"; d.startDate = todayKey(); renderRecovery(); }));
+      row.appendChild(rcBtn("Tomorrow", "preset-plan-chip" + (d.startChoice === "tomorrow" ? " active-chip" : ""), function () { d.startChoice = "tomorrow"; d.startDate = rcAddDays(todayKey(), 1); renderRecovery(); }));
+      row.appendChild(rcBtn("Pick a date", "preset-plan-chip" + (d.startChoice === "date" ? " active-chip" : ""), function () { d.startChoice = "date"; renderRecovery(); }));
+      content.appendChild(row);
+      if (d.startChoice === "date") {
+        var di = rcEl("input", "text-input");
+        di.type = "date"; di.min = todayKey(); di.value = d.startDate;
+        di.addEventListener("change", function () { if (di.value) d.startDate = di.value; });
+        content.appendChild(di);
+      }
+      content.appendChild(rcEl("p", "muted-line", "Starts " + rcFmtDate(d.startDate) + ".")).style.marginTop = "8px";
+      nextBtn();
+    } else if (step === 3) {
+      content.appendChild(rcEl("h2", "", "Why do you want to quit?"));
+      var why = rcEl("textarea", "text-input rec-textarea");
+      why.placeholder = "In your own words. Only you will see this."; why.value = d.why;
+      why.addEventListener("input", function () { d.why = why.value; });
+      content.appendChild(why);
+      nextBtn();
+    } else if (step === 4) {
+      content.appendChild(rcEl("h2", "", "What normally triggers you?"));
+      var tchips = rcEl("div", "money-quick-actions");
+      RC_TRIGGERS.forEach(function (t) {
+        var on = d.triggers.indexOf(t) !== -1;
+        tchips.appendChild(rcBtn(t, "preset-plan-chip" + (on ? " active-chip" : ""), function () {
+          if (on) d.triggers.splice(d.triggers.indexOf(t), 1); else d.triggers.push(t);
+          renderRecovery();
+        }));
+      });
+      content.appendChild(tchips);
+      var tn = rcEl("input", "text-input");
+      tn.type = "text"; tn.placeholder = "Anything else? (optional)"; tn.value = d.triggerNote;
+      tn.addEventListener("input", function () { d.triggerNote = tn.value; });
+      content.appendChild(tn);
+      nextBtn();
+    } else if (step === 5) {
+      content.appendChild(rcEl("h2", "", "A personal goal (optional)"));
+      var goal = rcEl("input", "text-input");
+      goal.type = "text"; goal.placeholder = "e.g. Feel calmer, be present with family"; goal.value = d.goal;
+      goal.addEventListener("input", function () { d.goal = goal.value; });
+      content.appendChild(goal);
+      nextBtn(isSmoking ? "Next" : "Start my recovery", isSmoking ? next : function () { finishRcStart(); });
+    } else if (step === 6) {
+      content.appendChild(rcEl("h2", "", "About your smoking"));
+      content.appendChild(rcEl("p", "muted-line", "Cigarettes per day"));
+      content.appendChild(buildMoneyStepper(d.cigsPerDay, function (v) { d.cigsPerDay = v; renderRecovery(); }, 1, 100));
+      var mode = rcEl("div", "money-quick-actions");
+      mode.appendChild(rcBtn("Cost per cigarette", "preset-plan-chip" + (d.costMode === "cig" ? " active-chip" : ""), function () { d.costMode = "cig"; renderRecovery(); }));
+      mode.appendChild(rcBtn("Cost per pack", "preset-plan-chip" + (d.costMode === "pack" ? " active-chip" : ""), function () { d.costMode = "pack"; renderRecovery(); }));
+      content.appendChild(mode);
+      var preview = rcEl("div", "");
+      function drawPreview() {
+        preview.innerHTML = "";
+        var c = rcResolveCost(d);
+        if (c) preview.appendChild(rcEl("p", "muted-line", "≈ " + fmtRupee(c * d.cigsPerDay) + " a day · " + fmtRupee(c * d.cigsPerDay * 7) + " a week"));
+      }
+      var cost = rcEl("input", "text-input");
+      cost.type = "number"; cost.min = "0"; cost.placeholder = d.costMode === "cig" ? "₹ per cigarette" : "₹ per pack"; cost.value = d.cost;
+      cost.addEventListener("input", function () { d.cost = cost.value; drawPreview(); });
+      content.appendChild(cost);
+      if (d.costMode === "pack") {
+        content.appendChild(rcEl("p", "muted-line", "Cigarettes in a pack"));
+        content.appendChild(buildMoneyStepper(d.packSize, function (v) { d.packSize = v; renderRecovery(); }, 1, 50));
+      }
+      content.appendChild(preview);
+      drawPreview();
+      content.appendChild(rcEl("p", "muted-line", "Saving goal (optional)")).style.marginTop = "12px";
+      var sg = rcEl("input", "text-input");
+      sg.type = "number"; sg.min = "0"; sg.placeholder = "₹5000"; sg.value = d.savingGoal;
+      sg.addEventListener("input", function () { d.savingGoal = sg.value; });
+      content.appendChild(sg);
+      nextBtn("Start my recovery", function () {
+        if (!rcResolveCost(d)) { showToast("Enter what a cigarette or pack costs"); return; }
+        finishRcStart();
+      });
+    }
+  }
+
+  function rcResolveCost(d) {
+    var c = parseFloat(d.cost);
+    if (!c || c <= 0) return 0;
+    return d.costMode === "pack" ? c / Math.max(1, d.packSize) : c;
+  }
+
+  function finishRcStart() {
+    var d = rcView.data;
+    var j = {
+      id: uid("rec"), habit: d.habit, customHabit: d.customHabit.trim(), nickname: d.nickname.trim(),
+      startDate: d.startDate, why: d.why.trim(), triggers: d.triggers.slice(), triggerNote: d.triggerNote.trim(),
+      goal: d.goal.trim(), createdAt: new Date().toISOString()
+    };
+    if (d.habit === "smoking") {
+      j.cigsPerDay = d.cigsPerDay;
+      j.costPerCig = rcResolveCost(d);
+      j.savingGoal = parseFloat(d.savingGoal) > 0 ? parseFloat(d.savingGoal) : 0;
+    }
+    var list = rcJourneys();
+    list.push(j);
+    rcSaveJourneys(list);
+    showToast("Your recovery has started");
+    rcGo("dash", { id: j.id });
+  }
+
+  // ---- Dashboard ----
+
+  function rcCheckinBlock(content, j, dateKey, heading) {
+    var s = rcCompute(j);
+    var e = s.logs[dateKey];
+    var wrap = rcEl("div", "");
+    wrap.appendChild(rcEl("p", "muted-line", heading));
+    function record(status) {
+      rcSetLog(j.id, dateKey, { status: status, trigger: null, at: new Date().toISOString() });
+      if (status === "slip") rcGo("slip", { id: j.id, dateKey: dateKey });
+      else { showToast("Saved"); rcGo("dash", { id: j.id }); }
+    }
+    if (e && !rcView.changing) {
+      var t = rcEl("p", "", e.status === "clean" ? "✅ You stayed clean." : "⚠️ You slipped" + (e.trigger ? " — trigger: " + e.trigger : "") + ".");
+      t.style.fontWeight = "600";
+      wrap.appendChild(t);
+      var ch = rcBtn("Change this answer", "priority-change-link", function () { rcGo("dash", { id: j.id, changing: dateKey }); });
+      wrap.appendChild(ch);
+    } else {
+      var row = rcEl("div", "rec-check-row");
+      row.appendChild(rcBtn("✅ I stayed clean today", "btn btn-primary", function () { record("clean"); }));
+      row.appendChild(rcBtn("⚠️ I slipped today", "btn btn-outline", function () { record("slip"); }));
+      if (dateKey !== todayKey()) {
+        row.childNodes[0].textContent = "✅ I stayed clean";
+        row.childNodes[1].textContent = "⚠️ I slipped";
+      }
+      wrap.appendChild(row);
+    }
+    content.appendChild(wrap);
+  }
+
+  function renderRcDash(content) {
+    var j = rcJourneys().filter(function (x) { return x.id === rcView.id; })[0];
+    if (!j) { rcGo("main"); return; }
+    var s = rcCompute(j);
+    var today = todayKey();
+    rcBack(content, function () { rcGo("main"); });
+    content.appendChild(rcEl("h2", "", rcName(j) + " Recovery"));
+    content.appendChild(rcEl("p", "muted-line", "Started " + rcFmtDate(j.startDate) + (s.started ? "" : " (not yet)")));
+
+    var urge = rcBtn("I'm having an urge", "btn btn-primary btn-full", function () { startRcUrge(j.id); });
+    urge.style.margin = "14px 0";
+    content.appendChild(urge);
+
+    if (!s.started) {
+      content.appendChild(rcEl("p", "muted-line", "Your recovery starts on " + rcFmtDate(j.startDate) + ". Check-ins open that day."));
+      content.appendChild(rcBtn("Start today instead", "action-btn primary", function () {
+        var list = rcJourneys();
+        list.forEach(function (x) { if (x.id === j.id) x.startDate = today; });
+        rcSaveJourneys(list);
+        renderRecovery();
+      }));
+    } else {
+      var changing = rcView.changing;
+      if (changing) rcCheckinBlock(content, j, changing, changing === today ? "Change today's answer" : "Check-in for " + rcFmtDate(changing));
+      else {
+        rcCheckinBlock(content, j, today, "Today's check-in");
+        var y = rcAddDays(today, -1);
+        if (y >= j.startDate && !s.logs[y]) {
+          content.appendChild(rcBtn("Add yesterday's check-in", "priority-change-link", function () { rcGo("dash", { id: j.id, changing: y }); }));
+        }
+      }
+    }
+
+    // stats
+    var tiles = rcEl("div", "money-stat-grid");
+    tiles.style.marginTop = "16px";
+    [["Current streak", s.current + (s.current === 1 ? " day" : " days")], ["Best streak", s.best + (s.best === 1 ? " day" : " days")], ["Successful days", String(s.clean)]].forEach(function (r) {
+      var t = rcEl("div", "money-stat-tile");
+      t.appendChild(rcEl("span", "big", r[1]));
+      t.appendChild(rcEl("span", "lbl", r[0]));
+      tiles.appendChild(t);
+    });
+    content.appendChild(tiles);
+
+    var weekDays = s.weekDays.filter(function (d) { return d.status === "clean"; }).length;
+    content.appendChild(rcEl("p", "", "This week: " + weekDays + "/7 days")).style.fontWeight = "600";
+    var graph = rcEl("div", "rec-week-row");
+    s.weekDays.forEach(function (d) {
+      var w = rcEl("div", "rec-bar-wrap");
+      w.appendChild(rcEl("div", "rec-bar" + (d.status ? " " + d.status : "")));
+      w.appendChild(rcEl("span", "rec-label", new Date(d.key + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" }).slice(0, 3)));
+      graph.appendChild(w);
+    });
+    content.appendChild(graph);
+    content.appendChild(rcEl("p", "muted-line", "Green = stayed clean · Gold = slipped · Empty = no check-in"));
+
+    // smoking money
+    var m = rcMoney(j, s);
+    if (m) {
+      content.appendChild(rcEl("h2", "", "Money saved")).style.marginTop = "18px";
+      var box = rcEl("div", "money-cost-breakdown");
+      function line(label, value, hl) {
+        var r = rcEl("div", "row" + (hl ? " highlight" : ""));
+        r.appendChild(rcEl("span", "", label));
+        r.appendChild(rcEl("span", "", value));
+        box.appendChild(r);
+      }
+      line(s.clean + " smoke-free day" + (s.clean === 1 ? "" : "s"), fmtRupee(m.total) + " saved", true);
+      line("Cigarettes avoided", String(m.cigsAvoided));
+      line("Saved this week", fmtRupee(m.week));
+      line("Total saved", fmtRupee(m.total));
+      content.appendChild(box);
+      if (j.savingGoal > 0) {
+        var pct = Math.min(100, Math.round((m.total / j.savingGoal) * 100));
+        content.appendChild(rcEl("p", "muted-line", "Goal: " + fmtRupee(m.total) + " / " + fmtRupee(j.savingGoal) + " · " + pct + "%"));
+        var track = rcEl("div", "plan-progress-track");
+        var fill = rcEl("div", "plan-progress-fill");
+        fill.style.width = pct + "%";
+        track.appendChild(fill);
+        content.appendChild(track);
+        if (m.total >= j.savingGoal) content.appendChild(rcEl("p", "rec-note", "🎉 You reached your " + fmtRupee(j.savingGoal) + " goal."));
+      }
+      content.appendChild(rcEl("p", "muted-line", "Counted only from days you checked in clean."));
+    }
+
+    // weekly report
+    content.appendChild(rcEl("h2", "", "This week")).style.marginTop = "18px";
+    var report = rcEl("div", "money-cost-breakdown");
+    function rline(label, value, hl) {
+      var r = rcEl("div", "row" + (hl ? " highlight" : ""));
+      r.appendChild(rcEl("span", "", label));
+      r.appendChild(rcEl("span", "", value));
+      report.appendChild(r);
+    }
+    rline("Successful days", s.week.clean + " (last week " + s.prev.clean + ")");
+    rline("Slips", s.week.slips + " (last week " + s.prev.slips + ")");
+    rline("Current streak", s.current + " days");
+    rline("Best streak", s.best + " days");
+    var diff = s.week.clean - s.prev.clean;
+    rline("Compared with last week", diff === 0 ? "Same" : (diff > 0 ? "↑ " : "↓ ") + Math.abs(diff) + " clean day" + (Math.abs(diff) === 1 ? "" : "s"), true);
+    if (m) rline("Money saved this week", fmtRupee(m.week));
+    var passed = rcUrges().filter(function (u) { return (u.journeyId === j.id) && u.passed && u.date >= getLastNDateKeys(7)[6]; }).length;
+    if (passed) rline("Urges you got through", String(passed));
+    content.appendChild(report);
+    var tcWeek = rcTriggerCounts(s.logs, getLastNDateKeys(7)[6]);
+    var tcAll = rcTriggerCounts(s.logs, null);
+    var topWeek = rcTopTrigger(tcWeek), topAll = rcTopTrigger(tcAll);
+    if (topAll) content.appendChild(rcEl("p", "muted-line", "Trigger pattern: " + (topWeek ? "this week " + topWeek + "; " : "") + "overall " + topAll + "."));
+    else content.appendChild(rcEl("p", "muted-line", "Trigger patterns appear here once you've recorded a trigger."));
+    content.appendChild(rcEl("p", "rec-note", "The goal is long-term improvement, not a perfect streak."));
+
+    if (j.why) {
+      content.appendChild(rcEl("h2", "", "Why I'm doing this")).style.marginTop = "16px";
+      content.appendChild(rcEl("p", "muted-line", j.why));
+    }
+    if (j.goal) content.appendChild(rcEl("p", "muted-line", "Goal: " + j.goal));
+
+    var del = rcBtn("Delete this recovery and its data", "priority-change-link", function () {
+      if (!window.confirm("Delete this recovery journey and all its check-ins from this device? This can't be undone.")) return;
+      rcSaveJourneys(rcJourneys().filter(function (x) { return x.id !== j.id; }));
+      var logs = rcLogsAll();
+      delete logs[j.id];
+      writeJSON("nc_recovery_logs", logs);
+      writeJSON("nc_recovery_urges", rcUrges().filter(function (u) { return u.journeyId !== j.id; }));
+      showToast("Deleted");
+      rcGo("main");
+    });
+    del.style.marginTop = "18px";
+    content.appendChild(del);
+  }
+
+  // ---- After a slip ----
+
+  function renderRcSlip(content) {
+    var j = rcJourneys().filter(function (x) { return x.id === rcView.id; })[0];
+    if (!j) { rcGo("main"); return; }
+    var s = rcCompute(j);
+    content.appendChild(rcEl("p", "rec-note", "You slipped today, but your previous progress still counts. Understand what triggered it and restart."));
+    content.appendChild(rcEl("p", "muted-line", "Your best streak (" + s.best + " day" + (s.best === 1 ? "" : "s") + ") and your " + s.clean + " successful day" + (s.clean === 1 ? "" : "s") + " are still yours. One day doesn't erase them."));
+    content.appendChild(rcEl("h2", "", "What triggered you?")).style.marginTop = "14px";
+    var chips = rcEl("div", "money-quick-actions");
+    RC_TRIGGERS.forEach(function (t) {
+      chips.appendChild(rcBtn(t, "preset-plan-chip", function () {
+        var e = (rcLogsAll()[j.id] || {})[rcView.dateKey] || { status: "slip", at: new Date().toISOString() };
+        e.trigger = t;
+        rcSetLog(j.id, rcView.dateKey, e);
+        showToast("Saved privately");
+        rcGo("dash", { id: j.id });
+      }));
+    });
+    content.appendChild(chips);
+    content.appendChild(rcBtn("Skip for now", "priority-change-link", function () { rcGo("dash", { id: j.id }); }));
+  }
+
+  // ---- Urge ----
+
+  function startRcUrge(journeyId) {
+    var list = rcUrges();
+    var rec = { id: uid("urge"), journeyId: journeyId, date: todayKey(), at: new Date().toISOString(), passed: false };
+    list.push(rec);
+    writeJSON("nc_recovery_urges", list);
+    rcGo("urge", { journeyId: journeyId, urgeId: rec.id, done: {}, timerEnd: null });
+  }
+
+  function renderRcUrge(content) {
+    rcBack(content, function () { rcGo(rcView.journeyId ? "dash" : "main", rcView.journeyId ? { id: rcView.journeyId } : {}); });
+    content.appendChild(rcEl("h2", "", "Take a breath."));
+    content.appendChild(rcEl("p", "muted-line", "You don't have to act on this. Pick one small thing and do it now."));
+    var list = rcEl("div", "");
+    list.style.marginTop = "12px";
+    RC_URGE_ACTIONS.forEach(function (a, i) {
+      var b = rcBtn((rcView.done[i] ? "✓ " : "") + a, "rec-action" + (rcView.done[i] ? " done" : ""), function () {
+        rcView.done[i] = !rcView.done[i];
+        var keepEnd = rcView.timerEnd;
+        renderRecovery();
+        rcView.timerEnd = keepEnd;
+      });
+      list.appendChild(b);
+    });
+    content.appendChild(list);
+
+    // 10-minute distraction timer
+    var timerBox = rcEl("div", "money-cost-breakdown");
+    timerBox.style.textAlign = "center";
+    var time = rcEl("div", "rec-timer", "10:00");
+    var msg = rcEl("p", "muted-line", "Start a 10-minute distraction timer. Do anything else until it ends.");
+    var startT = rcBtn("Start 10-minute timer", "btn btn-primary btn-full", function () {
+      rcView.timerEnd = Date.now() + 600000;
+      startT.style.display = "none";
+      runTimer();
+    });
+    function runTimer() {
+      rcStopTimer();
+      function tick() {
+        if (!document.body.contains(time)) { rcStopTimer(); return; }
+        var left = Math.max(0, rcView.timerEnd - Date.now());
+        var m = Math.floor(left / 60000), s = Math.floor((left % 60000) / 1000);
+        time.textContent = m + ":" + (s < 10 ? "0" : "") + s;
+        if (left <= 0) { rcStopTimer(); msg.textContent = "10 minutes done. Urges usually ease with time. How do you feel?"; }
+        else msg.textContent = "Keep going. Do anything except the habit.";
+      }
+      tick();
+      rcTimerId = setInterval(tick, 500);
+    }
+    timerBox.appendChild(time);
+    timerBox.appendChild(msg);
+    timerBox.appendChild(startT);
+    content.appendChild(timerBox);
+    if (rcView.timerEnd) { startT.style.display = "none"; runTimer(); }
+
+    content.appendChild(rcEl("h2", "", "Something useful")).style.marginTop = "14px";
+    content.appendChild(rcBtn("Open duas (Sunnah)", "btn btn-outline btn-full", function () { rcStopTimer(); setActiveView("sunnah"); }));
+
+    // trusted contact
+    var contact = rcContact();
+    content.appendChild(rcEl("h2", "", "Someone you trust")).style.marginTop = "14px";
+    if (contact && contact.phone && !rcView.editContact) {
+      var call = rcEl("a", "btn btn-primary btn-full", "Call " + (contact.name || "them"));
+      call.href = "tel:" + contact.phone;
+      call.style.display = "block";
+      call.style.textAlign = "center";
+      call.style.textDecoration = "none";
+      content.appendChild(call);
+      content.appendChild(rcBtn("Change contact", "priority-change-link", function () { rcView.editContact = true; var k = rcView.timerEnd; renderRecovery(); rcView.timerEnd = k; }));
+    } else {
+      content.appendChild(rcEl("p", "muted-line", "Optional. Stored only on this device."));
+      var nm = rcEl("input", "text-input");
+      nm.type = "text"; nm.placeholder = "Name"; nm.value = contact ? contact.name || "" : "";
+      var ph = rcEl("input", "text-input");
+      ph.type = "tel"; ph.placeholder = "Phone number"; ph.value = contact ? contact.phone || "" : "";
+      content.appendChild(nm);
+      content.appendChild(ph);
+      content.appendChild(rcBtn("Save contact", "btn btn-outline btn-full", function () {
+        var phone = ph.value.replace(/[^0-9+]/g, "");
+        if (!phone) { showToast("Enter a phone number"); return; }
+        writeJSON("nc_recovery_contact", { name: nm.value.trim().slice(0, 40), phone: phone });
+        rcView.editContact = false;
+        var k = rcView.timerEnd; renderRecovery(); rcView.timerEnd = k;
+      }));
+    }
+
+    var got = rcBtn("I got through this urge", "btn btn-primary btn-full", function () {
+      var list2 = rcUrges();
+      list2.forEach(function (u) { if (u.id === rcView.urgeId) u.passed = true; });
+      writeJSON("nc_recovery_urges", list2);
+      showToast("Well done for pausing");
+      rcGo(rcView.journeyId ? "dash" : "main", rcView.journeyId ? { id: rcView.journeyId } : {});
+    });
+    got.style.marginTop = "18px";
+    content.appendChild(got);
+  }
+
+  function initRecovery() {
+    document.getElementById("open-recovery-btn").addEventListener("click", function () { rcView = { screen: "main" }; setActiveView("duniya-recovery"); });
+    document.getElementById("duniya-recovery-back").addEventListener("click", function () { rcStopTimer(); rcView = { screen: "main" }; setActiveView("duniya-habits"); });
+  }
+
+  // Neutral totals only (no habit names) for the Home-adjacent Progress Details.
+  function rcProgressRows() {
+    var journeys = rcJourneys();
+    if (!journeys.length) return [];
+    var clean = 0, slips = 0, prevClean = 0, current = 0, money = 0, anyMoney = false;
+    journeys.forEach(function (j) {
+      var s = rcCompute(j);
+      clean += s.week.clean; slips += s.week.slips; prevClean += s.prev.clean;
+      if (s.current > current) current = s.current;
+      var m = rcMoney(j, s);
+      if (m) { money += m.week; anyMoney = true; }
+    });
+    var rows = [
+      { label: "Recovery — successful days (7 days)", value: String(clean) },
+      { label: "Recovery — slips", value: String(slips) },
+      { label: "Recovery — current streak", value: current + (current === 1 ? " day" : " days") }
+    ];
+    var diff = clean - prevClean;
+    rows.push({ label: "Recovery — vs. previous week", value: diff === 0 ? "Same" : (diff > 0 ? "↑ " : "↓ ") + Math.abs(diff) + " day" + (Math.abs(diff) === 1 ? "" : "s") });
+    if (anyMoney) rows.push({ label: "Recovery — money saved (7 days)", value: fmtRupee(money) });
+    return rows;
   }
 
   // ---- Personal Growth ----
@@ -6944,6 +7607,7 @@
     initDuniyaCareer();
     initDuniyaMoney();
     initPhoneGuard();
+    initRecovery();
     initDuniyaGrowth();
     initDuniyaPlan();
     renderHome();

@@ -2,6 +2,26 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-19 — Habits & Discipline → Recovery (bad-habit recovery system)
+
+Added a private "Recovery" section reached from Habits & Discipline (existing habit list untouched). Choose Pornography / Masturbation / Smoking / Cannabis / Excessive social media / Gaming / Junk food / Other (custom name), with an optional private nickname that replaces the habit name everywhere. Start wizard: habit → start date (today/tomorrow/pick) → why → triggers → optional goal → (smoking only) cigarettes/day, cost per cigarette or per pack, optional saving goal.
+
+**Streak rules (decided, please review)**: a day counts as successful only if the user checks in "clean" for it. A missed check-in is neither a success nor a slip, but it does break the streak (we never assume clean, in line with "never fake data"). To make that fair, yesterday can be checked in late ("Add yesterday's check-in"), and today's answer can be changed. Current streak = consecutive clean days ending today (or yesterday if today isn't checked in yet). A slip resets only the current streak; best streak, total successful days and all history are computed from the untouched log, so they never drop. Best streak is computed, not stored.
+
+**Slip flow**: "You slipped today, but your previous progress still counts. Understand what triggered it and restart." plus the real best-streak/total numbers, then a trigger chip (Stress, Boredom, Being alone, Social media, Late night, Anger, Other) saved privately. Trigger patterns (this week + overall) show on the dashboard. No red, no shame wording; slips are gold on the graph.
+
+**Urge screen** ("I'm having an urge", on Recovery and on each dashboard): tick-able small actions (leave the room, phone away, walk, water, wudu, cold water, push-ups), a real 10-minute countdown (based on an end time, so it stays accurate), a link to duas, an optional trusted contact stored only on the device with a tap-to-call link, and "I got through this urge" (logged). "Something useful" deliberately does not reuse the workout picker, because that flow replaces Home's daily priority — bad to trigger mid-urge.
+
+**Smoking money**: only from clean check-ins: cigarettes avoided = clean days × cigarettes/day; money = that × cost per cigarette; this-week and total, with a saving-goal progress bar. Example checked: 6/day at ₹10 → ₹60/day → 7 days = ₹420.
+
+**Weekly report**: per-journey "This week" block (successful days and slips vs last week, current/best streak, change vs last week, urges got through, money saved for smoking, trigger patterns). Progress Details (the existing weekly view) gets neutral "Recovery —" rows with totals only and no habit names or trigger text, added after the existing rows, which are unchanged.
+
+**Privacy**: local-only (`nc_recovery_*`). Nothing on Home. No notifications are sent by this feature (the web app has none), so the neutral-wording rule ("Your NURA check-in is ready") is not needed yet; if reminders are added later they must use that wording. Included in the existing data export and "delete all data" (both cover every `nc_` key), plus a per-journey delete. Not encrypted — same as the rest of ordinary NURA data (only Vault is); the export file is plain JSON and contains this data.
+
+**Tested** (browser, fresh storage): creating journeys (smoking and custom-with-nickname), validation, future start ("start today instead"), streak maths on a seeded 12-day history against hand-computed values (current 5, best 6, total 11, week 5/7, prior week 6, money ₹660/₹300), clean check-in → streak 6, slip → current 0 with best 6 and total 11 intact, trigger save and patterns, backfill of yesterday, persistence across reload, urge screen actions/timer countdown/contact call link/"got through" log, Home and Progress Details leak no habit names, delete journey, regression on Habits list/Money/Plan My Day, no console errors.
+
+**Not done / placeholder**: no reminders or notifications; no editing of a journey's details after creation (delete and restart instead); no lock or encryption for this section; trigger patterns are simple counts, not analysis; the Android APK does not yet contain this feature (rebuild needed).
+
 ## 2026-09-19 — Phone Control → Intentional Open: first native Android build (debug APK, NOT yet tested on a phone)
 
 **Why native**: the site is plain HTML/JS on GitHub Pages; a web page cannot see which app is open, list installed apps, or draw over other apps (CLAUDE.md §8 already says so). Rather than fake it, added an `android/` project: a small Kotlin app that hosts the unchanged website from local assets (copied from the repo root at build time, works offline, same localStorage) plus a JS bridge `window.NuraNative`. The GitHub Pages site is unchanged and simply shows "needs the NURA Android app" for this feature.

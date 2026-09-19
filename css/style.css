@@ -634,6 +634,21 @@ html, body {
 .plan-form-label { font-size: 11.5px; color: var(--muted); margin: 0 0 4px; }
 .plan-unfit-list { background: rgba(192, 57, 43, 0.08); border: 1px solid var(--danger); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 12.5px; }
 
+/* RECOVERY */
+.rec-week-row { display: flex; gap: 6px; align-items: flex-end; height: 76px; margin: 8px 0 4px; }
+.rec-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+.rec-bar { width: 100%; max-width: 22px; border-radius: 5px 5px 0 0; background: var(--surface-2); height: 4px; }
+.rec-bar.clean { background: var(--mint); height: 56px; }
+.rec-bar.slip { background: var(--gold); height: 24px; }
+.rec-label { font-size: 10px; color: var(--muted); margin-top: 5px; }
+.rec-action { display: block; width: 100%; text-align: left; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 10px; font-size: 16px; color: var(--text); }
+.rec-action.done { border-color: var(--mint); color: var(--mint); }
+.rec-timer { font-size: 44px; font-weight: 700; text-align: center; color: var(--mint); margin: 8px 0; }
+.rec-note { background: rgba(27, 94, 63, 0.08); border: 1px solid var(--mint); border-radius: 12px; padding: 12px 14px; margin: 12px 0; font-size: 13.5px; }
+.rec-check-row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.rec-check-row .btn { flex: 1; min-width: 140px; margin-bottom: 0; }
+.rec-textarea { width: 100%; min-height: 90px; resize: vertical; }
+
 /* MONEY HABITS */
 .money-goal-block { margin-bottom: 18px; }
 .money-goal-name { font-size: 15px; font-weight: 700; margin: 4px 0 2px; }
