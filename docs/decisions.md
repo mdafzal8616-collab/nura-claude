@@ -2,6 +2,28 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-19 — User Understanding & Memory Engine (local-first, rule-based)
+
+Built a persistent memory layer so NURA stops re-asking for the same routine. Observe → remember → find patterns → confidence → personalise → ask only when unsure → learn from corrections. **No LLM and no network** (none exists in the project); everything is structured data + plain rules. It learns only from activity inside NURA — never messages, photos, browsing, mic, camera, contacts or other apps.
+
+**Storage (localStorage, `nc_mem_*`, covered by export / "delete all data")**: `nc_mem_events` (event log: type, module, small metadata, capped at 3,000 / 180 days; types include plan_created, plan_changed, task_completed/skipped, study_started/completed, personal_growth_completed, sleep_started, wake_recorded, goal_created, money_saved_recorded, habit_completed, sunnah_completed, hadith_read, routine_confirmed, routine_corrected), `nc_mem_patterns` (remembered commitments: observations + what the user confirmed/corrected/forgot), `nc_mem_exceptions` ("today only" changes), `nc_mem_meta` (learning state, question pacing, forgotten patterns), `nc_mem_profile` (cached UserUnderstandingProfile: identity/preferences, routine patterns, goals, personal growth, behaviour patterns, preferences, metadata). On first run it backfills from existing saved Plan My Day activities.
+
+**Three memory levels**: Level 1 today (exceptions, never become routine), Level 2 pattern memory (evidence + confidence), Level 3 stable memory (user-confirmed or corrected schedules). A single event never becomes a routine. "Today only" changes are logged but excluded from evidence.
+
+**Confidence** is deliberately coarse, from recency-weighted matching days (last 4 weeks ×1, weeks 5–8 ×½, older ×¼), agreement among sightings, and staleness: LOW <3, MEDIUM 3–4, HIGH 5+ with ≥70% agreement, VERY HIGH 12+ with ≥85%; disagreement caps it at LOW/MEDIUM, going stale drops a level, user confirmation raises it to at least HIGH. Wording matches certainty ("You've had… once/twice/a few times" → "This seems to be becoming a pattern" → "You usually…" → "Your usual…").
+
+**Weekday-aware**: evidence is analysed per weekday and merged, so Gym Mon/Wed 6 PM and Gym Fri 8 PM coexist. **Decay**: if the last three sightings on a weekday agree on a new time, that replaces the old routine (gradually earned). **Drift**: a confirmed schedule is never changed silently — if the last 3 sightings after confirmation agree on something different, NURA asks "Your X times seem to have changed to …. Update?".
+
+**Asking**: at most one confirmation question per day, only for HIGH+ patterns; answers: Yes (stored as confirmed), Not always (snoozed 14 days, capped at MEDIUM), No (rejected for 60 days, evidence cleared).
+
+**Corrections (the user always wins)**: plain-language box ("college cancelled today" → today only; "college at 8 pm today" → today only; "my college is now 10–3" / "permanently changed" → permanent; ambiguous → asks Today only / Always). Permanent corrections replace the schedule for those weekdays from today and ignore older evidence for them. Manual Edit (days + times), Forget (clears an item, leaves a marker so old evidence can't return), Forget a learned pattern, and Forget everything (does not relearn from old plans; other NURA data is untouched).
+
+**Personalisation**: Plan My Day shows "Your usual day" (usual items pre-checked, Low-confidence ones offered as "Use today?", each with Keep / Change today / Not today, plus "Anything different today?"), builds the plan in one tap, and sets the day window from learned wake/sleep. Study picker shows a data-backed suggested length with the reason. Personal Growth adds "Today you have College … a natural place to try this" only when the schedule is confirmed/HIGH. Weekly report (Progress Details) gets "NURA noticed" rows only when data supports them. Review screen: More → What NURA Knows About Me.
+
+**Tested**: 35 days of seeded plans → College VERY HIGH, Gym per-weekday groups with different confidence, one-offs LOW; the confirmation question; restart; Plan My Day pre-fill; "college cancelled today" (plan without college, routine intact, expired tomorrow); permanent "10–3" (AM/PM inferred); decay; drift → update; Not always / No; manual edit; Forget; Forget everything; low-confidence suggestion; today-only change excluded from evidence; study preference + hint; wake-time learning; Personal Growth context; weekly row; corrupted-data-safe reads; no console errors; other screens unaffected. Days were simulated by seeding/shifting stored dates.
+
+**Limits**: learns only what NURA itself sees; flexible tasks and Qur'an/dua activity are not yet pattern-mined (Sunnah/Hadith/habit events are logged but not analysed); some wording rules are simple patterns, not language understanding; the Android APK was rebuilt to include this but only the website was exercised in tests.
+
 ## 2026-09-19 — Personal Growth rebuilt as a complete, persisted growth system
 
 Replaced the old "pick an area, get one generic task" screen. Flow: 14-question assessment (first time only) → rule-based recommendation → 7-day mission → one real-world action a day → 1–3 question reflection → saved → adaptive next step → weekly progress. No AI anywhere; scoring, selection and reports are plain code, so it works with Bhai AI off.

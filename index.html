@@ -557,6 +557,12 @@
     </section>
 
     <section class="card">
+      <h2>What NURA Knows About Me</h2>
+      <p class="muted-line" style="margin:4px 0 10px;">Routines and patterns NURA has learned from your activity. Review, correct or forget them.</p>
+      <button class="btn btn-outline btn-full" id="open-memory-btn">Open</button>
+    </section>
+
+    <section class="card">
       <h2>Today's Coins</h2>
       <p class="coins-line"><span id="coins-count">0</span> learning coins</p>
       <p class="pending-note">Redemption, monetary value, and partnerships are undecided — these are a learning tracker only, not currency.</p>
@@ -572,6 +578,17 @@
       <h2>Feature Status</h2>
       <ul class="status-list" id="feature-status-list"></ul>
     </section>
+  </main>
+
+  <!-- MEMORY: WHAT NURA KNOWS ABOUT ME -->
+  <main class="view hidden" id="view-memory" data-view="memory">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow"><button class="icon-btn" id="memory-back">&larr; More</button></p>
+        <h1>What NURA Knows About Me</h1>
+      </div>
+    </header>
+    <section class="card" id="memory-content"></section>
   </main>
 
   <!-- BOTTOM NAV -->

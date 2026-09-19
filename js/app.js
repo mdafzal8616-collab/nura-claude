@@ -252,6 +252,9 @@
     var log = readJSON("nc_priority_log", []);
     log.push(entry);
     writeJSON("nc_priority_log", log);
+    if (entry && entry.planKey === "study") {
+      memLog(entry.status === "not-yet" ? "task_skipped" : "study_completed", "study", { minutes: entry.minutes, result: entry.status, forDate: entry.date });
+    }
   }
 
   function setTodaysPriority(planKey, customTitle) {
@@ -305,6 +308,7 @@
       date: todayKey(), status: "pending"
     };
     savePriority(p);
+    memLog("sleep_started", "sleep", { min: new Date().getHours() * 60 + new Date().getMinutes() });
     focusState.linkedPriorityId = null;
     focusPrepShownForPriorityId = null;
     return p;
@@ -464,6 +468,14 @@
         pickerStep = { view: "main", bodyPart: null };
         renderHome();
       }));
+      var studyHint = memStudyHint();
+      if (studyHint) {
+        var hintEl = document.createElement("p");
+        hintEl.className = "muted-line";
+        hintEl.style.marginTop = "8px";
+        hintEl.textContent = studyHint;
+        stepEl.appendChild(hintEl);
+      }
     } else if (pickerStep.view === "phone-distraction") {
       var pd = document.createElement("p");
       pd.className = "picker-step-title";
@@ -868,6 +880,15 @@
       weekEl.appendChild(row);
     });
 
+    memWeeklyInsights().forEach(function (s) {
+      var row = document.createElement("div");
+      row.className = "progress-detail-row";
+      var l = document.createElement("span"); l.className = "progress-detail-label"; l.textContent = "NURA noticed";
+      var v = document.createElement("span"); v.className = "progress-detail-value"; v.textContent = s;
+      row.appendChild(l); row.appendChild(v);
+      weekEl.appendChild(row);
+    });
+
     gwProgressRows().forEach(function (r) {
       var row = document.createElement("div");
       row.className = "progress-detail-row";
@@ -1093,6 +1114,7 @@
         p.wakeTime = new Date().toISOString();
         p.status = "completed";
         savePriority(p);
+        memLog("wake_recorded", "sleep", { min: new Date().getHours() * 60 + new Date().getMinutes() });
         renderHome();
       });
       container.appendChild(awakeBtn);
@@ -1439,6 +1461,7 @@
     focusState.remaining = focusSecondsTotal();
     focusState.linkedPriorityId = p.id;
     focusState.adhocLabel = null;
+    if (p.planKey === "study") memLog("study_started", "study", { minutes: p.minutes });
     beginFocusInterval();
     var clock = document.getElementById("focus-clock");
     if (clock) clock.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -1816,6 +1839,7 @@
     var log = getDaySunnahLog(key);
     log[actionId] = !log[actionId];
     setDaySunnahLog(key, log);
+    if (log[actionId]) memLog("sunnah_completed", "sunnah", { id: actionId });
   }
 
   var sunnahItemExpandState = {};
@@ -3274,6 +3298,7 @@
     }
     progress[h.id] = { answered: true, pickedIndex: idx, correct: correct, coinsAwarded: already ? 0 : coinsAwarded };
     saveHadithProgress(progress);
+    if (!already) memLog("hadith_read", "hadith", { correct: correct });
     renderHadithDetail();
     renderMore();
     if (!already && correct) showToast("Correct! +" + coinsAwarded + " coins");
@@ -3540,7 +3565,7 @@
     document.querySelectorAll(".view").forEach(function (v) {
       v.classList.toggle("hidden", v.dataset.view !== name);
     });
-    var navHighlight = name.indexOf("duniya") === 0 ? "duniya" : name;
+    var navHighlight = name.indexOf("duniya") === 0 ? "duniya" : name === "memory" ? "more" : name;
     document.querySelectorAll(".nav-btn[data-nav]").forEach(function (btn) {
       btn.classList.toggle("active", btn.dataset.nav === navHighlight);
     });
@@ -3550,6 +3575,7 @@
     if (name === "chat") renderChatOptions();
     if (name === "vault") renderVaultRoot();
     if (name === "more") renderMore();
+    if (name === "memory") renderMemory();
     if (name === "duniya") renderDuniya();
     if (name === "duniya-habits") renderDuniyaHabits();
     if (name === "duniya-productivity") renderDuniyaProductivity();
@@ -3751,6 +3777,7 @@
     all[today] = all[today] || {};
     all[today][habitId] = status;
     writeJSON("nc_duniya_habit_log", all);
+    if (status === "done") memLog("habit_completed", "habits", { habitId: habitId });
   }
 
   function renderDuniyaHabits() {
@@ -4530,6 +4557,7 @@
     var goal = { id: uid("goal"), name: name, targetAmount: targetAmount, currentSavedAmount: 0, createdAt: new Date().toISOString(), completedAt: null, celebrationSeen: false };
     goals.push(goal);
     saveMoneyGoals(goals);
+    memLog("goal_created", "money", { target: targetAmount });
     return goal;
   }
   function goalPct(g) { return g.targetAmount ? Math.min(100, Math.round((g.currentSavedAmount / g.targetAmount) * 1000) / 10) : 0; }
@@ -4558,6 +4586,7 @@
     list.push(rec);
     saveContribs(list);
     syncGoals();
+    memLog("money_saved_recorded", "money", { amount: amount, source: sourceKey });
     return rec.id;
   }
 
@@ -6176,6 +6205,7 @@
       var vis = document.querySelector(".view:not(.hidden)");
       var name = vis ? vis.dataset.view : "home";
       if (name === "duniya-phone-guard" && pgView.screen !== "main") { pgView = { screen: "main" }; renderPhoneGuard(); return true; }
+      if (name === "memory") { setActiveView("more"); return true; }
       if (name === "duniya-growth" && gwView.screen !== "home") { gwView = { screen: "home" }; renderDuniyaGrowth(); return true; }
       if (name === "duniya-recovery" && rcView.screen !== "main") { rcStopTimer(); rcView = { screen: "main" }; renderRecovery(); return true; }
       if (name === "home") return false;
@@ -7265,6 +7295,7 @@
     gwSaveMission(m);
     gwAdapt(m.track, status, fields.difficulty);
     gwRecount();
+    memLog("personal_growth_completed", "personalGrowth", { track: m.track, result: status, planDay: day.n });
     return m;
   }
 
@@ -7665,6 +7696,8 @@
     ch.style.margin = "4px 0 8px";
     card.appendChild(ch);
     card.appendChild(gwEl("p", "priority-why", "Why: " + action.why));
+    var memCtx = memPgContext(m.track);
+    if (memCtx) card.appendChild(gwEl("p", "cost-line", memCtx));
     card.appendChild(gwEl("p", "cost-line", "Estimated time: about " + action.min + " min" + (p.dailyMinutes && action.min > p.dailyMinutes ? " (start with what fits your " + p.dailyMinutes + " min)" : "")));
 
     function setToday(patch) {
@@ -7961,6 +7994,951 @@
     });
   }
 
+  // ---------- USER UNDERSTANDING & MEMORY ENGINE ----------
+  // OBSERVE -> REMEMBER -> FIND PATTERNS -> BUILD CONFIDENCE -> PERSONALISE ->
+  // CHECK WHEN UNSURE -> LEARN FROM CORRECTIONS. Local-first and rule-based: no
+  // LLM, no network. It only learns from activity inside NURA (never messages,
+  // photos, browsing, mic, camera, contacts or other apps).
+  //
+  // Storage (localStorage):
+  //   nc_mem_events    event log (type, module, small metadata)
+  //   nc_mem_patterns  remembered commitments: observations + what the user confirmed/corrected
+  //   nc_mem_exceptions  "today only" changes (Level 1 memory)
+  //   nc_mem_meta      learning state (backfill, question pacing, ignored patterns)
+  //   nc_mem_profile   cached structured UserUnderstandingProfile
+  // Memory levels: 1 = today (exceptions), 2 = pattern memory (evidence, confidence),
+  // 3 = stable memory (user-confirmed or corrected schedules).
+
+  var MEM_LEVELS = ["LOW", "MEDIUM", "HIGH", "VERY HIGH"];
+  var MEM_DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var memRunTimer = null;
+
+  function memObj(k) { var v = readJSON(k, null); return v && typeof v === "object" && !Array.isArray(v) ? v : {}; }
+  function memArr(k) { var v = readJSON(k, []); return Array.isArray(v) ? v : []; }
+  function memMeta() { return memObj("nc_mem_meta"); }
+  function memSaveMeta(m) { writeJSON("nc_mem_meta", m); }
+  function memEvents() { return memArr("nc_mem_events"); }
+  function memPatterns() { return memObj("nc_mem_patterns"); }
+  function memSavePatterns(p) { writeJSON("nc_mem_patterns", p); }
+  function memExceptions() { return memArr("nc_mem_exceptions"); }
+
+  function memDaysBetween(a, b) { return Math.round((new Date(b + "T12:00:00") - new Date(a + "T12:00:00")) / 86400000); }
+  function memDow(dateKey) { return new Date(dateKey + "T12:00:00").getDay(); }
+  function memTmin(hhmm) { return hhmm ? planTimeToMinutes(hhmm) : null; }
+  function memHHMM(min) {
+    min = ((Math.round(min) % 1440) + 1440) % 1440;
+    return String(Math.floor(min / 60)).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0");
+  }
+  function memClock(hhmm) { return hhmm ? planMinutesToClock(planTimeToMinutes(hhmm)) : ""; }
+  function memRange(s, e) { return memClock(s) + (e ? "–" + memClock(e) : ""); }
+  function memWeight(dateKey) { var a = memDaysBetween(dateKey, todayKey()); return a <= 28 ? 1 : a <= 56 ? 0.5 : 0.25; }
+  function memKey(name) { return String(name || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim(); }
+  function memDaysLabel(days) {
+    var d = days.slice().sort(function (a, b) { return a - b; });
+    var s = d.join(",");
+    if (s === "1,2,3,4,5") return "weekdays";
+    if (s === "0,6") return "weekends";
+    if (d.length === 7) return "every day";
+    var parts = [], i = 0;
+    while (i < d.length) {
+      var j = i;
+      while (j + 1 < d.length && d[j + 1] === d[j] + 1) j++;
+      if (j - i >= 2) parts.push(MEM_DAYS[d[i]] + "–" + MEM_DAYS[d[j]]);
+      else for (var k = i; k <= j; k++) parts.push(MEM_DAYS[d[k]]);
+      i = j + 1;
+    }
+    return parts.join(", ");
+  }
+
+  // ---- event log ----
+  function memLog(type, module, data) {
+    try {
+      var ev = memEvents();
+      var now = new Date();
+      ev.push({ id: uid("me"), ts: now.toISOString(), date: todayKey(now), type: type, module: module, data: data || {} });
+      if (ev.length > 3000) ev = ev.slice(ev.length - 3000);
+      writeJSON("nc_mem_events", ev);
+      var m = memMeta();
+      if (!m.firstEvent) { m.firstEvent = now.toISOString(); memSaveMeta(m); }
+      memScheduleRun();
+    } catch (e) { /* memory must never break the feature it observes */ }
+  }
+  function memScheduleRun() {
+    if (memRunTimer) clearTimeout(memRunTimer);
+    memRunTimer = setTimeout(function () { memRunTimer = null; try { memRun(); } catch (e) {} }, 1200);
+  }
+
+  // ---- commitments (fixed activities the user tells Plan My Day about) ----
+  function memNewRec(key, label) { return { key: key, label: label, kind: "commitment", obs: [], user: null, ignoreBefore: null, ignoreBeforeDow: {}, snoozeUntil: null, rejectedUntil: null, capMedium: false, corrections: 0, firstObservation: null, lastObservation: null, updatedAt: null }; }
+
+  // temp = "today only": logged but never counted as evidence for the routine.
+  function memObserve(name, dateKey, start, end, temp) {
+    var key = memKey(name);
+    if (!key || key.length < 2 || !start) return;
+    var pats = memPatterns();
+    var rec = pats[key] || (pats[key] = memNewRec(key, String(name).trim()));
+    rec.label = String(name).trim() || rec.label;
+    rec.obs = rec.obs.filter(function (o) { return o.date !== dateKey; });
+    rec.obs.push({ date: dateKey, dow: memDow(dateKey), start: start, end: end || null, temp: !!temp });
+    rec.obs.sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+    if (rec.obs.length > 120) rec.obs = rec.obs.slice(rec.obs.length - 120);
+    var real = rec.obs.filter(function (o) { return !o.temp; });
+    rec.firstObservation = real.length ? real[0].date : rec.firstObservation;
+    rec.lastObservation = real.length ? real[real.length - 1].date : rec.lastObservation;
+    rec.updatedAt = new Date().toISOString();
+    memSavePatterns(pats);
+  }
+
+  function memBackfill() {
+    var m = memMeta();
+    if (m.backfilled) return;
+    var prefix = "nc_plan_activities_";
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      if (k.indexOf(prefix) !== 0) continue;
+      var date = k.slice(prefix.length);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+      memArr(k).forEach(function (a) {
+        if (a && a.mode === "fixed" && a.startTime) memObserve(a.name, date, a.startTime, a.endTime, false);
+      });
+    }
+    m = memMeta();
+    m.backfilled = true;
+    memSaveMeta(m);
+  }
+
+  // Confidence from weighted evidence, agreement, and recency. Deliberately coarse.
+  function memConfidence(w, agree, lastDate, confirmed, capMedium) {
+    var lvl = 0;
+    if (w >= 3) lvl = 1;
+    if (w >= 5 && agree >= 0.7) lvl = 2;
+    if (w >= 12 && agree >= 0.85) lvl = 3;
+    if (agree < 0.6) lvl = 0; else if (agree < 0.7) lvl = Math.min(lvl, 1);
+    if (lastDate && memDaysBetween(lastDate, todayKey()) > 28) lvl = Math.max(0, lvl - 1);
+    if (capMedium) lvl = Math.min(lvl, 1);
+    if (confirmed) lvl = Math.max(lvl, 2);
+    return MEM_LEVELS[lvl];
+  }
+  function memLevelIdx(c) { return MEM_LEVELS.indexOf(c); }
+
+  // Weekday-aware analysis: each weekday's dominant (start,end) wins by recency-
+  // weighted votes; weekdays that agree are merged, so "Gym Mon/Wed 6 PM" and
+  // "Gym Fri 8 PM" can both exist.
+  function memAnalyze(rec) {
+    var obs = (rec.obs || []).filter(function (o) {
+      if (o.temp) return false;
+      if (rec.ignoreBefore && o.date < rec.ignoreBefore) return false;
+      var db = rec.ignoreBeforeDow && rec.ignoreBeforeDow[o.dow];
+      if (db && o.date < db) return false;
+      return true;
+    });
+    var byDow = {};
+    function slotKey(o) { return Math.round(memTmin(o.start) / 15) * 15 + "|" + (o.end ? Math.round(memTmin(o.end) / 15) * 15 : "x"); }
+    obs.forEach(function (o) {
+      var k = slotKey(o);
+      var d = byDow[o.dow] || (byDow[o.dow] = { total: 0, votes: {}, count: 0 });
+      var w = memWeight(o.date);
+      d.total += w; d.count++;
+      var v = d.votes[k] || (d.votes[k] = { w: 0, n: 0, last: "", start: o.start, end: o.end });
+      v.w += w; v.n++;
+      if (o.date >= v.last) { v.last = o.date; v.start = o.start; v.end = o.end; }
+    });
+    var groups = {};
+    Object.keys(byDow).forEach(function (dow) {
+      var d = byDow[dow], best = null;
+      Object.keys(d.votes).forEach(function (k) { if (!best || d.votes[k].w > d.votes[best].w) best = k; });
+      // Decay: if the last three sightings on this weekday all agree on a different
+      // time, the recent behaviour replaces the old routine (earned gradually, never from one event).
+      var recent = obs.filter(function (o) { return String(o.dow) === String(dow); }).slice(-3);
+      if (recent.length === 3 && d.count >= 4) {
+        var rk = slotKey(recent[0]);
+        if (recent.every(function (o) { return slotKey(o) === rk; }) && rk !== best) {
+          var rw = recent.reduce(function (s, o) { return s + memWeight(o.date); }, 0);
+          best = rk;
+          d.votes[rk].w = rw;
+          d.total = rw;
+          d.count = 3;
+        }
+      }
+      var v = d.votes[best];
+      var g = groups[best] || (groups[best] = { days: [], w: 0, n: 0, total: 0, last: "", start: v.start, end: v.end });
+      g.days.push(Number(dow)); g.w += v.w; g.n += v.n; g.total += d.total;
+      if (v.last > g.last) g.last = v.last;
+    });
+    var out = Object.keys(groups).map(function (k) {
+      var g = groups[k];
+      g.agreement = g.total ? g.w / g.total : 0;
+      g.confidence = memConfidence(g.w, g.agreement, g.last, false, rec.capMedium);
+      return g;
+    });
+    var drift = [];
+    ((rec.user && rec.user.schedule) || []).forEach(function (ug) {
+      var since = ug.since || ug.confirmedAt || "";
+      var after = (rec.obs || []).filter(function (o) { return !o.temp && o.date > since && ug.days.indexOf(o.dow) !== -1; }).slice(-3);
+      if (after.length < 3) return;
+      var s0 = after[0].start, e0 = after[0].end;
+      var same = after.every(function (o) { return o.start === s0 && (o.end || "") === (e0 || ""); });
+      var differs = Math.abs(memTmin(s0) - memTmin(ug.start)) > 15 || (e0 && ug.end && Math.abs(memTmin(e0) - memTmin(ug.end)) > 15);
+      if (same && differs) drift.push({ days: ug.days, start: s0, end: e0, from: ug });
+    });
+    return { groups: out, drift: drift, evidenceDays: obs.length };
+  }
+
+  // What does this remembered item look like on a given weekday?
+  function memEffective(rec, dow) {
+    var ug = ((rec.user && rec.user.schedule) || []).filter(function (g) { return g.days.indexOf(dow) !== -1; })[0];
+    if (ug) return { start: ug.start, end: ug.end, days: ug.days, source: "you", confirmed: true, confidence: "VERY HIGH", n: 0 };
+    var a = memAnalyze(rec);
+    var g = a.groups.filter(function (x) { return x.days.indexOf(dow) !== -1; })[0];
+    if (!g) return null;
+    return { start: g.start, end: g.end, days: g.days, source: "learned", confirmed: false, confidence: g.confidence, n: g.n };
+  }
+
+  function memException(dateKey, key) {
+    var list = memExceptions().filter(function (e) { return e.date === dateKey && e.key === key; });
+    return list.length ? list[list.length - 1] : null;
+  }
+  function memAddException(key, type, start, end) {
+    var prev = memException(todayKey(), key);
+    if (prev && prev.type === type && (prev.start || null) === (start || null) && (prev.end || null) === (end || null)) return;
+    var list = memExceptions().filter(function (e) { return memDaysBetween(e.date, todayKey()) <= 14 && !(e.date === todayKey() && e.key === key); });
+    list.push({ id: uid("mx"), date: todayKey(), key: key, type: type, start: start || null, end: end || null, createdAt: new Date().toISOString() });
+    writeJSON("nc_mem_exceptions", list);
+    memLog("plan_changed", "memory", { key: key, change: type });
+  }
+  function memClearException(key) {
+    writeJSON("nc_mem_exceptions", memExceptions().filter(function (e) { return !(e.date === todayKey() && e.key === key); }));
+  }
+
+  // "What does this user normally do on this date?" Items ready to pre-fill.
+  function memSuggestionsFor(dateKey) {
+    var dow = memDow(dateKey);
+    var pats = memPatterns();
+    var items = [];
+    Object.keys(pats).forEach(function (key) {
+      var rec = pats[key];
+      if (rec.rejectedUntil && rec.rejectedUntil > dateKey) return;
+      var eff = memEffective(rec, dow);
+      if (!eff) return;
+      var lvl = memLevelIdx(eff.confidence);
+      var exc = memException(dateKey, key);
+      items.push({ key: key, label: rec.label, eff: eff, exc: exc, low: !eff.confirmed && lvl < 1 });
+    });
+    items.sort(function (a, b) { return memTmin(a.eff.start) - memTmin(b.eff.start); });
+    return items;
+  }
+
+  // Sentences match certainty: never present a guess as a fact.
+  function memPhrase(rec, eff) {
+    var when = memDaysLabel(eff.days) + ", " + memRange(eff.start, eff.end);
+    if (eff.confirmed) return "Your usual " + rec.label + ": " + when + ".";
+    var l = memLevelIdx(eff.confidence);
+    if (l >= 2) return "You usually have " + rec.label + " " + when + ".";
+    if (l === 1) return "This seems to be becoming a pattern: " + rec.label + ", " + when + ".";
+    var times = eff.n === 1 ? "once" : eff.n === 2 ? "twice" : "a few times";
+    return "You've had " + rec.label + " around " + memClock(eff.start) + " " + times + " (" + memDaysLabel(eff.days) + ").";
+  }
+
+  // ---- asking, sparingly ----
+  // One confirmation question at most per day, only for HIGH+ patterns the user
+  // hasn't confirmed, and never for something they said no to.
+  function memNextQuestion() {
+    var meta = memMeta(), today = todayKey();
+    var pats = memPatterns();
+    function candidate(key, g) { return { key: key, label: pats[key].label, days: g.days, start: g.start, end: g.end, n: g.n }; }
+    if (meta.askDate === today && meta.askKey) {
+      var k = meta.askKey.split("::")[0], rec = pats[k];
+      if (!rec) return null;
+      var g0 = memAnalyze(rec).groups.filter(function (g) { return g.days.slice().sort().join(",") === meta.askKey.split("::")[1]; })[0];
+      var covered = g0 && ((rec.user && rec.user.schedule) || []).some(function (ug) { return g0.days.every(function (d) { return ug.days.indexOf(d) !== -1; }); });
+      return g0 && !covered && !(rec.snoozeUntil && rec.snoozeUntil > today) && !(rec.rejectedUntil && rec.rejectedUntil > today) ? candidate(k, g0) : null;
+    }
+    if (meta.askDate === today) return null;
+    var best = null;
+    Object.keys(pats).forEach(function (key) {
+      var rec2 = pats[key];
+      if (rec2.rejectedUntil && rec2.rejectedUntil > today) return;
+      if (rec2.snoozeUntil && rec2.snoozeUntil > today) return;
+      memAnalyze(rec2).groups.forEach(function (g) {
+        if (memLevelIdx(g.confidence) < 2) return;
+        var done = ((rec2.user && rec2.user.schedule) || []).some(function (ug) { return g.days.every(function (d) { return ug.days.indexOf(d) !== -1; }); });
+        if (done) return;
+        if (!best || g.w > best.g.w) best = { key: key, g: g };
+      });
+    });
+    if (!best) return null;
+    meta.askDate = today;
+    meta.askKey = best.key + "::" + best.g.days.slice().sort().join(",");
+    memSaveMeta(meta);
+    return candidate(best.key, best.g);
+  }
+  function memAnswer(q, answer) {
+    var pats = memPatterns(), rec = pats[q.key], today = todayKey();
+    if (!rec) return;
+    var in14 = todayKey(new Date(Date.now() + 14 * 86400000));
+    if (answer === "yes") {
+      rec.user = rec.user || { schedule: [] };
+      rec.user.schedule = rec.user.schedule.filter(function (g) { return !g.days.some(function (d) { return q.days.indexOf(d) !== -1; }); });
+      rec.user.schedule.push({ days: q.days.slice(), start: q.start, end: q.end, confirmedAt: today, since: today });
+      rec.capMedium = false;
+      memLog("routine_confirmed", "memory", { key: q.key, days: q.days });
+    } else if (answer === "notalways") {
+      rec.snoozeUntil = in14;
+      rec.capMedium = true;
+    } else {
+      rec.rejectedUntil = todayKey(new Date(Date.now() + 60 * 86400000));
+      rec.ignoreBefore = today;
+      rec.obs = rec.obs.filter(function (o) { return o.date >= today; });
+      memLog("routine_corrected", "memory", { key: q.key, action: "rejected" });
+    }
+    var meta = memMeta(); meta.askKey = null; meta.askDate = today; memSaveMeta(meta);
+    rec.updatedAt = new Date().toISOString();
+    memSavePatterns(pats);
+  }
+
+  // ---- corrections (the user is always the authority) ----
+  // Permanent change: replaces the schedule for those days from today on. Older
+  // evidence for those days is ignored so the old routine can't win back.
+  function memCorrect(key, label, days, start, end) {
+    var pats = memPatterns();
+    var rec = pats[key] || (pats[key] = memNewRec(key, label || key));
+    var today = todayKey();
+    rec.user = rec.user || { schedule: [] };
+    rec.user.schedule = rec.user.schedule.map(function (g) {
+      return { days: g.days.filter(function (d) { return days.indexOf(d) === -1; }), start: g.start, end: g.end, confirmedAt: g.confirmedAt, since: g.since };
+    }).filter(function (g) { return g.days.length; });
+    rec.user.schedule.push({ days: days.slice(), start: start, end: end || null, confirmedAt: today, since: today });
+    rec.ignoreBeforeDow = rec.ignoreBeforeDow || {};
+    days.forEach(function (d) { rec.ignoreBeforeDow[d] = today; });
+    rec.rejectedUntil = null;
+    rec.capMedium = false;
+    rec.corrections = (rec.corrections || 0) + 1;
+    rec.updatedAt = new Date().toISOString();
+    memSavePatterns(pats);
+    memLog("routine_corrected", "memory", { key: key, days: days, start: start, end: end });
+  }
+  function memForget(key) {
+    var pats = memPatterns(), rec = pats[key];
+    if (!rec) return;
+    rec.obs = []; rec.user = null; rec.ignoreBefore = todayKey(); rec.ignoreBeforeDow = {};
+    rec.firstObservation = null; rec.lastObservation = null; rec.snoozeUntil = null; rec.capMedium = false;
+    memSavePatterns(pats);
+    memLog("routine_corrected", "memory", { key: key, action: "forgotten" });
+  }
+  function memIgnoreDerived(id) {
+    var m = memMeta(); m.ignored = m.ignored || {}; m.ignored[id] = todayKey(); memSaveMeta(m);
+  }
+  function memIgnoredSince(id) { var m = memMeta(); return m.ignored && m.ignored[id] ? m.ignored[id] : ""; }
+  function memForgetAll() {
+    var keys = [];
+    for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k.indexOf("nc_mem_") === 0) keys.push(k); }
+    keys.forEach(function (k) { localStorage.removeItem(k); });
+    memSaveMeta({ backfilled: true, resetOn: todayKey() });
+  }
+
+  // ---- natural-language corrections (plain patterns, not AI) ----
+  function memGuessMin(h, mm, ap, hint, after) {
+    if (ap) return ((h % 12) + (ap === "pm" ? 12 : 0)) * 60 + mm;
+    var cands = h === 12 ? [12 * 60 + mm, mm] : [h * 60 + mm, ((h % 12) + 12) * 60 + mm];
+    if (after !== null && after !== undefined) {
+      var later = cands.filter(function (c) { return c > after; }).sort(function (a, b) { return a - b; });
+      if (later.length) return later[0];
+    }
+    if (hint !== null && hint !== undefined) return cands.sort(function (a, b) { return Math.abs(a - hint) - Math.abs(b - hint); })[0];
+    if (h >= 7 && h <= 11) return h * 60 + mm;
+    return h === 12 ? 12 * 60 + mm : ((h % 12) + 12) * 60 + mm;
+  }
+  function memParseTimes(t, hint) {
+    var m = t.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:to|-|–|—|until|till)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+    if (m) {
+      var s = memGuessMin(+m[1], +(m[2] || 0), m[3], hint, null);
+      return { start: s, end: memGuessMin(+m[4], +(m[5] || 0), m[6], null, s) };
+    }
+    m = t.match(/(?:at|from|around|by|to)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+    if (m) return { start: memGuessMin(+m[1], +(m[2] || 0), m[3], hint, null), end: null };
+    return null;
+  }
+  function memParseCorrection(text) {
+    var t = String(text || "").toLowerCase().trim();
+    if (!t) return { ok: false, message: "Type what changed, for example “college cancelled today”." };
+    var pats = memPatterns(), found = null;
+    Object.keys(pats).forEach(function (k) {
+      var lab = (pats[k].label || k).toLowerCase();
+      if (t.indexOf(lab) !== -1 || t.indexOf(k) !== -1) { if (!found || lab.length > found.label.length) found = { key: k, label: pats[k].label || k }; }
+    });
+    var cancel = /(cancel+ed|called off|not (going|happening|today)|\bno [a-z ]+ today|is off|off today|skipping|won'?t (go|be)|holiday)/.test(t);
+    var permanent = /(permanent|from now on|always|changed to|now (it'?s|is|runs|starts|from)|new (timing|time|schedule)|timings? changed|time changed|shifted)/.test(t);
+    var today = /(today|tonight|this (morning|afternoon|evening))/.test(t);
+    var hint = null;
+    if (found) { var eff = memEffective(pats[found.key], new Date().getDay()) || (memAnalyze(pats[found.key]).groups[0]); if (eff) hint = memTmin(eff.start); }
+    var times = memParseTimes(t, hint);
+    if (!found) {
+      var nm = t.match(/^(?:my\s+)?([a-z][a-z ]{1,24}?)\s+(?:timing|time|is|now|has|will|starts?|runs?|at|from|permanently)\b/);
+      if (nm && times && permanent) found = { key: memKey(nm[1]), label: nm[1].replace(/\b\w/g, function (c) { return c.toUpperCase(); }), isNew: true };
+      else return { ok: false, message: "I couldn't tell which item you mean. Use a name NURA already knows, or say “<name> is now 10–3”." };
+    }
+    var startH = times ? memHHMM(times.start) : null, endH = times && times.end !== null ? memHHMM(times.end) : null;
+    if (cancel && !times) return { ok: true, key: found.key, label: found.label, action: "cancel" };
+    if (!times) return { ok: false, message: "Tell me the time too, for example “" + found.label + " is now 10–3”." };
+    if (permanent) return { ok: true, key: found.key, label: found.label, action: "permanent", start: startH, end: endH };
+    if (today) return { ok: true, key: found.key, label: found.label, action: "today", start: startH, end: endH };
+    return { ok: true, key: found.key, label: found.label, action: "ask", start: startH, end: endH };
+  }
+  function memApplyCorrection(res, scope) {
+    var action = scope || res.action;
+    var pats = memPatterns(), rec = pats[res.key];
+    var dow = new Date().getDay();
+    if (action === "cancel") { memAddException(res.key, "cancelled"); return res.label + " is off for today. Your normal routine is unchanged."; }
+    var eff = rec ? memEffective(rec, dow) : null;
+    var end = res.end || (eff ? eff.end : null);
+    if (action === "today") { memAddException(res.key, "changed", res.start, end); return res.label + " today: " + memRange(res.start, end) + ". Your normal routine is unchanged."; }
+    var days = eff ? eff.days : (dow === 0 || dow === 6 ? [0, 6] : [1, 2, 3, 4, 5]);
+    memCorrect(res.key, res.label, days, res.start, end);
+    return "Updated. " + res.label + " is now " + memDaysLabel(days) + ", " + memRange(res.start, end) + ".";
+  }
+
+  // ---- other patterns, all computed from real saved activity ----
+  function memWeightedMode(items, roundTo) {
+    var votes = {}, total = 0, dates = {};
+    items.forEach(function (it) {
+      var k = Math.round(it.min / roundTo) * roundTo;
+      var w = memWeight(it.date);
+      votes[k] = (votes[k] || 0) + w; total += w; dates[it.date] = true;
+    });
+    var best = null;
+    Object.keys(votes).forEach(function (k) { if (best === null || votes[k] > votes[best]) best = k; });
+    if (best === null) return null;
+    var last = ""; items.forEach(function (it) { if (it.date > last) last = it.date; });
+    return { min: Number(best), w: votes[best], agree: total ? votes[best] / total : 0, days: Object.keys(dates).length, last: last };
+  }
+  function memWakeSleep() {
+    var ev = memEvents();
+    var wakeSince = memIgnoredSince("wake"), sleepSince = memIgnoredSince("sleep");
+    var wake = [], sleep = [];
+    ev.forEach(function (e) {
+      if (e.data && typeof e.data.min === "number") {
+        if (e.type === "wake_recorded" && e.date >= wakeSince) wake.push({ date: e.date, min: e.data.min });
+        if (e.type === "sleep_started" && e.date >= sleepSince) sleep.push({ date: e.date, min: e.data.min < 240 ? e.data.min + 1440 : e.data.min });
+      }
+    });
+    function mk(list) {
+      var m = memWeightedMode(list, 30);
+      if (!m || m.w < 3) return null;
+      m.confidence = memConfidence(m.w, m.agree, m.last, false, false);
+      return m;
+    }
+    return { wake: mk(wake), sleep: mk(sleep) };
+  }
+
+  // Study sessions from the existing daily-priority log: completion rate by length.
+  function memStudyStats() {
+    var since = memIgnoredSince("study");
+    var log = memArr("nc_priority_log").filter(function (e) { return e && e.planKey === "study" && e.minutes && (!since || e.date >= since); });
+    function bucket(min) { return min <= 25 ? "short" : min <= 45 ? "medium" : "long"; }
+    var b = { short: { n: 0, done: 0, full: 0, part: 0, mins: {} }, medium: { n: 0, done: 0, full: 0, part: 0, mins: {} }, long: { n: 0, done: 0, full: 0, part: 0, mins: {} } };
+    function fmt(x) { return x.full + " of " + x.n + (x.part ? " (plus " + x.part + " partly)" : ""); }
+    log.forEach(function (e) {
+      var x = b[bucket(e.minutes)];
+      x.n++;
+      if (e.status === "completed") x.full++; else if (e.status === "partial") x.part++;
+      x.done += e.status === "completed" ? 1 : e.status === "partial" ? 0.5 : 0;
+      x.mins[e.minutes] = (x.mins[e.minutes] || 0) + 1;
+    });
+    var out = { total: log.length, buckets: b, pref: null, insight: null };
+    Object.keys(b).forEach(function (k) {
+      var x = b[k], rep = null;
+      Object.keys(x.mins).forEach(function (m) { if (rep === null || x.mins[m] > x.mins[rep]) rep = m; });
+      x.rep = rep ? Number(rep) : null;
+      x.rate = x.n ? x.done / x.n : 0;
+    });
+    var ranked = Object.keys(b).filter(function (k) { return b[k].n >= 3; }).sort(function (a, c) { return b[c].rate - b[a].rate; });
+    if (ranked.length >= 2 && b[ranked[0]].rate >= 0.6 && b[ranked[0]].rate - b[ranked[1]].rate >= 0.2) {
+      var top = ranked[0], other = ranked[1];
+      out.pref = { minutes: b[top].rep, bucket: top };
+      out.insight = "You completed " + fmt(b[top]) + " study sessions of about " + b[top].rep + " min, compared with " + fmt(b[other]) + " sessions of about " + b[other].rep + " min.";
+    }
+    return out;
+  }
+
+  function memHourBucket(h) { return h >= 5 && h < 12 ? "morning" : h >= 12 && h < 17 ? "afternoon" : h >= 17 && h < 21 ? "evening" : "night"; }
+  function memProductiveTime() {
+    var since = memIgnoredSince("productive");
+    var counts = { morning: 0, afternoon: 0, evening: 0, night: 0 }, total = 0;
+    memEvents().forEach(function (e) {
+      if (since && e.date < since) return;
+      var ok = e.type === "task_completed" || (e.type === "personal_growth_completed" && e.data && e.data.result !== "couldnt");
+      if (!ok) return;
+      counts[memHourBucket(new Date(e.ts).getHours())]++; total++;
+    });
+    if (total < 6) return null;
+    var best = null;
+    Object.keys(counts).forEach(function (k) { if (best === null || counts[k] > counts[best]) best = k; });
+    return counts[best] / total >= 0.5 ? { bucket: best, n: counts[best], total: total } : null;
+  }
+  function memSkipPattern() {
+    var since = memIgnoredSince("skips");
+    var counts = { morning: 0, afternoon: 0, evening: 0, night: 0 }, total = 0;
+    memEvents().forEach(function (e) {
+      if (e.type !== "task_skipped" || !e.data || typeof e.data.startMin !== "number" || (since && e.date < since)) return;
+      counts[memHourBucket(Math.floor(e.data.startMin / 60))]++; total++;
+    });
+    if (total < 4) return null;
+    var best = null;
+    Object.keys(counts).forEach(function (k) { if (best === null || counts[k] > counts[best]) best = k; });
+    return counts[best] / total >= 0.6 ? { bucket: best, n: counts[best], total: total } : null;
+  }
+  function memPgPatterns() {
+    var since = memIgnoredSince("growth");
+    var h = memArr("nc_pg_history").filter(function (e) { return (e.status === "completed" || e.status === "partial") && (!since || e.date >= since); });
+    var days = {}; h.forEach(function (e) { days[e.date] = true; });
+    var dates = Object.keys(days).sort();
+    var out = { weekdayShare: null, afterMiss: null, total: dates.length };
+    if (dates.length >= 6) {
+      var wd = dates.filter(function (d) { var x = memDow(d); return x >= 1 && x <= 5; }).length;
+      out.weekdayShare = { weekday: wd, total: dates.length };
+      var missed = 0, alsoMissed = 0;
+      var d0 = dates[0], last = todayKey();
+      for (var d = d0; memDaysBetween(d, last) >= 2; d = memAddDaysKey(d, 1)) {
+        if (days[d]) continue;
+        var nx = memAddDaysKey(d, 1);
+        missed++;
+        if (!days[nx]) alsoMissed++;
+      }
+      if (missed >= 4 && alsoMissed / missed >= 0.6) out.afterMiss = { missed: missed, alsoMissed: alsoMissed };
+    }
+    return out;
+  }
+  function memAddDaysKey(key, n) { var d = new Date(key + "T12:00:00"); d.setDate(d.getDate() + n); return todayKey(d); }
+
+  function memPlanTiming() {
+    var c = { morning: 0, other: 0 };
+    memEvents().forEach(function (e) {
+      if (e.type !== "plan_created") return;
+      var h = new Date(e.ts).getHours();
+      if (h >= 4 && h < 12) c.morning++; else c.other++;
+    });
+    var n = c.morning + c.other;
+    return n >= 4 ? { morning: c.morning, total: n } : null;
+  }
+
+  // Short, data-backed notes for the weekly report. Empty unless evidence exists.
+  function memWeeklyInsights() {
+    var out = [];
+    var st = memStudyStats();
+    if (st.insight) out.push(st.insight);
+    var weekKeys = {}; getLastNDateKeys(7).forEach(function (k) { weekKeys[k] = true; });
+    var late = { done: 0, skipped: 0 };
+    memEvents().forEach(function (e) {
+      if (!weekKeys[e.date] || !e.data || typeof e.data.startMin !== "number" || e.data.startMin < 20 * 60) return;
+      if (e.type === "task_completed") late.done++;
+      if (e.type === "task_skipped") late.skipped++;
+    });
+    if (late.done + late.skipped >= 3) out.push("You completed " + late.done + " of " + (late.done + late.skipped) + " planned tasks scheduled after 8 PM this week.");
+    return out.slice(0, 3);
+  }
+
+  function memStudyHint() {
+    var st = memStudyStats();
+    if (st.pref) return "Suggested: " + st.pref.minutes + " min. " + st.insight;
+    var best = null;
+    ["short", "medium", "long"].forEach(function (k) { var x = st.buckets[k]; if (x.n >= 3 && x.rate >= 0.6 && (!best || x.rate > st.buckets[best].rate)) best = k; });
+    if (best) return "You completed " + st.buckets[best].full + " of " + st.buckets[best].n + " sessions of about " + st.buckets[best].rep + " min.";
+    return null;
+  }
+
+  // Personal Growth: only when today's context is well known.
+  function memPgContext(track) {
+    if (["confidence", "social", "communication", "courage"].indexOf(track) === -1) return null;
+    var items = memSuggestionsFor(todayKey());
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      if (!/college|school|class|university|work|office|tuition/.test(it.key)) continue;
+      if (it.exc && it.exc.type === "cancelled") continue;
+      if (!(it.eff.confirmed || memLevelIdx(it.eff.confidence) >= 2)) continue;
+      return "Today you have " + it.label + " (" + memRange(it.eff.start, it.eff.end) + "), a natural place to try this.";
+    }
+    return null;
+  }
+
+  // ---- profile + runner ----
+  function memLearningDays() {
+    var d = {};
+    memEvents().forEach(function (e) { d[e.date] = true; });
+    var pats = memPatterns();
+    Object.keys(pats).forEach(function (k) { pats[k].obs.forEach(function (o) { if (!o.temp) d[o.date] = true; }); });
+    return Object.keys(d).length;
+  }
+
+  function memBuildProfile() {
+    var pats = memPatterns();
+    var routine = [];
+    Object.keys(pats).forEach(function (k) {
+      var rec = pats[k], a = memAnalyze(rec);
+      var confirmed = ((rec.user && rec.user.schedule) || []).map(function (g) { return { days: g.days, start: g.start, end: g.end, userConfirmed: true, source: "user", confidence: "VERY HIGH", since: g.since }; });
+      var learned = a.groups.filter(function (g) { return !confirmed.some(function (c) { return g.days.every(function (d) { return c.days.indexOf(d) !== -1; }); }); })
+        .map(function (g) { return { days: g.days, start: g.start, end: g.end, userConfirmed: false, source: "inferred", confidence: g.confidence, evidenceCount: g.n }; });
+      if (!confirmed.length && !learned.length) return;
+      routine.push({ key: k, label: rec.label, schedules: confirmed.concat(learned), firstObservation: rec.firstObservation, lastObservation: rec.lastObservation, evidenceCount: a.evidenceDays, corrections: rec.corrections || 0 });
+    });
+    var ws = memWakeSleep(), study = memStudyStats(), prod = memProductiveTime(), skips = memSkipPattern(), pg = memPgPatterns();
+    var prof = readJSON("nc_pg_profile", null);
+    var goals = getMoneyGoals().map(function (g) { return { type: "savings", name: g.name, target: g.targetAmount, saved: g.currentSavedAmount }; });
+    if (prof && prof.currentFocus) goals.push({ type: "personalGrowth", name: gwTrack(prof.currentFocus) ? gwTrack(prof.currentFocus).label : prof.currentFocus });
+    var meta = memMeta();
+    var profile = {
+      identity: { preferredName: localStorage.getItem("nc_user_name") || null, preferredLanguage: "English", communicationStyle: null },
+      routinePatterns: { commitments: routine, wake: ws.wake ? { time: memHHMM(ws.wake.min), confidence: ws.wake.confidence } : null, sleep: ws.sleep ? { time: memHHMM(ws.sleep.min), confidence: ws.sleep.confidence } : null },
+      goals: goals,
+      personalGrowth: prof ? { currentFocus: prof.currentFocus || null, completedChallenges: prof.completedChallenges || 0, challengeLevel: prof.trackLevels && prof.currentFocus ? prof.trackLevels[prof.currentFocus] : null } : null,
+      behaviorPatterns: { productiveTime: prod, skipPeriod: skips, growthWeekdays: pg.weekdayShare, afterMissedDay: pg.afterMiss },
+      preferences: { studySession: study.pref, planningTime: memPlanTiming() },
+      memoryMetadata: { firstObservation: meta.firstEvent || null, evidenceCount: memEvents().length, learningDays: memLearningDays(), lastUpdated: new Date().toISOString() }
+    };
+    writeJSON("nc_mem_profile", profile);
+    return profile;
+  }
+
+  function memRun() {
+    memBackfill();
+    var ev = memEvents();
+    if (ev.length && memDaysBetween(ev[0].date, todayKey()) > 180) writeJSON("nc_mem_events", ev.filter(function (e) { return memDaysBetween(e.date, todayKey()) <= 180; }));
+    var pats = memPatterns(), changed = false;
+    Object.keys(pats).forEach(function (k) {
+      var before = pats[k].obs.length;
+      pats[k].obs = pats[k].obs.filter(function (o) { return memDaysBetween(o.date, todayKey()) <= 120; });
+      if (pats[k].obs.length !== before) changed = true;
+      if (!pats[k].obs.length && !(pats[k].user && pats[k].user.schedule && pats[k].user.schedule.length) && !pats[k].ignoreBefore) { delete pats[k]; changed = true; }
+    });
+    if (changed) memSavePatterns(pats);
+    return memBuildProfile();
+  }
+
+  // ---- shared small builders ----
+  function meEl(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  function meBtn(label, cls, fn) { var b = meEl("button", cls, label); b.type = "button"; b.addEventListener("click", fn); return b; }
+
+  function meQuestionCard(q, onDone) {
+    var box = meEl("div", "money-wait-banner");
+    box.appendChild(meEl("p", "", "I've noticed you usually have " + q.label + " " + memDaysLabel(q.days) + ", " + memRange(q.start, q.end) + ". Should I remember this as your normal schedule?")).style.margin = "0 0 8px";
+    var row = meEl("div", "money-quick-actions");
+    row.style.margin = "0";
+    row.appendChild(meBtn("Yes, remember", "action-btn primary", function () { memAnswer(q, "yes"); showToast("Remembered"); onDone(); }));
+    row.appendChild(meBtn("Not always", "action-btn", function () { memAnswer(q, "notalways"); onDone(); }));
+    row.appendChild(meBtn("No", "action-btn", function () { memAnswer(q, "no"); onDone(); }));
+    box.appendChild(row);
+    return box;
+  }
+
+  function meDriftCard(rec, d, onDone) {
+    var box = meEl("div", "money-wait-banner");
+    box.appendChild(meEl("p", "", "Your " + rec.label + " times seem to have changed to " + memRange(d.start, d.end) + " (" + memDaysLabel(d.days) + "). Update?")).style.margin = "0 0 8px";
+    var row = meEl("div", "money-quick-actions");
+    row.style.margin = "0";
+    row.appendChild(meBtn("Yes, update", "action-btn primary", function () { memCorrect(rec.key, rec.label, d.days, d.start, d.end); onDone(); }));
+    row.appendChild(meBtn("No, keep the old one", "action-btn", function () {
+      var pats = memPatterns();
+      (pats[rec.key].user.schedule || []).forEach(function (g) { if (g.days.join() === d.from.days.join()) g.since = todayKey(); });
+      memSavePatterns(pats); onDone();
+    }));
+    box.appendChild(row);
+    return box;
+  }
+
+  function meTellBox(onDone) {
+    var wrap = meEl("div", "");
+    var input = meEl("input", "text-input");
+    input.type = "text";
+    input.placeholder = "e.g. college cancelled today, or college is now 10–3";
+    wrap.appendChild(input);
+    var msg = meEl("p", "muted-line");
+    msg.style.margin = "4px 0";
+    var row = meEl("div", "money-quick-actions");
+    var apply = meBtn("Apply", "action-btn primary", function () {
+      var res = memParseCorrection(input.value);
+      if (!res.ok) { msg.textContent = res.message; return; }
+      if (res.action === "ask") {
+        msg.textContent = res.label + " " + memRange(res.start, res.end) + " — just today, or always?";
+        row.innerHTML = "";
+        row.appendChild(meBtn("Today only", "action-btn primary", function () { showToast(memApplyCorrection(res, "today")); onDone(); }));
+        row.appendChild(meBtn("Always", "action-btn", function () { showToast(memApplyCorrection(res, "permanent")); onDone(); }));
+        return;
+      }
+      showToast(memApplyCorrection(res));
+      onDone();
+    });
+    row.appendChild(apply);
+    wrap.appendChild(input);
+    wrap.appendChild(msg);
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  // ---- Plan My Day: "your usual day" ----
+  var planMem = null;
+
+  function planMemInit() {
+    var items = memSuggestionsFor(todayKey());
+    planMem = { date: todayKey(), rows: items.map(function (it) {
+      var mode = it.exc ? (it.exc.type === "cancelled" ? "cancel" : "change") : (it.low ? "off" : "keep");
+      return { key: it.key, label: it.label, start: it.eff.start, end: it.eff.end, cs: it.exc && it.exc.start ? it.exc.start : it.eff.start, ce: it.exc && it.exc.end ? it.exc.end : it.eff.end, mode: mode, confirmed: it.eff.confirmed, level: memLevelIdx(it.eff.confidence), low: it.low, editing: false };
+    }) };
+  }
+
+  function planMemBuildActivities(rows) {
+    var acts = [];
+    rows.forEach(function (r) {
+      if (r.mode === "keep" || r.mode === "change") {
+        var s = r.mode === "change" ? r.cs : r.start, e = r.mode === "change" ? r.ce : r.end;
+        if (!e) e = memHHMM(memTmin(s) + 60);
+        acts.push({ id: uid("plan"), name: r.label, mode: "fixed", status: "pending", category: "dunya", startTime: s, endTime: e, prepMinutes: 0, travelBeforeMinutes: 0, travelAfterMinutes: 0 });
+      }
+    });
+    return acts;
+  }
+
+  function planMemRecord(rows) {
+    rows.forEach(function (r) {
+      if (r.mode === "cancel") memAddException(r.key, "cancelled");
+      else if (r.mode === "change") { memAddException(r.key, "changed", r.cs, r.ce); memObserve(r.label, todayKey(), r.cs, r.ce, true); }
+      else if (r.mode === "keep") memObserve(r.label, todayKey(), r.start, r.end, false);
+    });
+  }
+
+  function planMemDayWindow() {
+    var ws = memWakeSleep();
+    var ds = ws.wake ? memHHMM(ws.wake.min) : "06:00";
+    var de = ws.sleep ? memHHMM(Math.min(ws.sleep.min, 1439)) : "23:00";
+    if (planTimeToMinutes(de) <= planTimeToMinutes(ds)) de = "23:00";
+    return { dayStart: ds, dayEnd: de };
+  }
+
+  function renderPlanMemoryCard(content) {
+    memRun();
+    var q = memNextQuestion();
+    if (q) content.appendChild(meQuestionCard(q, renderDuniyaPlan));
+    var pats = memPatterns();
+    Object.keys(pats).forEach(function (k) {
+      memAnalyze(pats[k]).drift.forEach(function (d) { content.appendChild(meDriftCard(pats[k], d, renderDuniyaPlan)); });
+    });
+    if (!planMem || planMem.date !== todayKey()) planMemInit();
+    var rows = planMem.rows;
+    if (!rows.length) {
+      if (memLearningDays() < 10) {
+        var l = meEl("p", "muted-line", "NURA is learning your routine. The more you plan, the less you'll need to type.");
+        l.style.marginBottom = "12px";
+        content.appendChild(l);
+      }
+      return false;
+    }
+    var usual = rows.some(function (r) { return !r.low; });
+    content.appendChild(meEl("h2", "", usual ? "Your usual day" : "A suggestion from what NURA has noticed"));
+    var list = meEl("div", "");
+    rows.forEach(function (r) {
+      var card = meEl("div", "money-habit-card");
+      var shownS = r.mode === "change" ? r.cs : r.start, shownE = r.mode === "change" ? r.ce : r.end;
+      card.appendChild(meEl("p", "name", r.label + " — " + memRange(shownS, shownE)));
+      var tag = r.confirmed ? "Usual schedule" : r.level >= 2 ? "Usual, learned from your plans" : r.level === 1 ? "Seems to be a pattern" : "You've had this a few times. Use it today?";
+      card.appendChild(meEl("p", "cost-line", r.mode === "cancel" ? "Not today (your normal routine stays)" : tag));
+      var row = meEl("div", "money-quick-actions");
+      row.appendChild(meBtn(r.low ? "Use today" : "Keep", "action-btn" + (r.mode === "keep" ? " primary" : ""), function () { r.mode = "keep"; r.editing = false; renderDuniyaPlan(); }));
+      row.appendChild(meBtn("Change today", "action-btn" + (r.mode === "change" ? " primary" : ""), function () { r.editing = true; renderDuniyaPlan(); }));
+      row.appendChild(meBtn(r.low ? "No" : "Not today", "action-btn" + (r.mode === "cancel" || (r.low && r.mode === "off") ? " primary" : ""), function () { r.mode = r.low ? "off" : "cancel"; r.editing = false; renderDuniyaPlan(); }));
+      card.appendChild(row);
+      if (r.editing) {
+        var er = meEl("div", "plan-form-row");
+        var si = meEl("input", "text-input"); si.type = "time"; si.value = r.cs || r.start;
+        var ei = meEl("input", "text-input"); ei.type = "time"; ei.value = r.ce || r.end || "";
+        er.appendChild(si); er.appendChild(ei);
+        er.appendChild(meBtn("Set", "action-btn primary", function () {
+          if (!si.value) { showToast("Choose a start time"); return; }
+          r.cs = si.value; r.ce = ei.value || null; r.mode = "change"; r.editing = false; renderDuniyaPlan();
+        }));
+        card.appendChild(er);
+      }
+      list.appendChild(card);
+    });
+    content.appendChild(list);
+
+    var tell = meEl("div", "");
+    tell.appendChild(meEl("p", "muted-line", "Anything different today?"));
+    content.appendChild(tell);
+    content.appendChild(meTellBox(function () { planMem = null; renderDuniyaPlan(); }));
+
+    var build = meBtn("Build my day", "btn btn-primary btn-full", function () {
+      var acts = planMemBuildActivities(rows);
+      var win = planMemDayWindow();
+      planMemRecord(rows);
+      savePlanActivities(acts);
+      savePlanSettings({ dayStart: win.dayStart, dayEnd: win.dayEnd, sunnahEnabled: readJSON("nc_plan_sunnah_defaults", {}), bufferStyle: "normal", priorities: { top3: [], mustNotMiss: null }, orderRules: [], note: "" });
+      memLog("plan_created", "plan", { source: "memory", fixed: acts.length, cancelled: rows.filter(function (r) { return r.mode === "cancel"; }).length });
+      planMem = null;
+      runBuildMyDay();
+    });
+    build.style.marginTop = "10px";
+    content.appendChild(build);
+    content.appendChild(meBtn("Add something else / plan from scratch", "btn btn-outline btn-full", function () {
+      var acts = planMemBuildActivities(rows);
+      var win = planMemDayWindow();
+      planMemRecord(rows);
+      startPlanWizard();
+      planWizard.data.fixedActivities = acts;
+      planWizard.data.dayStart = win.dayStart;
+      planWizard.data.dayEnd = win.dayEnd;
+      planWizard.step = 3;
+      planMem = null;
+      renderDuniyaPlan();
+    }));
+    var sep = meEl("div", "");
+    sep.style.height = "8px";
+    content.appendChild(sep);
+    return true;
+  }
+
+  // ---- What NURA Knows About Me ----
+  var meView = { editing: null };
+
+  function meConfLabel(eff) {
+    if (eff.confirmed) return "You confirmed this";
+    return eff.confidence.charAt(0) + eff.confidence.slice(1).toLowerCase() + " confidence";
+  }
+
+  function meSection(content, title) {
+    var h = meEl("h2", "", title);
+    h.style.marginTop = "18px";
+    content.appendChild(h);
+  }
+
+  function renderMemory() {
+    var content = document.getElementById("memory-content");
+    if (!content) return;
+    content.innerHTML = "";
+    var profile = memRun();
+    var days = profile.memoryMetadata.learningDays;
+    var pats = memPatterns();
+    var keys = Object.keys(pats).filter(function (k) { return memAnalyze(pats[k]).groups.length || (pats[k].user && pats[k].user.schedule && pats[k].user.schedule.length); });
+
+    content.appendChild(meEl("p", "muted-line", days < 10 || !keys.length
+      ? "NURA is learning your routine. So far it has seen " + days + " day" + (days === 1 ? "" : "s") + " of activity. Learning speed depends on how much you use NURA."
+      : "Based on " + days + " days of your activity inside NURA. Everything here is yours to edit or forget."));
+
+    var q = memNextQuestion();
+    if (q) content.appendChild(meQuestionCard(q, renderMemory));
+    keys.forEach(function (k) { memAnalyze(pats[k]).drift.forEach(function (d) { content.appendChild(meDriftCard(pats[k], d, renderMemory)); }); });
+
+    meSection(content, "Tell NURA about a change");
+    content.appendChild(meTellBox(renderMemory));
+
+    meSection(content, "Routine");
+    if (!keys.length) content.appendChild(meEl("p", "muted-line", "Nothing yet. When you tell Plan My Day about fixed activities like college or gym, NURA starts noticing patterns."));
+    keys.forEach(function (k) {
+      var rec = pats[k], a = memAnalyze(rec);
+      var effs = [];
+      ((rec.user && rec.user.schedule) || []).forEach(function (g) { effs.push({ days: g.days, start: g.start, end: g.end, confirmed: true, confidence: "VERY HIGH", n: 0 }); });
+      a.groups.forEach(function (g) { if (!effs.some(function (e) { return g.days.every(function (d) { return e.days.indexOf(d) !== -1; }); })) effs.push({ days: g.days, start: g.start, end: g.end, confirmed: false, confidence: g.confidence, n: g.n }); });
+      var card = meEl("div", "money-habit-card");
+      card.appendChild(meEl("p", "name", rec.label));
+      effs.forEach(function (e) {
+        card.appendChild(meEl("p", "cost-line", memPhrase(rec, e)));
+        card.appendChild(meEl("p", "cost-line", meConfLabel(e) + (e.n ? " · based on " + e.n + " matching day" + (e.n === 1 ? "" : "s") : "") + (rec.lastObservation ? " · last seen " + gwFmtDate(rec.lastObservation) : "")));
+      });
+      var exc = memException(todayKey(), k);
+      if (exc) card.appendChild(meEl("p", "cost-line", "Today: " + (exc.type === "cancelled" ? "not happening" : "changed to " + memRange(exc.start, exc.end)) + " (temporary)."));
+      var row = meEl("div", "money-quick-actions");
+      var unconfirmed = effs.filter(function (e) { return !e.confirmed && memLevelIdx(e.confidence) >= 1; })[0];
+      if (unconfirmed) row.appendChild(meBtn("Confirm", "action-btn primary", function () { memAnswer({ key: k, days: unconfirmed.days, start: unconfirmed.start, end: unconfirmed.end }, "yes"); renderMemory(); }));
+      row.appendChild(meBtn("Edit", "action-btn", function () { meView.editing = k; renderMemory(); }));
+      if (exc) row.appendChild(meBtn("Undo today's change", "action-btn", function () { memClearException(k); renderMemory(); }));
+      row.appendChild(meBtn("Forget", "action-btn", function () {
+        if (!window.confirm("Forget what NURA has learned about " + rec.label + "?")) return;
+        memForget(k); renderMemory();
+      }));
+      card.appendChild(row);
+      if (meView.editing === k) {
+        var base = effs[0];
+        var sel = base.days.slice();
+        var form = meEl("div", "");
+        var chips = meEl("div", "money-quick-actions");
+        MEM_DAYS.forEach(function (dn, i) {
+          var chip = meBtn(dn, "preset-plan-chip" + (sel.indexOf(i) !== -1 ? " active-chip" : ""), function () {
+            var at = sel.indexOf(i); if (at === -1) sel.push(i); else sel.splice(at, 1);
+            chip.classList.toggle("active-chip");
+          });
+          chips.appendChild(chip);
+        });
+        var tr = meEl("div", "plan-form-row");
+        var si = meEl("input", "text-input"); si.type = "time"; si.value = base.start;
+        var ei = meEl("input", "text-input"); ei.type = "time"; ei.value = base.end || "";
+        tr.appendChild(si); tr.appendChild(ei);
+        form.appendChild(chips); form.appendChild(tr);
+        var saveRow = meEl("div", "money-quick-actions");
+        saveRow.appendChild(meBtn("Save correction", "action-btn primary", function () {
+          if (!si.value || !sel.length) { showToast("Choose days and a start time"); return; }
+          memCorrect(k, rec.label, sel.slice(), si.value, ei.value || null);
+          meView.editing = null; renderMemory();
+        }));
+        saveRow.appendChild(meBtn("Cancel", "action-btn", function () { meView.editing = null; renderMemory(); }));
+        form.appendChild(saveRow);
+        card.appendChild(form);
+      }
+      content.appendChild(card);
+    });
+
+    // things learned from other activity
+    var items = [];
+    var ws = profile.routinePatterns;
+    if (ws.wake) items.push({ id: "wake", text: "Usual wake time: around " + memClock(ws.wake.time) + ".", conf: ws.wake.confidence });
+    if (ws.sleep) items.push({ id: "sleep", text: "Usual sleep time: around " + memClock(ws.sleep.time) + ".", conf: ws.sleep.confidence });
+    var st = memStudyStats();
+    if (st.pref) items.push({ id: "study", text: "Study sessions of about " + st.pref.minutes + " minutes work best for you.", conf: "MEDIUM", why: st.insight });
+    var pt = profile.preferences.planningTime;
+    if (pt && (pt.morning / pt.total >= 0.7)) items.push({ id: "plan", text: "You usually plan your day in the morning (" + pt.morning + " of " + pt.total + " times).", conf: "MEDIUM" });
+    var prod = profile.behaviorPatterns.productiveTime;
+    if (prod) items.push({ id: "productive", text: "You usually complete things in the " + prod.bucket + " (" + prod.n + " of " + prod.total + ").", conf: "MEDIUM" });
+    var sk = profile.behaviorPatterns.skipPeriod;
+    if (sk) items.push({ id: "skips", text: "Tasks planned in the " + sk.bucket + " get skipped more often (" + sk.n + " of " + sk.total + " skips).", conf: "MEDIUM" });
+    var gp = profile.behaviorPatterns.growthWeekdays;
+    if (gp && gp.weekday / gp.total >= 0.8) items.push({ id: "growth", text: "You mostly complete Personal Growth actions on weekdays (" + gp.weekday + " of " + gp.total + " days).", conf: "MEDIUM" });
+    var am = profile.behaviorPatterns.afterMissedDay;
+    if (am) items.push({ id: "growth", text: "After a missed Personal Growth day, the next day is often missed too (" + am.alsoMissed + " of " + am.missed + ").", conf: "MEDIUM" });
+    meSection(content, "Habits and patterns");
+    if (!items.length) content.appendChild(meEl("p", "muted-line", "No patterns yet. These appear only when there is real evidence, never from a single event."));
+    items.forEach(function (it) {
+      var card = meEl("div", "money-habit-card");
+      card.appendChild(meEl("p", "name", it.text));
+      if (it.why) card.appendChild(meEl("p", "cost-line", "Why: " + it.why));
+      var row = meEl("div", "money-quick-actions");
+      row.appendChild(meBtn("Forget", "action-btn", function () { memIgnoreDerived(it.id); renderMemory(); }));
+      card.appendChild(row);
+      content.appendChild(card);
+    });
+
+    meSection(content, "Goals");
+    if (!profile.goals.length) content.appendChild(meEl("p", "muted-line", "No active goals yet."));
+    profile.goals.forEach(function (g) {
+      content.appendChild(meEl("p", "muted-line", g.type === "savings" ? "Saving for " + g.name + ": " + fmtRupee(g.saved) + " of " + fmtRupee(g.target) : "Personal Growth focus: " + g.name));
+    });
+
+    var insights = memWeeklyInsights();
+    if (insights.length) {
+      meSection(content, "NURA noticed this week");
+      insights.forEach(function (s) { content.appendChild(meEl("p", "muted-line", s)); });
+    }
+
+    meSection(content, "What NURA does not track");
+    content.appendChild(meEl("p", "muted-line", "Only your activity inside NURA. Never your messages, photos, browsing, microphone, camera, contacts or other apps. It all stays on this device and works without internet."));
+    var wipe = meBtn("Forget everything NURA has learned", "priority-change-link", function () {
+      if (!window.confirm("Forget everything NURA has learned about you? Your plans, goals and other data stay. Only the learned patterns are removed.")) return;
+      memForgetAll(); planMem = null; renderMemory(); showToast("Forgotten");
+    });
+    wipe.style.marginTop = "12px";
+    content.appendChild(wipe);
+  }
+
+  function initMemory() {
+    document.getElementById("open-memory-btn").addEventListener("click", function () { meView = { editing: null }; setActiveView("memory"); });
+    document.getElementById("memory-back").addEventListener("click", function () { setActiveView("more"); });
+  }
+
   // ---------- PLAN MY DAY ----------
   // A real, deterministic day-scheduling engine (locked/fixed activities,
   // gap detection, priority-ordered flexible placement, conflict
@@ -8170,6 +9148,7 @@
       var past = built.timeline.filter(function (e) { return e.endMin <= nowMin; });
       result.timeline = past.concat(result.timeline);
       savePlanBuilt(result);
+      memLog("plan_changed", "plan", { change: "adjusted remaining day" });
       renderDuniyaPlan();
       showToast("Remaining day adjusted");
     };
@@ -8184,6 +9163,12 @@
     var activities = getPlanActivities();
     activities.forEach(function (a) { if (a.id === activityId) a.status = status; });
     savePlanActivities(activities);
+    var builtForMem = getPlanBuilt();
+    var actForMem = activities.filter(function (a) { return a.id === activityId; })[0];
+    var slot = builtForMem ? builtForMem.timeline.filter(function (e) { return e.refId === activityId; })[0] : null;
+    if (actForMem && (status === "done" || status === "skipped")) {
+      memLog(status === "done" ? "task_completed" : "task_skipped", "plan", { name: actForMem.name, startMin: slot ? slot.startMin : null });
+    }
     var built = getPlanBuilt();
     if (built) {
       built.timeline.forEach(function (e) { if (e.refId === activityId) e.status = status; });
@@ -8760,6 +9745,8 @@
     };
     savePlanSettings(settings);
     planWizard = null;
+    activities.forEach(function (a) { if (a.mode === "fixed" && a.startTime) memObserve(a.name, todayKey(), a.startTime, a.endTime, false); });
+    memLog("plan_created", "plan", { source: "wizard", fixed: activities.filter(function (a) { return a.mode === "fixed"; }).length, flexible: activities.filter(function (a) { return a.mode === "flexible"; }).length });
     runBuildMyDay();
   }
 
@@ -8812,9 +9799,10 @@
       return;
     }
 
+    var memShown = renderPlanMemoryCard(content);
     var createBtn = document.createElement("button");
-    createBtn.className = "btn btn-primary btn-full";
-    createBtn.textContent = "Create Today's Plan";
+    createBtn.className = memShown ? "priority-change-link" : "btn btn-primary btn-full";
+    createBtn.textContent = memShown ? "Create today's plan from scratch instead" : "Create Today's Plan";
     createBtn.addEventListener("click", startPlanWizard);
     content.appendChild(createBtn);
   }
@@ -8856,6 +9844,8 @@
     initDuniyaMoney();
     initPhoneGuard();
     initRecovery();
+    initMemory();
+    try { memRun(); } catch (e) {}
     initDuniyaGrowth();
     initDuniyaPlan();
     renderHome();
