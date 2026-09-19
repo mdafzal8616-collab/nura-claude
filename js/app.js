@@ -868,6 +868,15 @@
       weekEl.appendChild(row);
     });
 
+    gwProgressRows().forEach(function (r) {
+      var row = document.createElement("div");
+      row.className = "progress-detail-row";
+      var l = document.createElement("span"); l.className = "progress-detail-label"; l.textContent = r.label;
+      var v = document.createElement("span"); v.className = "progress-detail-value"; v.textContent = r.value;
+      row.appendChild(l); row.appendChild(v);
+      weekEl.appendChild(row);
+    });
+
     rcProgressRows().forEach(function (r) {
       var row = document.createElement("div");
       row.className = "progress-detail-row";
@@ -3546,7 +3555,10 @@
     if (name === "duniya-productivity") renderDuniyaProductivity();
     if (name === "duniya-career") renderDuniyaCareer();
     if (name === "duniya-money") renderDuniyaMoney();
-    if (name === "duniya-growth") renderDuniyaGrowth();
+    if (name === "duniya-growth") {
+      if (["progress", "focus", "reflect", "reflect-done"].indexOf(gwView.screen) !== -1) gwView = { screen: "home" };
+      renderDuniyaGrowth();
+    }
     if (name === "duniya-plan") renderDuniyaPlan();
     if (name === "duniya-phone-guard") renderPhoneGuard();
     if (name === "duniya-recovery") renderRecovery();
@@ -6164,6 +6176,7 @@
       var vis = document.querySelector(".view:not(.hidden)");
       var name = vis ? vis.dataset.view : "home";
       if (name === "duniya-phone-guard" && pgView.screen !== "main") { pgView = { screen: "main" }; renderPhoneGuard(); return true; }
+      if (name === "duniya-growth" && gwView.screen !== "home") { gwView = { screen: "home" }; renderDuniyaGrowth(); return true; }
       if (name === "duniya-recovery" && rcView.screen !== "main") { rcStopTimer(); rcView = { screen: "main" }; renderRecovery(); return true; }
       if (name === "home") return false;
       setActiveView(name === "duniya-phone-guard" ? "duniya" : name === "duniya-recovery" ? "duniya-habits" : "home");
@@ -6823,78 +6836,1129 @@
   }
 
   // ---- Personal Growth ----
+  // UNDERSTAND -> CHOOSE FOCUS -> 7-DAY MISSION -> REAL ACTION -> SHORT REFLECTION
+  // -> SAVE -> ADAPT -> WEEKLY PROGRESS. Rule-based only (no AI). Everything is
+  // saved in localStorage under nc_pg_*: profile, draft, missions, history, today.
+  // Nothing shown as progress is invented: it is all computed from saved history.
 
-  var DUNIYA_GROWTH_AREAS = [
-    { key: "confidence", label: "Confidence", exercise: "Start one conversation yourself today — don't wait for the other person." },
-    { key: "communication", label: "Communication", exercise: "In your next conversation, ask one real follow-up question instead of just replying." },
-    { key: "discipline", label: "Discipline", exercise: "Do the one task you've been avoiding, for just 10 minutes." },
-    { key: "time", label: "Time Management", exercise: "Write down what you'll do in the next hour before you start it." },
-    { key: "decisions", label: "Decision Making", exercise: "Pick a small pending decision and make it today — don't leave it open." },
-    { key: "reading", label: "Reading", exercise: "Read for 10 minutes, no phone nearby." },
-    { key: "consistency", label: "Consistency", exercise: "Do one thing today exactly the way you did it yesterday — on purpose." }
+  var GW_TRACKS = [
+    { key: "confidence", label: "Confidence", approach: "small social actions rather than more theory" },
+    { key: "communication", label: "Communication", approach: "listening and asking before speaking" },
+    { key: "social", label: "Social Skills", approach: "simple, low-pressure moments with real people" },
+    { key: "discipline", label: "Discipline", approach: "starting small, before motivation shows up" },
+    { key: "consistency", label: "Consistency", approach: "one tiny behaviour done the same way every day" },
+    { key: "focus", label: "Focus & Procrastination", approach: "one clear next action and a 5-minute start" },
+    { key: "decisions", label: "Decision Making", approach: "turning one open decision into small, reversible steps" },
+    { key: "emotional", label: "Emotional Control", approach: "a pause between the feeling and the reaction" },
+    { key: "time", label: "Time Management", approach: "choosing a few priorities and testing your time estimates" },
+    { key: "resilience", label: "Resilience", approach: "recovering with the next smallest step after a setback" },
+    { key: "awareness", label: "Self-Awareness", approach: "short daily noticing of what helps and what drains you" },
+    { key: "courage", label: "Courage / Facing Discomfort", approach: "gradual, safe discomfort that grows step by step" }
   ];
+  var GW_WEEKS = [
+    "Small awareness + easy actions",
+    "Consistency",
+    "Slightly uncomfortable real-world actions",
+    "Independent application"
+  ];
+
+  function gwA(id, skill, min, tiny, base, stretch, why) {
+    return { id: id, skill: skill, min: min, t: [tiny, base, stretch], why: why };
+  }
+
+  // Each action has three versions: 0 = smaller, 1 = normal, 2 = stretch.
+  var GW_LIB = {
+    confidence: [
+      gwA("conf1", "Eye contact & greeting", 3, "Look one person in the eye and give a small smile or nod.", "Make eye contact and say salam/hello to one person.", "Make eye contact and say salam/hello to three different people today.", "Confidence grows from small actions repeated, not from thinking about them."),
+      gwA("conf2", "Asking questions", 3, "Ask one person the time or a simple yes/no question.", "Ask someone one simple question.", "Ask three different people one simple question each.", "Asking is the lowest-risk way to practise starting an interaction."),
+      gwA("conf3", "Starting conversations", 5, "Say hello, then add one comment about the place or the weather.", "Start one short conversation yourself instead of waiting for the other person.", "Start a 3-minute conversation with someone you don't know well.", "Starting first is the skill; the rest gets easier once you have begun."),
+      gwA("conf4", "Speaking up", 3, "Give a one-sentence opinion to someone you're comfortable with.", "Give your opinion once instead of staying silent.", "Share your opinion in a group and give one reason for it.", "Your view only counts in the conversation if it is said out loud."),
+      gwA("conf5", "Follow-up questions", 5, "After someone answers, ask one more \"why\" or \"how\".", "Ask a follow-up question during a conversation.", "Ask two follow-up questions in one conversation.", "Follow-ups keep a conversation going without needing clever things to say."),
+      gwA("conf6", "Facing avoidance", 5, "Do one very small thing you usually avoid, like ordering for yourself.", "Do one small thing you normally avoid because of nervousness.", "Do the thing you've been avoiding for a week because of nerves.", "Each avoided thing done once makes the next one smaller."),
+      gwA("conf7", "Real conversation", 10, "Have a 1-minute conversation and notice how you felt afterwards.", "Have a 3–5 minute conversation and note what felt easier than before.", "Have a 5–10 minute conversation and bring up a topic yourself.", "Looking back at what got easier shows you the progress that is really there.")
+    ],
+    communication: [
+      gwA("comm1", "Open questions", 5, "Ask one question that can't be answered with yes or no.", "Ask one open-ended question (what / how / why) and wait for the full answer.", "Ask open questions all through one conversation.", "Open questions make people say more, so you learn more."),
+      gwA("comm2", "Listening", 5, "Listen to one person for one minute without interrupting.", "Listen to one person without interrupting until they finish.", "Do that in a disagreement, and let them finish before you answer.", "Most misunderstandings start with talking before the other person is done."),
+      gwA("comm3", "Summarising", 5, "Repeat one thing someone said back to them: \"So you mean...\"", "Summarise what someone just told you in one sentence before replying.", "Summarise, then ask \"Did I get that right?\"", "Summarising shows you listened and catches mistakes early."),
+      gwA("comm4", "Speaking slower", 5, "Pause for one breath before your next answer.", "Speak a little slower in one conversation and pause before key points.", "Do that in a longer conversation or a small group.", "Slower speech is clearer and sounds calmer."),
+      gwA("comm5", "Short story", 5, "Tell someone one thing that happened today in two sentences.", "Tell one short story clearly: what happened, how you felt, what changed.", "Tell a story to a small group without rushing.", "A clear structure makes you easier to follow."),
+      gwA("comm6", "Follow-up first", 5, "Ask one follow-up question in any conversation.", "In your next conversation, ask one follow-up question before talking about yourself.", "Ask two follow-ups before you share anything about yourself.", "People remember how interested you were in them."),
+      gwA("comm7", "Explaining in 60 seconds", 10, "Explain a simple idea to someone in two minutes.", "Explain one idea to someone in 60 seconds.", "Explain a harder idea in 60 seconds and check if they understood.", "If you can say it briefly, you understand it better.")
+    ],
+    social: [
+      gwA("soc1", "Greeting first", 3, "Greet one person when they are already looking at you.", "Greet someone first instead of waiting to be greeted.", "Greet three people first today.", "Being first to greet makes the rest of the interaction easier."),
+      gwA("soc2", "Using names", 5, "Ask one person's name if you don't know it.", "Learn and use someone's name at least once in conversation.", "Use the names of two people in one day.", "A person's name is the simplest way to show you paid attention."),
+      gwA("soc3", "Their interests", 5, "Ask one person what they enjoy doing.", "Ask someone about something they are interested in and listen to the answer.", "Ask about their interest, then ask a follow-up about the answer.", "Interest in another person builds connection faster than talking about yourself."),
+      gwA("soc4", "Joining a group", 5, "Stand near a small conversation and listen to it.", "Join a small conversation and add one comment or question.", "Join a conversation and keep it going for a few minutes.", "You only need one sentence to become part of a group."),
+      gwA("soc5", "Genuine compliment", 3, "Notice one thing you like about someone.", "Give one genuine, specific compliment.", "Give a genuine compliment and ask a follow-up question.", "Specific praise feels real, and it is easy to give."),
+      gwA("soc6", "Ending well", 5, "Say \"nice talking to you\" at the end of a chat.", "End one conversation naturally instead of just walking away.", "End a conversation and say when you'd like to talk again.", "A good ending makes people want to talk to you again."),
+      gwA("soc7", "Following up", 5, "Send a short \"how are you?\" to someone you haven't spoken to lately.", "Follow up with someone after a conversation by message or in person.", "Follow up with two people you haven't spoken to for a while.", "Relationships are kept by small contact, not big gestures.")
+    ],
+    discipline: [
+      gwA("disc1", "Task before entertainment", 15, "Do a 5-minute task before you open entertainment.", "Complete one task you've been putting off before entertainment tonight.", "Complete your hardest task first, then entertainment.", "Doing the hard thing first takes away the mental weight for the rest of the day."),
+      gwA("disc2", "10-minute start", 10, "Work on it for just 3 minutes, then decide whether to stop.", "Use the 10-minute rule: start the task, and only then decide whether to stop.", "Start, and keep going until the task is completely done.", "Starting is the hard part. Most of the resistance goes once you have begun."),
+      gwA("disc3", "Removing a distraction", 5, "Put your phone in another room for 20 minutes.", "Remove one distraction from where you work (phone, tab, notification).", "Work for 45 minutes with that distraction removed.", "It is easier to change your surroundings than to fight temptation."),
+      gwA("disc4", "Acting without motivation", 10, "Do one small task even though you don't feel like it.", "Do a task at a moment when your motivation is low.", "Do two tasks while you don't feel like doing either.", "Discipline means acting from a decision, not from a mood."),
+      gwA("disc5", "If-then plan", 5, "Write one sentence: \"If it is ___, I will ___.\"", "Write and follow one plan: \"If X happens, I will do Y.\" For example, \"If it is 7 PM, I will study for 20 minutes before I open Instagram.\"", "Make two if-then plans and follow both.", "A ready plan removes the decision that usually loses to laziness."),
+      gwA("disc6", "Preparing tonight", 5, "Choose tomorrow's first task before you sleep.", "Prepare tonight what you will do first tomorrow (lay it out, write it down).", "Prepare your morning and evening for tomorrow.", "A prepared start beats relying on morning willpower."),
+      gwA("disc7", "Finishing the avoided task", 20, "Do 5 minutes of the task you've been avoiding.", "Finish the task you have been avoiding for at least 10 minutes.", "Finish that task completely today.", "Finishing the thing you avoid is the strongest proof to yourself that you can.")
+    ],
+    consistency: [
+      gwA("cons1", "One tiny behaviour", 5, "Write down one tiny behaviour you could do daily.", "Choose ONE tiny daily behaviour and do it today.", "Do it today and set a time you will do it tomorrow.", "A small behaviour you actually repeat beats a big plan you drop."),
+      gwA("cons2", "Minimum version", 5, "Do only the first 2 minutes of the behaviour.", "Do the minimum version of your habit, however busy you are.", "Do the normal version, but only after the minimum is done.", "The minimum version keeps the habit alive on hard days."),
+      gwA("cons3", "Anchoring", 5, "Choose something you already do daily to attach it to.", "Attach your habit to something you already do: \"After ___, I will ___.\"", "Do it right after your anchor, both times today.", "Linking it to an existing routine removes the need to remember."),
+      gwA("cons4", "Completion check", 3, "Mark today's result in NURA or on paper.", "Tick off your habit at the same time as yesterday.", "Tick it off and note how it went in one line.", "A visible record makes it easier to keep going."),
+      gwA("cons5", "Never miss twice", 5, "If you missed yesterday, do just 1 minute today.", "If you missed yesterday, do the minimum today. Never miss twice.", "Catch up by doing the minimum and the normal version.", "One miss is normal. Two in a row is how a habit stops."),
+      gwA("cons6", "Making it easier", 10, "Change one thing so that starting the habit takes fewer steps.", "Prepare your surroundings so the habit is easier (kit ready, app open, space cleared).", "Prepare for the next 3 days at once.", "Less friction means more repetitions."),
+      gwA("cons7", "Weekly review", 10, "Count how many days you did the habit this week.", "Review your week: how many days did you do it, and what got in the way?", "Review, and change one thing for next week.", "Reviewing your actual record shows what to adjust.")
+    ],
+    focus: [
+      gwA("foc1", "One next action", 5, "Write down one task you want to move forward.", "Define ONE next action for your main task, small enough to start in 2 minutes.", "Define the next action for your top 3 tasks.", "A vague task feels heavy; a clear next action does not."),
+      gwA("foc2", "5-minute start", 5, "Set a 2-minute timer and begin the task.", "Start the task for just 5 minutes, with a timer.", "Start for 5 minutes, then decide whether to continue for 25.", "Five minutes is small enough to start and often enough to keep going."),
+      gwA("foc3", "Focus session", 25, "Focus on one task for 10 minutes without switching.", "Do one distraction-free 25-minute focus session.", "Do two 25-minute sessions with a 5-minute break in between.", "Uninterrupted time gives you more than long, scattered hours."),
+      gwA("foc4", "Phone away", 20, "Keep your phone face down and out of reach for 15 minutes.", "Work for 25 minutes with your phone in another room.", "Keep your phone away for your whole study or work block.", "The phone only distracts you when it is within reach."),
+      gwA("foc5", "Breaking it down", 10, "Split one task into two parts.", "Break one large task into small steps and do only the first one.", "Break it into steps, do the first, and schedule the second.", "You can only act on the next step, not on the whole project."),
+      gwA("foc6", "Your top distraction", 10, "Write down what distracts you most.", "Name your biggest distraction and block it (app timer, closed tab, other room).", "Block it for the whole day.", "You can only remove a distraction once you have named it."),
+      gwA("foc7", "Finishing one thing", 20, "Finish one small task completely before starting anything else.", "Finish one task fully before opening anything new.", "Finish two tasks one after the other, with nothing in between.", "Finishing builds trust in yourself; half-done tasks drain attention.")
+    ],
+    decisions: [
+      gwA("dec1", "Naming the decision", 5, "Think of one decision you have been putting off.", "Write down the actual decision in one sentence, e.g. \"Should I ___ or ___?\"", "Write down two pending decisions.", "Half the stress of a decision is not knowing exactly what it is."),
+      gwA("dec2", "Listing options", 5, "Write two possible options.", "List all your real options, including doing nothing.", "List options and rank them.", "You can only choose well between options you can see."),
+      gwA("dec3", "Facts you control", 10, "Write one thing about it that you control.", "Split it into what you can control and what you can't; act only on the first.", "Do that for a decision that is also worrying you.", "Time spent on what you can't control is wasted."),
+      gwA("dec4", "Trade-offs", 10, "Write one advantage and one cost of an option.", "Write the main trade-off of each option: what you gain and what you give up.", "Ask one person who has faced the same choice.", "Every option costs something; knowing what makes choosing easier."),
+      gwA("dec5", "Deadline", 5, "Pick a day for when you will decide.", "Set a decision deadline and write it where you'll see it.", "Set the deadline and tell one person.", "A decision without a deadline can stay open forever."),
+      gwA("dec6", "Smallest reversible step", 10, "Find one small step that would teach you something.", "Choose the smallest reversible next step and do it today.", "Do that step and decide based on what you learn.", "A small step gives you information without locking you in."),
+      gwA("dec7", "Deciding quickly", 5, "Decide one tiny matter (what to eat) within 30 seconds.", "Make one small decision in under two minutes, and don't revisit it.", "Make three small decisions quickly and stick to all of them.", "Practising fast decisions on small things builds trust in your judgement.")
+    ],
+    emotional: [
+      gwA("emo1", "Pause before reacting", 3, "Take one slow breath before you answer someone today.", "When you feel irritated, pause for five slow breaths before you reply.", "Pause every time you feel irritated today.", "The pause is where you get a choice back."),
+      gwA("emo2", "Naming the emotion", 3, "Name what you feel once today (for example \"annoyed\").", "Name your emotion in one word each time it gets strong.", "Name it, and rate it from 1 to 10.", "Naming a feeling makes it less overwhelming."),
+      gwA("emo3", "Finding the trigger", 5, "Note one moment today when your mood changed.", "Identify what triggered your last strong feeling.", "Write down the trigger and what you told yourself.", "You can only change a pattern you can see."),
+      gwA("emo4", "Choosing a response", 5, "Before responding, think of one calmer way to reply.", "Choose a response instead of an impulse: decide what you want before you speak.", "Do this in a real disagreement.", "Reacting is automatic; responding is a decision."),
+      gwA("emo5", "Recording what happened", 5, "Write one line about a difficult moment today.", "After a strong feeling, note what happened and how you handled it.", "Note what you'd do differently next time.", "A short record shows your real patterns, not just how it felt."),
+      gwA("emo6", "Cooling down", 10, "Step away for two minutes when you feel heated.", "When you feel heated, walk or make wudu for 10 minutes before continuing.", "Use a cooling-down step before every difficult conversation.", "Physical movement or water helps the body settle."),
+      gwA("emo7", "What went well", 5, "Note one moment you stayed calm.", "Write down one moment this week when you handled a feeling well.", "Write down what helped you do it.", "Noticing what worked lets you repeat it.")
+    ],
+    time: [
+      gwA("time1", "Top 3 tasks", 5, "Write down one thing that must be done today.", "Choose your Top 3 tasks for today and write them down.", "Choose your Top 3 and do the first before anything else.", "If everything is a priority, nothing gets done."),
+      gwA("time2", "Estimating time", 5, "Guess how long one task will take and write it down.", "Estimate how long each of your tasks will take, then time the first.", "Estimate and time all three.", "Your estimates only improve when you compare them with what really happened."),
+      gwA("time3", "A focus block", 25, "Book 15 minutes for one task at a specific time.", "Schedule one 25–45 minute focus block at a fixed time and keep it.", "Schedule two focus blocks and keep both.", "A task with a set time gets done more often than one with none."),
+      gwA("time4", "Where time goes", 10, "Note what you did in one hour today.", "Note where your time went for a few hours of the day. Find one time-waster.", "Track a full day and pick the biggest one.", "You can't fix a leak you haven't found."),
+      gwA("time5", "Planned vs actual", 10, "Compare one planned task with how long it really took.", "Compare your plan with what actually happened today.", "Compare and adjust tomorrow's plan.", "The gap between plan and reality is where you learn."),
+      gwA("time6", "Planning tomorrow", 5, "Write one task for tomorrow before you sleep.", "Plan tomorrow tonight: Top 3 and when you'll do them.", "Plan tomorrow, and prepare the first task.", "Starting the day with a plan saves the first hour."),
+      gwA("time7", "Protecting a block", 25, "Tell one person you're unavailable for 20 minutes.", "Protect one block of time from interruptions.", "Protect two blocks today.", "Your time is only protected if you say it is.")
+    ],
+    resilience: [
+      gwA("res1", "What happened?", 5, "Think of one recent setback and describe it in one sentence.", "Write down what actually happened in a recent setback, facts only.", "Do that for two setbacks.", "Facts come first, before the story you tell yourself about it."),
+      gwA("res2", "What I control", 5, "Write one part of it that was under your control.", "Write what was under your control and what wasn't.", "Do that and note what you'd do the same next time.", "You can only improve the part you control."),
+      gwA("res3", "Smallest recovery action", 5, "Write one tiny step to recover.", "Choose the next smallest recovery action.", "Choose it and set a time for it.", "Recovery starts with one small step, not a full restart."),
+      gwA("res4", "Doing the recovery step", 10, "Do the first minute of your recovery step.", "Do your smallest recovery action today.", "Do it, then take one more step.", "Doing it once beats planning it perfectly."),
+      gwA("res5", "Talking to yourself kindly", 5, "Write one sentence you'd say to a friend in your place.", "Write what you'd say to a friend in this situation, then apply it to yourself.", "Say it out loud to yourself.", "You are usually fairer to others than to yourself."),
+      gwA("res6", "Restarting small", 10, "Restart something you dropped, for two minutes only.", "Restart something you dropped, using its minimum version.", "Restart it and plan the next three days.", "A small restart works better than waiting to feel ready."),
+      gwA("res7", "Setbacks you survived", 10, "Write down one difficult thing you got through.", "List three setbacks you have already got through and what helped.", "Add what each one taught you.", "Your record of recoveries is real evidence you can do it again.")
+    ],
+    awareness: [
+      gwA("awa1", "What gave me energy?", 5, "Note one thing that gave you energy today.", "Write down what gave you energy today.", "Write what gave you energy and how you can get more of it.", "Knowing what helps you lets you plan for it."),
+      gwA("awa2", "What drained me?", 5, "Note one thing that drained you today.", "Write down what drained you today.", "Write what drained you and one way to reduce it.", "What drains you is often changeable once it is visible."),
+      gwA("awa3", "What did I avoid?", 5, "Note one thing you put off today.", "Write down what you avoided today and why.", "Write what you avoided and the smallest step towards it.", "Avoidance is usually the clearest sign of what matters."),
+      gwA("awa4", "What I handled well", 5, "Note one thing you did well today.", "Write down what you handled well today.", "Write what you did that made it work.", "Noticing your strengths makes you use them on purpose."),
+      gwA("awa5", "A pattern", 5, "Look at your last few days: is anything repeating?", "Write down one pattern you noticed this week.", "Write the pattern and what usually comes before it.", "Patterns you can see are patterns you can change."),
+      gwA("awa6", "An honest view", 10, "Think of one person whose honest opinion you'd trust.", "Ask one trusted person for one honest observation about you.", "Ask, listen without defending, and write down what they said.", "Others often see what we can't see about ourselves."),
+      gwA("awa7", "What matters most", 10, "Write down one thing that matters to you.", "Write one sentence about what matters most to you right now.", "Compare that to how you spent this week.", "Your priorities only guide you if they are clear and written.")
+    ],
+    courage: [
+      gwA("cou1", "Easy discomfort", 5, "Do one small uncomfortable thing, such as a cold splash on your face.", "Do one safe, slightly uncomfortable thing you'd normally skip.", "Do two safe uncomfortable things.", "Small discomforts teach you that you can handle more than you expect."),
+      gwA("cou2", "A small ask", 5, "Ask a shopkeeper a simple question.", "Ask for something small: help, a discount, or a favour.", "Ask for something and accept a possible \"no\".", "Most fear of asking is bigger than what happens when you ask."),
+      gwA("cou3", "Speaking first", 3, "Say \"excuse me\" or \"hi\" first to a stranger.", "Speak first to someone in a queue or waiting area.", "Speak first and keep the chat going for a minute.", "Being first stops the waiting."),
+      gwA("cou4", "The avoided thing", 10, "Do one minute of something you have avoided for two days.", "Do something you've been avoiding for two days or more.", "Finish it today.", "The first step is what breaks the avoidance."),
+      gwA("cou5", "Saying no", 5, "Practise a polite \"no\" out loud once.", "Say a polite \"no\" to one thing that doesn't fit your priorities.", "Say no and don't over-explain.", "Saying no protects your yes."),
+      gwA("cou6", "Asking in public", 10, "Write down a question you'd like to ask in class or a group.", "Ask a real question in a class, meeting or group.", "Ask a question and follow up on the answer.", "Someone else is usually thinking the same question."),
+      gwA("cou7", "One meaningful step", 15, "Write down one thing you're afraid of and its smallest first step.", "Take one small, safe step towards something that matters to you but scares you.", "Take the step and tell one person about it.", "Courage is acting while still feeling afraid, not being fearless.")
+    ]
+  };
+
+  // ---- Assessment (14 questions) ----
+  // choice option weights add "needs work" points to tracks; scale questions
+  // convert low/high answers to points. Nothing here diagnoses anything.
+
+  var GW_QUESTIONS = [
+    { id: "priority", type: "choice", text: "Which area would make the biggest difference in your life right now?", options: [
+      { label: "Confidence & speaking up", w: { confidence: 3 } },
+      { label: "Communication & social skills", w: { communication: 2, social: 2 } },
+      { label: "Discipline & consistency", w: { discipline: 2, consistency: 2 } },
+      { label: "Focus & procrastination", w: { focus: 3 } },
+      { label: "Time management", w: { time: 3 } },
+      { label: "Making decisions", w: { decisions: 3 } },
+      { label: "Emotional control", w: { emotional: 3 } },
+      { label: "Bouncing back after failure", w: { resilience: 3 } },
+      { label: "Knowing myself better", w: { awareness: 3 } },
+      { label: "Facing things I fear", w: { courage: 3 } }
+    ], reason: { _all: "this is the area you said would change the most for you" } },
+    { id: "newpeople", type: "scale", text: "How confident are you starting a conversation with someone new?", low: "Not at all", high: "Very", dir: "low", w: { confidence: 1, social: 1 },
+      reason: { confidence: "starting conversations with new people feels hard for you", social: "starting conversations with new people feels hard for you" } },
+    { id: "complete", type: "scale", text: "When you decide to do something difficult, how often do you actually complete it?", low: "Rarely", high: "Almost always", dir: "low", w: { discipline: 1, consistency: 1 },
+      reason: { discipline: "you often don't finish difficult things you decide to do", consistency: "you often don't finish difficult things you decide to do" } },
+    { id: "stops", type: "choice", text: "What usually stops you from taking action?", options: [
+      { label: "Fear of embarrassment", w: { confidence: 2, courage: 2 }, tag: "Fear of embarrassment" },
+      { label: "Low energy or laziness", w: { discipline: 3 }, tag: "Low energy or laziness" },
+      { label: "Distractions (phone, apps)", w: { focus: 3 }, tag: "Distractions" },
+      { label: "No clear plan", w: { time: 2, decisions: 2 }, tag: "No clear plan" },
+      { label: "Overthinking", w: { decisions: 2, confidence: 1, awareness: 1 }, tag: "Overthinking before acting" },
+      { label: "Forgetting", w: { consistency: 3 }, tag: "Forgetting" }
+    ], reason: { courage: "fear of embarrassment often stops you from acting", confidence: "fear or overthinking often stops you from acting", discipline: "low energy often stops you from acting", focus: "distractions often stop you from acting", time: "not having a clear plan often stops you from acting", decisions: "not having a clear plan or overthinking stops you from acting", consistency: "forgetting is what often stops you", awareness: "overthinking often stops you from acting" } },
+    { id: "afterfail", type: "choice", text: "What happens after you fail or miss one day?", options: [
+      { label: "I restart quickly", w: {} },
+      { label: "I feel bad but continue", w: { resilience: 1 } },
+      { label: "I usually drop it for days", w: { resilience: 3, consistency: 2 } },
+      { label: "I tend to give up on it", w: { resilience: 3, consistency: 3 } }
+    ], reason: { resilience: "one missed day often turns into several", consistency: "one missed day often turns into several" } },
+    { id: "embarrass", type: "scale", text: "Do you avoid situations because you're afraid of embarrassment?", low: "Never", high: "Very often", dir: "high", w: { courage: 1, confidence: 1 },
+      reason: { courage: "you often avoid situations for fear of embarrassment", confidence: "you often avoid situations for fear of embarrassment" } },
+    { id: "procrastinate", type: "scale", text: "How often do you procrastinate even when you know what you need to do?", low: "Rarely", high: "Very often", dir: "high", w: { focus: 1, discipline: 1 },
+      reason: { focus: "you often put things off even when you know what to do", discipline: "you often put things off even when you know what to do" } },
+    { id: "sayno", type: "choice", text: "Can you clearly say no when something goes against your priorities?", options: [
+      { label: "Yes, without much trouble", w: {} },
+      { label: "Sometimes", w: { discipline: 1, confidence: 1 } },
+      { label: "Rarely", w: { discipline: 2, confidence: 2, courage: 1 } }
+    ], reason: { confidence: "saying no is hard for you", discipline: "saying no is hard for you", courage: "saying no is hard for you" } },
+    { id: "anger", type: "choice", text: "When you get angry or frustrated, how quickly do you react?", options: [
+      { label: "Straight away, before I think", w: { emotional: 3 } },
+      { label: "After a short moment", w: { emotional: 1 } },
+      { label: "I usually pause first", w: {} }
+    ], reason: { emotional: "you tend to react quickly when you're frustrated" } },
+    { id: "organized", type: "scale", text: "How organised is your normal day?", low: "Not at all", high: "Very", dir: "low", w: { time: 1, focus: 1 },
+      reason: { time: "your days feel unplanned", focus: "your days feel unplanned" } },
+    { id: "decide", type: "choice", text: "How do you handle a decision you've been putting off?", options: [
+      { label: "I leave it open for a long time", w: { decisions: 3 } },
+      { label: "I decide fast, then doubt it", w: { decisions: 2, emotional: 1 } },
+      { label: "I break it into steps and decide", w: {} }
+    ], reason: { decisions: "decisions tend to stay open or get second-guessed", emotional: "decisions tend to get second-guessed" } },
+    { id: "patterns", type: "scale", text: "How well do you notice why you do what you do (your patterns and triggers)?", low: "Not really", high: "Quite well", dir: "low", w: { awareness: 1, emotional: 1 },
+      reason: { awareness: "you don't often notice your own patterns and triggers", emotional: "you don't often notice your own patterns and triggers" } },
+    { id: "time", type: "choice", text: "How much time can you realistically give to personal growth each day?", options: [
+      { label: "5 min", w: {}, minutes: 5 },
+      { label: "10 min", w: {}, minutes: 10 },
+      { label: "15 min", w: {}, minutes: 15 },
+      { label: "30+ min", w: {}, minutes: 30 }
+    ], reason: {} },
+    { id: "goal", type: "text", text: "What is one thing you want to improve about yourself in the next 30 days?", placeholder: "In your own words (optional)", w: {}, reason: {} }
+  ];
+
+  // Analyse saved answers with plain rules. Returns scores per track, the
+  // chosen primary/secondary focus and which answer weighed most for the primary.
+  function gwAnalyse(answers) {
+    var scores = {}, contrib = {};
+    GW_TRACKS.forEach(function (t) { scores[t.key] = 0; contrib[t.key] = []; });
+    function add(track, pts, qid) {
+      if (!pts) return;
+      scores[track] += pts;
+      contrib[track].push({ q: qid, pts: pts });
+    }
+    GW_QUESTIONS.forEach(function (q) {
+      var a = answers[q.id];
+      if (a === undefined || a === null || a === "") return;
+      if (q.type === "scale") {
+        var pts = q.dir === "low" ? 5 - a : a - 1;
+        Object.keys(q.w).forEach(function (t) { add(t, pts * q.w[t], q.id); });
+      } else if (q.type === "choice") {
+        var opt = q.options[a];
+        if (opt) Object.keys(opt.w).forEach(function (t) { add(t, opt.w[t], q.id); });
+      }
+    });
+    var order = GW_TRACKS.map(function (t) { return t.key; });
+    var declared = answers.priority !== undefined ? Object.keys(GW_QUESTIONS[0].options[answers.priority].w) : [];
+    var ranked = order.slice().sort(function (a, b) {
+      if (scores[b] !== scores[a]) return scores[b] - scores[a];
+      var da = declared.indexOf(a) !== -1 ? 1 : 0, db = declared.indexOf(b) !== -1 ? 1 : 0;
+      if (db !== da) return db - da;
+      return order.indexOf(a) - order.indexOf(b);
+    });
+    var primary = ranked[0];
+    var secondary = ranked[1];
+    var strongest = order.slice().sort(function (a, b) { return scores[a] - scores[b] || order.indexOf(a) - order.indexOf(b); }).slice(0, 2);
+    // the answer that weighed most for the primary track explains why
+    var best = contrib[primary].slice().sort(function (a, b) { return b.pts - a.pts; })[0];
+    var reason = "";
+    if (best) {
+      var q = GW_QUESTIONS.filter(function (x) { return x.id === best.q; })[0];
+      reason = (q.reason[primary] || q.reason._all || "");
+    }
+    var stopQ = GW_QUESTIONS[3];
+    var obstacle = answers.stops !== undefined && stopQ.options[answers.stops] ? stopQ.options[answers.stops].tag : "";
+    var timeOpt = answers.time !== undefined ? GW_QUESTIONS[12].options[answers.time] : null;
+    var startLevel = (answers.complete !== undefined && answers.complete >= 5) ? 2 : 1;
+    return { scores: scores, primary: primary, secondary: secondary, strongest: strongest, reason: reason, obstacle: obstacle, minutes: timeOpt ? timeOpt.minutes : 10, startLevel: startLevel };
+  }
+
+  // ---- storage (all local; every read tolerates missing/corrupted data) ----
+  function gwProfile() {
+    var p = readJSON("nc_pg_profile", null);
+    return p && typeof p === "object" && !Array.isArray(p) ? p : null;
+  }
+  function gwSaveProfile(p) { writeJSON("nc_pg_profile", p); }
+  function gwDraft() {
+    var d = readJSON("nc_pg_draft", null);
+    return d && typeof d === "object" && d.answers && typeof d.answers === "object" ? d : null;
+  }
+  function gwMissions() { var m = readJSON("nc_pg_missions", []); return Array.isArray(m) ? m : []; }
+  function gwSaveMissions(m) { writeJSON("nc_pg_missions", m); }
+  function gwHistory() { var h = readJSON("nc_pg_history", []); return Array.isArray(h) ? h : []; }
+  function gwSaveHistory(h) { writeJSON("nc_pg_history", h); }
+  function gwToday() {
+    var t = readJSON("nc_pg_today", null);
+    return t && typeof t === "object" && t.date === todayKey() ? t : { date: todayKey() };
+  }
+  function gwSaveToday(t) { t.date = todayKey(); writeJSON("nc_pg_today", t); }
+  function gwTrack(key) { return GW_TRACKS.filter(function (t) { return t.key === key; })[0] || null; }
+  function gwAction(track, id) { return (GW_LIB[track] || []).filter(function (a) { return a.id === id; })[0] || null; }
+  function gwActiveMission() {
+    var p = gwProfile();
+    if (!p || !p.activeMissionId) return null;
+    return gwMissions().filter(function (m) { return m.id === p.activeMissionId; })[0] || null;
+  }
+
+  // ---- missions ----
+  var GW_WEEK_ORDER = [
+    [0, 1, 2, 3, 4, 5, 6],
+    [2, 3, 4, 0, 1, 5, 6],
+    [1, 2, 4, 6, 3, 5, 0],
+    [null, null, null, null, null, null, null]
+  ];
+
+  function gwNewMission(track, weekNo) {
+    var order = GW_WEEK_ORDER[Math.min(3, weekNo - 1)];
+    var days = order.map(function (idx, i) {
+      var action = idx === null ? null : GW_LIB[track][idx];
+      return { n: i + 1, actionId: action ? action.id : null, text: null, level: null, status: null, date: null, couldnt: 0, swaps: 0 };
+    });
+    return { id: uid("gm"), track: track, weekNo: weekNo, startDate: todayKey(), createdAt: new Date().toISOString(), status: "active", days: days };
+  }
+
+  // Start (or resume) a mission for a track. Missions of other tracks are only
+  // paused, never deleted, so their history and progress stay.
+  function gwStartTrack(track, weekNo) {
+    var p = gwProfile() || {};
+    var missions = gwMissions();
+    missions.forEach(function (m) { if (m.id === p.activeMissionId && m.status === "active") m.status = "paused"; });
+    var existing = weekNo ? null : missions.filter(function (m) { return m.track === track && m.status !== "completed"; })[0];
+    var m = existing;
+    if (m) m.status = "active";
+    else { m = gwNewMission(track, weekNo || 1); missions.push(m); }
+    gwSaveMissions(missions);
+    p.activeMissionId = m.id;
+    p.primaryFocus = p.primaryFocus || track;
+    p.currentFocus = track;
+    gwSaveProfile(p);
+    return m;
+  }
+
+  function gwLevelFor(track, weekNo) {
+    var p = gwProfile() || {};
+    var lv = p.trackLevels && p.trackLevels[track] !== undefined ? p.trackLevels[track] : (p.startLevel !== undefined ? p.startLevel : 1);
+    if (weekNo === 3) lv = Math.min(2, lv + 1);
+    return Math.max(0, Math.min(2, lv));
+  }
+
+  // The current day of a mission = first day not yet done/skipped.
+  function gwCurrentDay(m) {
+    for (var i = 0; i < m.days.length; i++) if (m.days[i].status === null) return m.days[i];
+    return null;
+  }
+
+  // Fill in the wording for a day the first time it is shown. Once shown it is
+  // frozen, so a reload never changes today's challenge.
+  function gwRevealDay(m, day) {
+    if (day.text || !day.actionId) return;
+    var a = gwAction(m.track, day.actionId);
+    day.level = gwLevelFor(m.track, m.weekNo);
+    day.text = a.t[day.level];
+    var ms = gwMissions();
+    ms.forEach(function (x) { if (x.id === m.id) x.days = m.days; });
+    gwSaveMissions(ms);
+  }
+
+  function gwSaveMission(m) {
+    var ms = gwMissions();
+    ms.forEach(function (x, i) { if (x.id === m.id) ms[i] = m; });
+    gwSaveMissions(ms);
+  }
+
+  // ---- history ----
+  var GW_RANK = { completed: 3, partial: 2, couldnt: 1 };
+  function gwDayStatus(hist, date) {
+    var best = null;
+    hist.forEach(function (e) {
+      if (e.date === date && (!best || GW_RANK[e.status] > GW_RANK[best])) best = e.status;
+    });
+    return best;
+  }
+  function gwAddEntry(entry) {
+    var h = gwHistory().filter(function (e) {
+      return !(e.date === entry.date && e.missionId === entry.missionId && e.planDay === entry.planDay && e.status === entry.status && !!e.smaller === !!entry.smaller);
+    });
+    h.push(entry);
+    gwSaveHistory(h);
+  }
+
+  // Counters kept on the profile, recomputed from history so they never drift.
+  function gwRecount() {
+    var p = gwProfile();
+    if (!p) return;
+    var h = gwHistory();
+    var active = {};
+    var completed = 0, skipped = 0, last = null;
+    h.forEach(function (e) {
+      if (e.status === "completed" || e.status === "partial") { active[e.date] = true; }
+      if (e.status === "completed") completed++;
+      if (e.status === "couldnt") skipped++;
+      if (!last || e.date > last) last = e.date;
+    });
+    p.totalGrowthDays = Object.keys(active).length;
+    p.completedChallenges = completed;
+    p.skippedChallenges = skipped;
+    p.lastActiveDate = last;
+    gwSaveProfile(p);
+  }
+
+  // Adapt the next challenges (never punish). Levels: 0 smaller, 1 normal, 2 stretch.
+  function gwAdapt(track, status, difficulty) {
+    var p = gwProfile();
+    if (!p) return;
+    p.trackLevels = p.trackLevels || {};
+    p.easyStreak = p.easyStreak || {};
+    var lv = p.trackLevels[track] !== undefined ? p.trackLevels[track] : (p.startLevel !== undefined ? p.startLevel : 1);
+    var es = p.easyStreak[track] || 0;
+    if (status === "couldnt") { lv = 0; es = 0; }
+    else if (status === "completed" && difficulty === "easy") {
+      es++;
+      if (es >= 2 && lv < 2) { lv++; es = 0; }
+      else if (lv === 0) { lv = 1; es = 0; }
+    } else if (status === "completed") {
+      if (lv === 0) lv = 1;
+      es = 0;
+    } else { es = 0; }
+    p.trackLevels[track] = lv;
+    p.easyStreak[track] = es;
+    gwSaveProfile(p);
+  }
+
+  // Save one result. Returns the updated mission.
+  function gwSaveResult(m, day, status, fields) {
+    var today = todayKey();
+    var entry = {
+      id: uid("ge"), date: today, missionId: m.id, area: m.track, planDay: day.n, weekNo: m.weekNo,
+      challenge: day.text, actionId: day.actionId, skill: (gwAction(m.track, day.actionId) || {}).skill || "",
+      level: day.level, status: status, difficulty: fields.difficulty || null, feeling: fields.feeling || null,
+      obstacle: fields.obstacle || null, reflection: (fields.reflection || "").trim().slice(0, 300),
+      smaller: !!fields.smaller, completedAt: new Date().toISOString()
+    };
+    gwAddEntry(entry);
+    if (status === "completed" || status === "partial") {
+      day.status = status;
+      day.date = today;
+    } else {
+      day.couldnt = (day.couldnt || 0) + 1;
+      if (day.couldnt >= 2) { day.status = "skipped"; day.date = today; }
+    }
+    if (m.days.every(function (d) { return d.status !== null; })) m.status = "completed";
+    gwSaveMission(m);
+    gwAdapt(m.track, status, fields.difficulty);
+    gwRecount();
+    return m;
+  }
+
+  // ---- weekly report (all values come from saved history) ----
+  function gwWeekData(keys) {
+    var hist = gwHistory();
+    var days = keys.slice().reverse().map(function (k) { return { key: k, status: gwDayStatus(hist, k) }; });
+    var set = {};
+    keys.forEach(function (k) { set[k] = true; });
+    var entries = hist.filter(function (e) { return set[e.date]; });
+    var r = { days: days, entries: entries, completed: 0, partial: 0, couldnt: 0, byTrack: {}, missed: 0 };
+    days.forEach(function (d) {
+      if (d.status === "completed") r.completed++;
+      else if (d.status === "partial") r.partial++;
+      else if (d.status === "couldnt") r.couldnt++;
+    });
+    var seen = {};
+    entries.forEach(function (e) {
+      if (e.status !== "completed") return;
+      var k = e.date + "|" + e.area;
+      if (seen[k]) return;
+      seen[k] = true;
+      r.byTrack[e.area] = (r.byTrack[e.area] || 0) + 1;
+    });
+    // missed = days without any entry, counted from the first day with any history
+    var firstDate = null;
+    hist.forEach(function (e) { if (!firstDate || e.date < firstDate) firstDate = e.date; });
+    days.forEach(function (d) { if (firstDate && d.key >= firstDate && !d.status && d.key <= todayKey()) r.missed++; });
+    // skill with most hard/couldn't and the skill completed easily most often
+    var hard = {}, easy = {};
+    entries.forEach(function (e) {
+      if (!e.skill) return;
+      if (e.status === "couldnt" || e.difficulty === "hard") hard[e.skill] = (hard[e.skill] || 0) + 1;
+      if (e.status === "completed" && e.difficulty === "easy") easy[e.skill] = (easy[e.skill] || 0) + 1;
+    });
+    function top(o) { var b = null; Object.keys(o).forEach(function (k) { if (!b || o[k] > o[b]) b = k; }); return b; }
+    r.hardest = top(hard);
+    r.easiest = top(easy);
+    // returned after a gap: a day with an entry that follows a day without one, inside the window
+    r.recovered = false;
+    for (var i = 1; i < days.length; i++) {
+      if (days[i].status && !days[i - 1].status && days[i - 1].key >= (firstDate || "9999")) r.recovered = true;
+    }
+    var reflected = entries.filter(function (e) { return e.reflection; }).sort(function (a, b) { return a.completedAt < b.completedAt ? 1 : -1; })[0];
+    r.lastReflection = reflected ? reflected.reflection : null;
+    var primaryTrack = null;
+    Object.keys(r.byTrack).forEach(function (t) { if (!primaryTrack || r.byTrack[t] > r.byTrack[primaryTrack]) primaryTrack = t; });
+    r.mostWorked = primaryTrack;
+    r.total = entries.length;
+    return r;
+  }
+  function gwThisWeek() { return gwWeekData(getLastNDateKeys(7)); }
+  function gwLastWeek() { return gwWeekData(getLastNDateKeys(14).slice(7)); }
+
+  // Plain-language summary. Only says what the numbers support.
+  function gwWeekSummary(w, prev) {
+    if (w.total < 2) return null;
+    var s = "You completed " + w.completed + " of 7 actions this week" + (w.partial ? " and " + w.partial + " partly" : "") + ".";
+    if (w.hardest) s += " " + w.hardest + " was the hardest area, so we'll keep practising it at a manageable level.";
+    if (prev.total > 0) {
+      s += w.completed > prev.completed ? " That's more completed challenges than last week."
+        : w.completed < prev.completed ? " That's fewer completed challenges than last week, and that's fine — you can pick it up again."
+        : " That's the same number of completed challenges as last week.";
+    }
+    return s;
+  }
+
+  function gwProgressRows() {
+    var h = gwHistory();
+    if (!h.length) return [];
+    var w = gwThisWeek();
+    var rows = [{ label: "Personal Growth — actions completed (7 days)", value: w.completed + " / 7" }];
+    var p = gwProfile();
+    if (p && p.currentFocus && gwTrack(p.currentFocus)) rows.push({ label: "Personal Growth — current focus", value: gwTrack(p.currentFocus).label });
+    if (w.partial) rows.push({ label: "Personal Growth — partly done", value: String(w.partial) });
+    return rows;
+  }
+
+  // ---- UI ----
+  var gwView = { screen: "home" };
+
+  function gwEl(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function gwBtn(label, cls, fn) {
+    var b = gwEl("button", cls, label);
+    b.type = "button";
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function gwGo(screen, extra) {
+    var v = extra || {};
+    v.screen = screen;
+    gwView = v;
+    renderDuniyaGrowth();
+  }
+  function gwAddDays(key, n) {
+    var d = new Date(key + "T12:00:00");
+    d.setDate(d.getDate() + n);
+    return todayKey(d);
+  }
+  function gwFmtDate(key) {
+    return new Date(key + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  function gwRows(rows) {
+    var box = gwEl("div", "money-cost-breakdown");
+    rows.forEach(function (r) {
+      var row = gwEl("div", "row" + (r[2] ? " highlight" : ""));
+      row.appendChild(gwEl("span", "", r[0]));
+      row.appendChild(gwEl("span", "", r[1]));
+      box.appendChild(row);
+    });
+    return box;
+  }
+  function gwBar(done, total) {
+    var track = gwEl("div", "plan-progress-track");
+    var fill = gwEl("div", "plan-progress-fill");
+    fill.style.width = (total ? Math.round((done / total) * 100) : 0) + "%";
+    track.appendChild(fill);
+    return track;
+  }
+  function gwWeekGraph(w) {
+    var row = gwEl("div", "rec-week-row");
+    w.days.forEach(function (d) {
+      var wrap = gwEl("div", "rec-bar-wrap");
+      wrap.appendChild(gwEl("div", "rec-bar" + (d.status === "completed" ? " clean" : d.status === "partial" ? " slip" : "")));
+      wrap.appendChild(gwEl("span", "rec-label", new Date(d.key + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" }).slice(0, 3) + (d.status === "completed" ? " ✓" : d.status === "partial" ? " ½" : " —")));
+      row.appendChild(wrap);
+    });
+    return row;
+  }
 
   function renderDuniyaGrowth() {
     var content = document.getElementById("duniya-growth-content");
+    if (!content) return;
     content.innerHTML = "";
-    var log = readJSON("nc_duniya_growth_log", {});
-    var todayEntry = log[todayKey()];
+    var p = gwProfile();
+    var s = gwView.screen;
+    if (s === "assess") return renderGwAssess(content);
+    if (s === "result" && p && p.assessmentCompleted) return renderGwResult(content, p);
+    if (!p || !p.assessmentCompleted) {
+      if (s !== "assess") return renderGwIntro(content, p);
+    }
+    if (s === "reflect") return renderGwReflect(content);
+    if (s === "reflect-done") return renderGwReflectDone(content);
+    if (s === "progress") return renderGwProgress(content, p);
+    if (s === "focus") return renderGwFocus(content, p);
+    renderGwHome(content, p);
+  }
 
-    if (!todayEntry) {
-      var h2 = document.createElement("h2");
-      h2.textContent = "What do you want to work on?";
-      content.appendChild(h2);
-      var grid = document.createElement("div");
-      grid.className = "preset-plan-grid";
-      DUNIYA_GROWTH_AREAS.forEach(function (g) {
-        var btn = document.createElement("button");
-        btn.className = "preset-plan-chip";
-        btn.textContent = g.label;
-        btn.addEventListener("click", function () {
-          var allLog = readJSON("nc_duniya_growth_log", {});
-          allLog[todayKey()] = { key: g.key, done: false };
-          writeJSON("nc_duniya_growth_log", allLog);
+  // ---- first-time assessment ----
+
+  function renderGwIntro(content, p) {
+    content.appendChild(gwEl("h2", "", "Personal Growth"));
+    content.appendChild(gwEl("p", "muted-line", "Let's understand where you are right now so NURA can give you practical challenges that actually fit you."));
+    var d = gwDraft();
+    var note = gwEl("p", "muted-line", GW_QUESTIONS.length + " quick questions, about 2 minutes. Your answers stay on this device.");
+    note.style.margin = "12px 0";
+    content.appendChild(note);
+    if (d && d.step > 0) {
+      content.appendChild(gwBtn("Continue (Question " + (d.step + 1) + " of " + GW_QUESTIONS.length + ")", "btn btn-primary btn-full", function () { gwGo("assess", { step: d.step }); }));
+      content.appendChild(gwBtn("Start again", "btn btn-outline btn-full", function () { writeJSON("nc_pg_draft", { step: 0, answers: {} }); gwGo("assess", { step: 0 }); }));
+    } else {
+      content.appendChild(gwBtn("Start", "btn btn-primary btn-full", function () { gwGo("assess", { step: 0 }); }));
+    }
+  }
+
+  function renderGwAssess(content) {
+    var draft = gwDraft() || { step: 0, answers: {} };
+    var step = gwView.step !== undefined ? gwView.step : draft.step || 0;
+    step = Math.max(0, Math.min(GW_QUESTIONS.length - 1, step));
+    var q = GW_QUESTIONS[step];
+    var answers = draft.answers;
+    function persist() { writeJSON("nc_pg_draft", { step: step, answers: answers }); }
+    persist();
+
+    content.appendChild(gwBtn("← Back", "picker-step-back", function () {
+      if (step > 0) gwGo("assess", { step: step - 1 });
+      else gwGo("home");
+    }));
+    content.appendChild(gwEl("p", "muted-line", "Question " + (step + 1) + " of " + GW_QUESTIONS.length));
+    content.appendChild(gwBar(step + 1, GW_QUESTIONS.length));
+    var h = gwEl("h2", "", q.text);
+    h.style.margin = "12px 0";
+    content.appendChild(h);
+
+    if (q.type === "choice") {
+      q.options.forEach(function (o, i) {
+        content.appendChild(gwBtn((answers[q.id] === i ? "● " : "○ ") + o.label, "rec-action" + (answers[q.id] === i ? " done" : ""), function () {
+          answers[q.id] = i;
+          persist();
+          renderDuniyaGrowth();
+        }));
+      });
+    } else if (q.type === "scale") {
+      var row = gwEl("div", "money-quick-actions");
+      row.style.justifyContent = "space-between";
+      [1, 2, 3, 4, 5].forEach(function (n) {
+        var b = gwBtn(String(n), "preset-plan-chip" + (answers[q.id] === n ? " active-chip" : ""), function () {
+          answers[q.id] = n;
+          persist();
           renderDuniyaGrowth();
         });
-        grid.appendChild(btn);
+        b.style.flex = "1";
+        b.style.minHeight = "48px";
+        row.appendChild(b);
       });
-      content.appendChild(grid);
-      return;
+      content.appendChild(row);
+      var ends = gwEl("div", "");
+      ends.style.display = "flex";
+      ends.style.justifyContent = "space-between";
+      ends.appendChild(gwEl("span", "muted-line", "1 = " + q.low));
+      ends.appendChild(gwEl("span", "muted-line", "5 = " + q.high));
+      content.appendChild(ends);
+    } else {
+      var t = gwEl("textarea", "text-input rec-textarea");
+      t.placeholder = q.placeholder || "";
+      t.maxLength = 200;
+      t.value = answers[q.id] || "";
+      t.addEventListener("input", function () { answers[q.id] = t.value; persist(); });
+      content.appendChild(t);
     }
 
-    var area = DUNIYA_GROWTH_AREAS.find(function (g) { return g.key === todayEntry.key; });
-    var h2b = document.createElement("h2");
-    h2b.textContent = area.label;
-    content.appendChild(h2b);
-    var exercise = document.createElement("p");
-    exercise.className = "priority-why";
-    exercise.textContent = area.exercise;
-    content.appendChild(exercise);
-    var doneBtn = document.createElement("button");
-    doneBtn.className = "btn btn-primary btn-full";
-    doneBtn.textContent = todayEntry.done ? "Done today ✓" : "Mark done";
-    doneBtn.disabled = todayEntry.done;
-    doneBtn.addEventListener("click", function () {
-      var allLog = readJSON("nc_duniya_growth_log", {});
-      allLog[todayKey()].done = true;
-      writeJSON("nc_duniya_growth_log", allLog);
-      renderDuniyaGrowth();
+    var last = step === GW_QUESTIONS.length - 1;
+    var next = gwBtn(last ? "Save & Continue" : "Next", "btn btn-primary btn-full", function () {
+      if (q.type !== "text" && answers[q.id] === undefined) { showToast("Choose an answer to continue"); return; }
+      if (last) { gwFinishAssessment(answers); return; }
+      gwGo("assess", { step: step + 1 });
     });
-    content.appendChild(doneBtn);
-    var changeBtn = document.createElement("button");
-    changeBtn.className = "priority-change-link";
-    changeBtn.textContent = "Choose a different area";
-    changeBtn.addEventListener("click", function () {
-      var allLog = readJSON("nc_duniya_growth_log", {});
-      delete allLog[todayKey()];
-      writeJSON("nc_duniya_growth_log", allLog);
-      renderDuniyaGrowth();
+    next.style.marginTop = "14px";
+    content.appendChild(next);
+  }
+
+  function gwFinishAssessment(answers) {
+    var r = gwAnalyse(answers);
+    var old = gwProfile();
+    var p = old || {};
+    var history = Array.isArray(p.assessmentHistory) ? p.assessmentHistory : [];
+    if (old && old.assessmentCompleted) history.push({ date: old.assessmentDate, answers: old.answers, primaryFocus: old.primaryFocus, secondaryFocus: old.secondaryFocus });
+    p.assessmentCompleted = true;
+    p.assessmentDate = new Date().toISOString();
+    p.answers = answers;
+    p.scores = r.scores;
+    p.strongestAreas = r.strongest;
+    p.improvementAreas = [r.primary, r.secondary];
+    p.primaryFocus = r.primary;
+    p.secondaryFocus = r.secondary;
+    p.currentLevel = r.startLevel;
+    p.startLevel = r.startLevel;
+    p.obstacle = r.obstacle;
+    p.reason = r.reason;
+    p.dailyMinutes = r.minutes;
+    p.goalText = (answers.goal || "").trim();
+    p.currentFocus = p.currentFocus && old && old.activeMissionId ? p.currentFocus : r.primary;
+    p.trackLevels = p.trackLevels || {};
+    p.easyStreak = p.easyStreak || {};
+    p.assessmentHistory = history;
+    if (p.totalGrowthDays === undefined) { p.totalGrowthDays = 0; p.completedChallenges = 0; p.skippedChallenges = 0; p.lastActiveDate = null; p.activeMissionId = null; }
+    gwSaveProfile(p);
+    localStorage.removeItem("nc_pg_draft");
+    gwGo("result");
+  }
+
+  function renderGwResult(content, p) {
+    var prim = gwTrack(p.primaryFocus), sec = gwTrack(p.secondaryFocus);
+    content.appendChild(gwEl("h2", "", "Your current focus"));
+    content.appendChild(gwRows([
+      ["Primary focus", prim.label, true],
+      ["Secondary focus", sec.label],
+      ["Biggest obstacle", p.obstacle || "Not clear yet"],
+      ["Available daily time", p.dailyMinutes + " minutes"]
+    ]));
+    var why = "Based on your answers, " + (p.reason || "this is where small actions will help most") + ". We'll begin with " + prim.approach + ".";
+    content.appendChild(gwEl("p", "rec-note", why));
+    if (p.goalText) content.appendChild(gwEl("p", "muted-line", "Your 30-day goal: " + p.goalText));
+    var strong = (p.strongestAreas || []).map(function (k) { return gwTrack(k).label; }).join(" and ");
+    if (strong) content.appendChild(gwEl("p", "muted-line", "Already comparatively strong: " + strong + "."));
+    var start = gwBtn("START MY GROWTH PLAN", "btn btn-primary btn-full", function () {
+      gwStartTrack(p.primaryFocus);
+      gwGo("home");
     });
-    content.appendChild(changeBtn);
+    start.style.marginTop = "14px";
+    content.appendChild(start);
+    content.appendChild(gwBtn("Choose another area", "priority-change-link", function () { gwGo("focus"); }));
+  }
+
+  // ---- home / today ----
+
+  function renderGwHome(content, p) {
+    var m = gwActiveMission();
+    content.appendChild(gwEl("h2", "", "Personal Growth"));
+    content.appendChild(gwEl("p", "muted-line", "Become a little stronger through action."));
+    if (!m) {
+      var tr = gwTrack(p.currentFocus || p.primaryFocus);
+      content.appendChild(gwEl("p", "", "You haven't started a plan yet.")).style.margin = "14px 0 8px";
+      content.appendChild(gwBtn("Start my " + tr.label + " plan", "btn btn-primary btn-full", function () { gwStartTrack(tr.key); gwGo("home"); }));
+      gwRenderExplore(content, p, null);
+      return;
+    }
+    var track = gwTrack(m.track);
+    var today = todayKey();
+    var t = gwToday();
+    var hist = gwHistory();
+    var doneDay = m.days.filter(function (d) { return d.date === today && (d.status === "completed" || d.status === "partial" || d.status === "skipped"); })[0];
+    var day = gwCurrentDay(m);
+
+    // missed-day note (never shaming)
+    var yesterday = gwAddDays(today, -1);
+    if (!doneDay && hist.length && !gwDayStatus(hist, yesterday) && !t.missedDismissed && p.lastActiveDate && p.lastActiveDate < yesterday) {
+      var note = gwEl("div", "money-wait-banner");
+      note.appendChild(gwEl("p", "", "You missed yesterday. Continue from one small action today.")).style.margin = "0 0 8px";
+      note.appendChild(gwBtn("Continue Plan", "action-btn primary", function () { t.missedDismissed = true; gwSaveToday(t); renderDuniyaGrowth(); }));
+      content.appendChild(note);
+    }
+
+    var dayNum = doneDay ? doneDay.n : (day ? day.n : 7);
+    content.appendChild(gwRows([
+      ["Current focus", track.label, true],
+      ["Journey", "Week " + m.weekNo + " of 4 · Day " + dayNum + " of 7"],
+      ["This week's theme", GW_WEEKS[m.weekNo - 1]]
+    ]));
+
+    var card = gwEl("div", "money-habit-card");
+    content.appendChild(card);
+    if (doneDay) {
+      card.appendChild(gwEl("p", "name", doneDay.status === "skipped" ? "Not today, and that's okay" : "Done for today ✓"));
+      var e = hist.filter(function (x) { return x.date === today && x.missionId === m.id && x.planDay === doneDay.n; }).sort(function (a, b) { return a.completedAt < b.completedAt ? 1 : -1; })[0];
+      if (doneDay.text) card.appendChild(gwEl("p", "cost-line", doneDay.text));
+      if (e && e.difficulty) card.appendChild(gwEl("p", "cost-line", "You said it was " + e.difficulty + (e.feeling ? " and you felt " + e.feeling.toLowerCase() + " afterwards" : "") + "."));
+      card.appendChild(gwEl("p", "cost-line", m.status === "completed" ? "Week " + m.weekNo + " is complete. The next step is ready tomorrow." : "Day " + (doneDay.n + 1) + " unlocks tomorrow. You're done for now."));
+    } else if (m.status === "completed") {
+      card.appendChild(gwEl("p", "name", "Week " + m.weekNo + " complete 🎉"));
+      if (m.weekNo < 4) {
+        card.appendChild(gwEl("p", "cost-line", "Next: Week " + (m.weekNo + 1) + " — " + GW_WEEKS[m.weekNo]));
+        var nb = gwBtn("Start Week " + (m.weekNo + 1), "btn btn-primary btn-full", function () { gwStartTrack(m.track, m.weekNo + 1); gwGo("home"); });
+        nb.style.marginTop = "8px";
+        card.appendChild(nb);
+      } else {
+        card.appendChild(gwEl("p", "cost-line", "You finished the 4-week journey. Pick what to work on next."));
+        var fb = gwBtn("Choose a focus", "btn btn-primary btn-full", function () { gwGo("focus"); });
+        fb.style.marginTop = "8px";
+        card.appendChild(fb);
+      }
+    } else {
+      renderGwTodayCard(card, m, day, t, p);
+    }
+
+    // this week
+    var w = gwThisWeek();
+    var wh = gwEl("h2", "", "This Week");
+    wh.style.marginTop = "18px";
+    content.appendChild(wh);
+    content.appendChild(gwBar(w.completed, 7));
+    content.appendChild(gwEl("p", "", w.completed + " of 7 actions" + (w.partial ? " · " + w.partial + " partly" : "")));
+    content.appendChild(gwWeekGraph(w));
+
+    var row = gwEl("div", "money-quick-actions");
+    row.appendChild(gwBtn("View Progress", "preset-plan-chip", function () { gwGo("progress"); }));
+    row.appendChild(gwBtn("Change My Focus", "preset-plan-chip", function () { gwGo("focus"); }));
+    content.appendChild(row);
+    gwRenderExplore(content, p, m);
+  }
+
+  function renderGwTodayCard(card, m, day, t, p) {
+    var track = gwTrack(m.track);
+    // week 4: the user chooses; other weeks the plan decides
+    if (!day.actionId) {
+      card.appendChild(gwEl("p", "name", "Today's mission — your choice"));
+      card.appendChild(gwEl("p", "cost-line", "Independent week: pick the challenge you want to do today."));
+      var lib = GW_LIB[m.track];
+      var used = m.days.map(function (d) { return d.actionId; });
+      var opts = [];
+      for (var k = 0; k < 7 && opts.length < 3; k++) {
+        var a = lib[(day.n * 2 + k) % 7];
+        if (used.indexOf(a.id) === -1 && opts.indexOf(a) === -1) opts.push(a);
+      }
+      opts.forEach(function (a) {
+        var b = gwBtn(a.t[gwLevelFor(m.track, m.weekNo)], "rec-action", function () {
+          day.actionId = a.id;
+          gwSaveMission(m);
+          renderDuniyaGrowth();
+        });
+        card.appendChild(b);
+      });
+      return;
+    }
+    gwRevealDay(m, day);
+    var action = gwAction(m.track, day.actionId);
+    var mine = t.missionId === m.id && t.dayN === day.n;
+    var started = mine && t.started;
+    var couldnt = mine && t.couldnt;
+
+    card.appendChild(gwEl("p", "cost-line", "TODAY'S MISSION"));
+    var ch = gwEl("p", "priority-title", day.text);
+    ch.style.margin = "4px 0 8px";
+    card.appendChild(ch);
+    card.appendChild(gwEl("p", "priority-why", "Why: " + action.why));
+    card.appendChild(gwEl("p", "cost-line", "Estimated time: about " + action.min + " min" + (p.dailyMinutes && action.min > p.dailyMinutes ? " (start with what fits your " + p.dailyMinutes + " min)" : "")));
+
+    function setToday(patch) {
+      var nt = gwToday();
+      nt.missionId = m.id; nt.dayN = day.n;
+      for (var k2 in patch) nt[k2] = patch[k2];
+      gwSaveToday(nt);
+    }
+    function result(status) { gwGo("reflect", { status: status, dayN: day.n, f: {} }); }
+
+    if (couldnt) {
+      card.appendChild(gwEl("p", "cost-line", "Not today? That's okay. Try a smaller version, or leave it for tomorrow."));
+      var sm = gwBtn("Try a smaller version", "btn btn-primary btn-full", function () {
+        var smallText = action.t[0] === day.text ? "Just start: do the first 60 seconds of this, then stop if you want." : action.t[0];
+        day.text = smallText; day.level = 0;
+        gwSaveMission(m);
+        setToday({ started: true, couldnt: false, smaller: true });
+        renderDuniyaGrowth();
+      });
+      sm.style.marginTop = "8px";
+      card.appendChild(sm);
+      return;
+    }
+    if (!started) {
+      var st = gwBtn("Start Challenge", "btn btn-primary btn-full", function () { setToday({ started: true }); renderDuniyaGrowth(); });
+      st.style.marginTop = "8px";
+      card.appendChild(st);
+      card.appendChild(gwBtn("I already did this", "priority-change-link", function () { setToday({ started: true }); renderDuniyaGrowth(); }));
+    } else {
+      card.appendChild(gwEl("p", "cost-line", "How did it go?"));
+      var rr = gwEl("div", "money-quick-actions");
+      rr.appendChild(gwBtn("Completed", "action-btn primary", function () { result("completed"); }));
+      rr.appendChild(gwBtn("Partly Done", "action-btn", function () { result("partial"); }));
+      rr.appendChild(gwBtn("Couldn't Do It", "action-btn", function () { result("couldnt"); }));
+      card.appendChild(rr);
+    }
+    var links = gwEl("div", "money-quick-actions");
+    links.appendChild(gwBtn("Too easy", "priority-change-link", function () {
+      var a2 = gwAction(m.track, day.actionId);
+      day.text = a2.t[2]; day.level = 2;
+      gwSaveMission(m);
+      var pp = gwProfile(); pp.trackLevels = pp.trackLevels || {};
+      pp.trackLevels[m.track] = Math.min(2, (pp.trackLevels[m.track] !== undefined ? pp.trackLevels[m.track] : (pp.startLevel || 1)) + 1);
+      gwSaveProfile(pp);
+      showToast("Made it a bit harder");
+      renderDuniyaGrowth();
+    }));
+    links.appendChild(gwBtn("Too difficult", "priority-change-link", function () {
+      var a2 = gwAction(m.track, day.actionId);
+      day.text = a2.t[0]; day.level = 0;
+      gwSaveMission(m);
+      var pp = gwProfile(); pp.trackLevels = pp.trackLevels || {};
+      pp.trackLevels[m.track] = Math.max(0, (pp.trackLevels[m.track] !== undefined ? pp.trackLevels[m.track] : (pp.startLevel || 1)) - 1);
+      gwSaveProfile(pp);
+      showToast("Made it smaller");
+      renderDuniyaGrowth();
+    }));
+    links.appendChild(gwBtn("Change today's challenge", "priority-change-link", function () {
+      // swap with a later, not-yet-shown day so no challenge is lost from the plan
+      var other = m.days.filter(function (d) { return d.n > day.n && d.status === null && d.actionId; })[0];
+      if (!other) { showToast("No other challenge left in this plan"); return; }
+      var keepId = day.actionId;
+      day.actionId = other.actionId;
+      other.actionId = keepId;
+      other.text = null; other.level = null;
+      day.text = gwAction(m.track, day.actionId).t[gwLevelFor(m.track, m.weekNo)];
+      day.level = gwLevelFor(m.track, m.weekNo);
+      day.swaps = (day.swaps || 0) + 1;
+      gwSaveMission(m);
+      setToday({ started: false, couldnt: false });
+      renderDuniyaGrowth();
+    }));
+    card.appendChild(links);
+  }
+
+  function gwRenderExplore(content, p, m) {
+    var h = gwEl("h2", "", "Explore another area");
+    h.style.marginTop = "18px";
+    content.appendChild(h);
+    var hist = gwHistory();
+    var missions = gwMissions();
+    var grid = gwEl("div", "duniya-area-grid");
+    GW_TRACKS.forEach(function (tr) {
+      var done = hist.filter(function (e) { return e.area === tr.key && e.status === "completed"; }).length;
+      var has = missions.filter(function (x) { return x.track === tr.key && x.status !== "completed"; })[0];
+      var isCurrent = m && m.track === tr.key;
+      var card = gwEl("button", "duniya-area-card");
+      card.type = "button";
+      card.appendChild(gwEl("span", "duniya-area-title", tr.label));
+      card.appendChild(gwEl("span", "duniya-area-sub", isCurrent ? "Current focus" : has ? "Resume" : "Start"));
+      if (done) card.appendChild(gwEl("span", "duniya-area-progress", done + " completed"));
+      card.addEventListener("click", function () {
+        if (isCurrent) { showToast("This is your current focus"); return; }
+        gwStartTrack(tr.key);
+        gwGo("home");
+      });
+      grid.appendChild(card);
+    });
+    content.appendChild(grid);
+  }
+
+  // ---- reflection (1-3 quick questions) ----
+
+  function renderGwReflect(content) {
+    var m = gwActiveMission();
+    var day = m ? m.days.filter(function (d) { return d.n === gwView.dayN; })[0] : null;
+    if (!m || !day) { gwGo("home"); return; }
+    var status = gwView.status;
+    var f = gwView.f;
+    var t = gwToday();
+    content.appendChild(gwBtn("← Back", "picker-step-back", function () { gwGo("home"); }));
+    content.appendChild(gwEl("h2", "", "How did it go?"));
+    content.appendChild(gwEl("p", "muted-line", day.text));
+
+    function chips(label, key, options) {
+      var l = gwEl("p", "muted-line", label);
+      l.style.marginTop = "12px";
+      content.appendChild(l);
+      var row = gwEl("div", "money-quick-actions");
+      options.forEach(function (o) {
+        var v = o.toLowerCase();
+        row.appendChild(gwBtn(o, "preset-plan-chip" + (f[key] === v ? " active-chip" : ""), function () { f[key] = v; renderDuniyaGrowth(); }));
+      });
+      content.appendChild(row);
+    }
+    if (status === "couldnt") {
+      chips("What got in the way?", "obstacle", ["Nerves", "No time", "Forgot", "Felt too hard", "Something else"]);
+    } else {
+      chips("How difficult was it?", "difficulty", ["Easy", "Medium", "Hard"]);
+      chips("How did you feel afterwards?", "feeling", ["Better", "Same", "Worse"]);
+    }
+    var ll = gwEl("p", "muted-line", status === "couldnt" ? "Anything you noticed? (optional)" : "What did you learn? (optional)");
+    ll.style.marginTop = "12px";
+    content.appendChild(ll);
+    var ta = gwEl("input", "text-input");
+    ta.type = "text";
+    ta.maxLength = 200;
+    ta.value = f.text || "";
+    ta.addEventListener("input", function () { f.text = ta.value; });
+    content.appendChild(ta);
+
+    var save = gwBtn("Save", "btn btn-primary btn-full", function () {
+      var wasSmaller = t.missionId === m.id && t.dayN === day.n && t.smaller;
+      gwSaveResult(m, day, status, {
+        difficulty: f.difficulty, feeling: f.feeling, obstacle: f.obstacle, reflection: f.text, smaller: wasSmaller
+      });
+      var nt = gwToday();
+      nt.missionId = m.id; nt.dayN = day.n;
+      if (status === "couldnt") {
+        nt.couldnt = day.status === null; nt.started = false;
+        gwSaveToday(nt);
+        gwGo("reflect-done", { skipped: day.status === "skipped" });
+      } else {
+        nt.started = false; nt.couldnt = false; nt.smaller = false;
+        gwSaveToday(nt);
+        showToast("Saved");
+        gwGo("home");
+      }
+    });
+    save.style.marginTop = "14px";
+    content.appendChild(save);
+  }
+
+  function renderGwReflectDone(content) {
+    content.appendChild(gwEl("h2", "", "That's okay."));
+    content.appendChild(gwEl("p", "muted-line", "One day doesn't undo your progress. Everything you've completed is still saved."));
+    if (gwView.skipped) content.appendChild(gwEl("p", "muted-line", "We'll move on to the next step tomorrow."));
+    else content.appendChild(gwEl("p", "muted-line", "Try a smaller version now, or leave it for tomorrow."));
+    var b = gwBtn(gwView.skipped ? "Back to Personal Growth" : "Continue", "btn btn-primary btn-full", function () { gwGo("home"); });
+    b.style.marginTop = "12px";
+    content.appendChild(b);
+  }
+
+  // ---- progress, weekly report, history ----
+
+  function gwRenderWeekReport(content, p) {
+    var w = gwThisWeek();
+    var prev = gwLastWeek();
+    content.appendChild(gwEl("h2", "", "Personal Growth — This Week"));
+    if (w.total < 1) { content.appendChild(gwEl("p", "muted-line", "Not enough data yet.")); return; }
+    content.appendChild(gwBar(w.completed, 7));
+    var rows = [["Actions completed", w.completed + " / 7", true]];
+    if (w.partial) rows.push(["Partly done", String(w.partial)]);
+    var focusLabel = p && p.currentFocus && gwTrack(p.currentFocus) ? gwTrack(p.currentFocus).label : "—";
+    rows.push(["Current focus", focusLabel]);
+    Object.keys(w.byTrack).sort(function (a, b) { return w.byTrack[b] - w.byTrack[a]; }).forEach(function (k) {
+      rows.push([gwTrack(k).label + " challenges", w.byTrack[k] + " completed"]);
+    });
+    if (w.total >= 2 && w.hardest) rows.push(["Most difficult challenge", w.hardest]);
+    if (w.total >= 2 && w.easiest) rows.push(["Completed with ease", w.easiest]);
+    rows.push(["Missed days", String(w.missed)]);
+    if (w.recovered) rows.push(["Recovery", "Returned after missing a day"]);
+    content.appendChild(gwRows(rows));
+    content.appendChild(gwWeekGraph(w));
+    var sum = gwWeekSummary(w, prev);
+    if (sum) content.appendChild(gwEl("p", "rec-note", sum));
+    else content.appendChild(gwEl("p", "muted-line", "Not enough data yet for a weekly summary."));
+    if (w.lastReflection) content.appendChild(gwEl("p", "muted-line", "Recent reflection: “" + w.lastReflection + "”"));
+  }
+
+  function renderGwProgress(content, p) {
+    content.appendChild(gwBtn("← Back", "picker-step-back", function () { gwGo("home"); }));
+    gwRenderWeekReport(content, p);
+
+    var hist = gwHistory();
+    var ph = gwEl("h2", "", "All time");
+    ph.style.marginTop = "18px";
+    content.appendChild(ph);
+    var partial = hist.filter(function (e) { return e.status === "partial"; }).length;
+    content.appendChild(gwRows([
+      ["Days active", String(p.totalGrowthDays || 0)],
+      ["Challenges completed", String(p.completedChallenges || 0)],
+      ["Partly done", String(partial)],
+      ["Couldn't do it", String(p.skippedChallenges || 0)]
+    ]));
+
+    var wh = gwEl("h2", "", "Weekly results");
+    wh.style.marginTop = "14px";
+    content.appendChild(wh);
+    var labels = ["This week", "Last week", "2 weeks ago", "3 weeks ago"];
+    var any = false;
+    for (var i = 0; i < 4; i++) {
+      var keys = getLastNDateKeys(7 * (i + 1)).slice(7 * i);
+      var wd = gwWeekData(keys);
+      if (wd.total) { any = true; content.appendChild(gwEl("p", "muted-line", labels[i] + ": " + wd.completed + " completed" + (wd.partial ? ", " + wd.partial + " partly" : "") + " (" + gwFmtDate(keys[keys.length - 1]) + " – " + gwFmtDate(keys[0]) + ")")); }
+    }
+    if (!any) content.appendChild(gwEl("p", "muted-line", "Not enough data yet."));
+
+    var mh = gwEl("h2", "", "Missions");
+    mh.style.marginTop = "14px";
+    content.appendChild(mh);
+    var missions = gwMissions().slice().reverse();
+    if (!missions.length) content.appendChild(gwEl("p", "muted-line", "No missions yet."));
+    missions.forEach(function (m) {
+      var done = m.days.filter(function (d) { return d.status === "completed" || d.status === "partial"; }).length;
+      content.appendChild(gwEl("p", "muted-line", gwTrack(m.track).label + " · Week " + m.weekNo + " · " + done + "/7 done · " + (m.status === "active" ? "current" : m.status) + " · started " + gwFmtDate(m.startDate)));
+    });
+
+    var rh = gwEl("h2", "", "Reflections");
+    rh.style.marginTop = "14px";
+    content.appendChild(rh);
+    var refl = hist.filter(function (e) { return e.reflection; }).sort(function (a, b) { return a.completedAt < b.completedAt ? 1 : -1; }).slice(0, 10);
+    if (!refl.length) content.appendChild(gwEl("p", "muted-line", "Your reflections will appear here."));
+    refl.forEach(function (e) {
+      content.appendChild(gwEl("p", "muted-line", gwFmtDate(e.date) + " · " + gwTrack(e.area).label + ": “" + e.reflection + "”"));
+    });
+
+    var ah = gwEl("h2", "", "Assessment");
+    ah.style.marginTop = "14px";
+    content.appendChild(ah);
+    content.appendChild(gwEl("p", "muted-line", "Taken " + gwFmtDate(p.assessmentDate.slice(0, 10)) + ". Primary: " + gwTrack(p.primaryFocus).label + ". Secondary: " + gwTrack(p.secondaryFocus).label + "."));
+    content.appendChild(gwBtn("Retake Assessment", "priority-change-link", gwRetake));
+  }
+
+  function gwRetake() {
+    if (!window.confirm("Retake the assessment? Your history and missions stay saved. Only your recommendation is updated.")) return;
+    writeJSON("nc_pg_draft", { step: 0, answers: {} });
+    gwGo("assess", { step: 0 });
+  }
+
+  // ---- change focus ----
+
+  function renderGwFocus(content, p) {
+    content.appendChild(gwBtn("← Back", "picker-step-back", function () { gwGo("home"); }));
+    content.appendChild(gwEl("h2", "", "Change My Focus"));
+    content.appendChild(gwEl("p", "muted-line", "Your history stays saved. Nothing is deleted."));
+    var m = gwActiveMission();
+    var cur = m ? gwTrack(m.track).label : gwTrack(p.currentFocus || p.primaryFocus).label;
+    var keep = gwBtn("Keep recommendation (" + gwTrack(p.primaryFocus).label + ")", "btn btn-primary btn-full", function () {
+      gwStartTrack(p.primaryFocus);
+      gwGo("home");
+    });
+    keep.style.marginTop = "10px";
+    content.appendChild(keep);
+    content.appendChild(gwEl("p", "muted-line", "Currently working on: " + cur));
+    var h = gwEl("p", "muted-line", "Or choose another area");
+    h.style.marginTop = "12px";
+    content.appendChild(h);
+    var row = gwEl("div", "money-quick-actions");
+    GW_TRACKS.forEach(function (tr) {
+      row.appendChild(gwBtn(tr.label, "preset-plan-chip" + (m && m.track === tr.key ? " active-chip" : ""), function () {
+        gwStartTrack(tr.key);
+        gwGo("home");
+      }));
+    });
+    content.appendChild(row);
+    content.appendChild(gwBtn("Retake Assessment", "btn btn-outline btn-full", gwRetake));
   }
 
   function initDuniyaGrowth() {
-    document.getElementById("duniya-growth-back").addEventListener("click", function () { setActiveView("duniya"); });
+    document.getElementById("duniya-growth-back").addEventListener("click", function () {
+      gwView = { screen: "home" };
+      setActiveView("duniya");
+    });
   }
 
   // ---------- PLAN MY DAY ----------
