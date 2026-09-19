@@ -483,6 +483,13 @@
         pdGrid.appendChild(btn);
       });
       stepEl.appendChild(pdGrid);
+      var pgEntry = document.createElement("button");
+      pgEntry.type = "button";
+      pgEntry.className = "btn btn-outline btn-full";
+      pgEntry.style.marginTop = "14px";
+      pgEntry.textContent = "Intentional Open — pause before distracting apps pull you in";
+      pgEntry.addEventListener("click", function () { pgView = { screen: "main" }; setActiveView("duniya-phone-guard"); });
+      stepEl.appendChild(pgEntry);
     } else if (pickerStep.view === "phone-steps") {
       var ps1 = document.createElement("p");
       ps1.className = "picker-step-title";
@@ -860,6 +867,30 @@
       row.innerHTML = '<span class="progress-detail-label">' + label + '</span><span class="progress-detail-value">' + value + '</span>';
       weekEl.appendChild(row);
     });
+
+    if (pgNative()) {
+      var pgStatsAll = pgStats();
+      var pgWeek = pgSummarize(pgStatsAll, getLastNDateKeys(7));
+      var pgPrev = pgSummarize(pgStatsAll, getLastNDateKeys(14).slice(7));
+      if (pgWeek.hasData) {
+        var pgRows = [
+          { label: "Phone Control — watched apps (7 days)", value: pgFmtDur(pgWeek.ms) },
+          { label: "Pauses / went back", value: pgWeek.pauses + " / " + pgWeek.wentBack }
+        ];
+        if (pgPrev.hasData) {
+          var pgDiff = pgWeek.ms - pgPrev.ms;
+          pgRows.push({ label: "vs. previous week", value: pgDiff === 0 ? "No change" : (pgDiff < 0 ? "↓ " : "↑ ") + pgFmtDur(Math.abs(pgDiff)) });
+        }
+        pgRows.forEach(function (r) {
+          var row = document.createElement("div");
+          row.className = "progress-detail-row";
+          var l = document.createElement("span"); l.className = "progress-detail-label"; l.textContent = r.label;
+          var v = document.createElement("span"); v.className = "progress-detail-value"; v.textContent = r.value;
+          row.appendChild(l); row.appendChild(v);
+          weekEl.appendChild(row);
+        });
+      }
+    }
 
     document.getElementById("modal-progress-details").classList.remove("hidden");
   }
@@ -3508,6 +3539,7 @@
     if (name === "duniya-money") renderDuniyaMoney();
     if (name === "duniya-growth") renderDuniyaGrowth();
     if (name === "duniya-plan") renderDuniyaPlan();
+    if (name === "duniya-phone-guard") renderPhoneGuard();
   }
 
   function initNav() {
@@ -5553,6 +5585,396 @@
     });
   }
 
+  // ---- Phone Control → Intentional Open (Android app only) ----
+  // The website cannot see other apps. Everything real here is done by the
+  // native NURA Android app through window.NuraNative; without it this screen
+  // says so plainly instead of pretending. All numbers shown come from data the
+  // phone stored locally — nothing is estimated or invented.
+
+  var pgView = { screen: "main" };
+  var pgAppsCache = null;
+  var pgAppFilter = "";
+
+  function pgNative() { return window.NuraNative || null; }
+  function pgParse(fn, fallback) {
+    try { return JSON.parse(fn()); } catch (e) { return fallback; }
+  }
+  function pgStatus() { var n = pgNative(); return n ? pgParse(function () { return n.getStatus(); }, null) : null; }
+  function pgConfig() {
+    var n = pgNative();
+    var c = n ? pgParse(function () { return n.getConfig(); }, null) : null;
+    if (!c) c = { enabled: false, repeatCount: 3, repeatWindowMin: 15, graceMin: 10, pauseFreshOpen: true, apps: {} };
+    if (!c.apps) c.apps = {};
+    return c;
+  }
+  function pgSave(cfg) { var n = pgNative(); return n ? !!n.setConfig(JSON.stringify(cfg)) : false; }
+  function pgStats() { var n = pgNative(); return n ? pgParse(function () { return n.getAllStats(); }, {}) : {}; }
+
+  function pgFmtDur(ms) {
+    var m = Math.round(ms / 60000);
+    if (ms > 0 && m < 1) return "<1m";
+    var h = Math.floor(m / 60);
+    return h > 0 ? h + "h " + (m % 60) + "m" : m + "m";
+  }
+
+  function pgEl(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function pgBtn(label, cls, fn) {
+    var b = pgEl("button", cls, label);
+    b.type = "button";
+    b.addEventListener("click", fn);
+    return b;
+  }
+  function pgStepper(value, min, max, step, fmt, onChange) {
+    var wrap = pgEl("div", "money-quantity-stepper");
+    var minus = pgBtn("−", "", function () { onChange(Math.max(min, value - step)); });
+    var val = pgEl("span", "value", fmt(value));
+    val.style.minWidth = "90px";
+    var plus = pgBtn("+", "", function () { onChange(Math.min(max, value + step)); });
+    wrap.appendChild(minus); wrap.appendChild(val); wrap.appendChild(plus);
+    return wrap;
+  }
+  function pgBack(content, fn) { content.appendChild(pgBtn("← Back", "picker-step-back", fn)); }
+
+  function pgSummarize(stats, keys) {
+    var out = { ms: 0, opens: 0, pauses: 0, wentBack: 0, continued: 0, appOpens: {}, hasData: false };
+    keys.forEach(function (k) {
+      var d = stats[k];
+      if (!d) return;
+      out.hasData = true;
+      out.pauses += d.pauses || 0;
+      out.wentBack += d.wentBack || 0;
+      out.continued += d.continued || 0;
+      var apps = d.apps || {};
+      Object.keys(apps).forEach(function (pkg) {
+        out.ms += apps[pkg].ms || 0;
+        out.opens += apps[pkg].opens || 0;
+        out.appOpens[pkg] = (out.appOpens[pkg] || 0) + (apps[pkg].opens || 0);
+      });
+    });
+    return out;
+  }
+
+  function renderPhoneGuard() {
+    var content = document.getElementById("duniya-phone-guard-content");
+    if (!content) return;
+    content.innerHTML = "";
+    if (pgView.screen === "perms") return renderPgPerms(content);
+    if (pgView.screen === "apps") return renderPgApps(content);
+    if (pgView.screen === "appedit") return renderPgAppEdit(content);
+    if (pgView.screen === "rules") return renderPgRules(content);
+    renderPgMain(content);
+  }
+
+  function renderPgMain(content) {
+    content.appendChild(pgEl("p", "muted-line", "Pause before distracting apps pull you in."));
+
+    if (!pgNative()) {
+      var box = pgEl("div", "money-wait-banner");
+      box.style.marginTop = "14px";
+      box.appendChild(pgEl("p", "", "Intentional Open needs the NURA Android app."));
+      box.lastChild.style.margin = "0 0 6px";
+      box.appendChild(pgEl("p", "muted-line", "A web page can't see which apps you open, so nothing here can work in a browser. The manual pause steps under Phone Control still work everywhere."));
+      content.appendChild(box);
+      return;
+    }
+
+    var st = pgStatus() || {};
+    var cfg = pgConfig();
+    var pkgs = Object.keys(cfg.apps);
+
+    // ---- problems, never silent ----
+    function problem(msg, btnLabel, fn) {
+      var b = pgEl("div", "plan-conflict-banner", msg);
+      b.style.marginTop = "12px";
+      if (btnLabel) {
+        var row = pgEl("div", "");
+        row.style.marginTop = "8px";
+        row.appendChild(pgBtn(btnLabel, "action-btn primary", fn));
+        b.appendChild(row);
+      }
+      content.appendChild(b);
+    }
+    if (cfg.enabled) {
+      if (!st.usageAccess) problem("Usage Access was turned off, so NURA can't see your selected apps. Monitoring is stopped.", "Open Usage Access settings", function () { pgNative().openUsageAccessSettings(); });
+      else if (!st.overlay) problem("“Display over other apps” is off, so the pause screen can't appear.", "Open the setting", function () { pgNative().openOverlaySettings(); });
+      else if (!st.serviceRunning) problem("Monitoring isn't running right now. Android may have stopped it.", "Restart monitoring", function () { pgNative().restartMonitor(); setTimeout(renderPhoneGuard, 1500); });
+      (st.missing || []).forEach(function (pkg) {
+        var label = cfg.apps[pkg] ? cfg.apps[pkg].label : pkg;
+        problem(label + " is no longer installed.", "Remove from list", function () { delete cfg.apps[pkg]; pgSave(cfg); renderPhoneGuard(); });
+      });
+      if (st.usageAccess && st.overlay && !st.batteryUnrestricted) {
+        var hint = pgEl("div", "money-wait-banner");
+        hint.style.marginTop = "12px";
+        hint.appendChild(pgEl("p", "", "Battery saving may stop monitoring on some phones."));
+        hint.lastChild.style.margin = "0 0 8px";
+        hint.appendChild(pgBtn("Open battery settings", "action-btn", function () { pgNative().openBatterySettings(); }));
+        content.appendChild(hint);
+      }
+      if (!st.notifications && pkgs.some(function (p) { return cfg.apps[p].dailyTargetMin > 0 || cfg.apps[p].sessionMin > 0; })) {
+        problem("Notifications are off, so you won't get reminders when a limit you set is reached.", "Allow notifications", function () { pgNative().requestNotifications(); });
+      }
+    }
+
+    // ---- on / off ----
+    var head = pgEl("div", "");
+    head.style.margin = "16px 0";
+    head.appendChild(pgEl("h2", "", cfg.enabled ? "Intentional Open is ON" : "Intentional Open is OFF"));
+    if (!cfg.enabled) {
+      head.appendChild(pgEl("p", "muted-line", "NURA can detect when selected apps are opened so it can give you a short pause before you continue."));
+    } else {
+      head.appendChild(pgEl("p", "muted-line", "Only the " + pkgs.length + " app" + (pkgs.length === 1 ? "" : "s") + " you selected are watched. Turning this off stops everything."));
+    }
+    var toggle = pgBtn(cfg.enabled ? "Turn off" : "Turn on", cfg.enabled ? "btn btn-outline btn-full" : "btn btn-primary btn-full", function () {
+      if (cfg.enabled) { cfg.enabled = false; pgSave(cfg); renderPhoneGuard(); return; }
+      var s = pgStatus() || {};
+      if (!s.usageAccess || !s.overlay || !pkgs.length) { pgView = { screen: "perms" }; renderPhoneGuard(); return; }
+      cfg.enabled = true;
+      if (!pgSave(cfg)) showToast("Couldn't start monitoring");
+      setTimeout(renderPhoneGuard, 800);
+    });
+    toggle.style.marginTop = "10px";
+    head.appendChild(toggle);
+    content.appendChild(head);
+
+    // ---- today ----
+    var stats = pgStats();
+    var today = pgSummarize(stats, [todayKey()]);
+    content.appendChild(pgEl("h2", "", "Today"));
+    var mostPkg = null;
+    Object.keys(today.appOpens).forEach(function (p) { if (today.appOpens[p] > 0 && (!mostPkg || today.appOpens[p] > today.appOpens[mostPkg])) mostPkg = p; });
+    var mostLabel = mostPkg ? ((cfg.apps[mostPkg] && cfg.apps[mostPkg].label) || mostPkg) + " (" + today.appOpens[mostPkg] + ")" : "—";
+    function tiles(rows) {
+      var g = pgEl("div", "money-stat-grid");
+      rows.forEach(function (r) {
+        var t = pgEl("div", "money-stat-tile");
+        t.appendChild(pgEl("span", "big", r[1]));
+        t.appendChild(pgEl("span", "lbl", r[0]));
+        g.appendChild(t);
+      });
+      content.appendChild(g);
+    }
+    tiles([["Social media time", pgFmtDur(today.ms)], ["Intentional pauses", String(today.pauses)], ["Went back", String(today.wentBack)]]);
+    tiles([["Chose Continue", String(today.continued)], ["Openings", String(today.opens)], ["Most opened", mostLabel]]);
+
+    // ---- apps ----
+    content.appendChild(pgEl("h2", "", "Apps NURA watches"));
+    if (!pkgs.length) content.appendChild(pgEl("p", "muted-line", "No apps chosen yet."));
+    pkgs.forEach(function (pkg) {
+      var a = cfg.apps[pkg];
+      var card = pgEl("div", "money-habit-card");
+      card.appendChild(pgEl("p", "name", a.label));
+      var bits = [];
+      bits.push(a.dailyTargetMin > 0 ? "Daily target " + a.dailyTargetMin + " min" : "No daily target");
+      if (a.openLimit > 0) bits.push("max " + a.openLimit + " opens");
+      if (a.sessionMin > 0) bits.push(a.sessionMin + " min sessions");
+      card.appendChild(pgEl("p", "cost-line", bits.join(" · ")));
+      var row = pgEl("div", "money-quick-actions");
+      row.appendChild(pgBtn("Limits", "action-btn", function () { pgView = { screen: "appedit", pkg: pkg }; renderPhoneGuard(); }));
+      row.appendChild(pgBtn("Remove", "action-btn", function () { delete cfg.apps[pkg]; pgSave(cfg); renderPhoneGuard(); }));
+      card.appendChild(row);
+      content.appendChild(card);
+    });
+    content.appendChild(pgBtn(pkgs.length ? "Change apps" : "Choose apps to watch", "btn btn-outline btn-full", function () { pgView = { screen: "apps" }; renderPhoneGuard(); }));
+
+    // ---- rules ----
+    content.appendChild(pgEl("h2", "", "Pause rules")).style.marginTop = "18px";
+    content.appendChild(pgEl("p", "muted-line", (cfg.pauseFreshOpen ? "Pause on a fresh open. " : "Pause only on repeated opens. ") + "Pause again if an app is opened " + cfg.repeatCount + " times in " + cfg.repeatWindowMin + " min. After you continue, it won't ask again for " + cfg.graceMin + " min."));
+    var rulesBtn = pgBtn("Adjust rules", "priority-change-link", function () { pgView = { screen: "rules" }; renderPhoneGuard(); });
+    content.appendChild(rulesBtn);
+
+    // ---- this week vs last ----
+    content.appendChild(pgEl("h2", "", "This week")).style.marginTop = "18px";
+    var wk = pgSummarize(stats, getLastNDateKeys(7));
+    var prev = pgSummarize(stats, getLastNDateKeys(14).slice(7));
+    if (!wk.hasData && !prev.hasData) {
+      content.appendChild(pgEl("p", "muted-line", "No data yet. It appears here after Intentional Open has been on for a day."));
+    } else {
+      var box2 = pgEl("div", "money-cost-breakdown");
+      function line(label, value, hl) {
+        var r = pgEl("div", "row" + (hl ? " highlight" : ""));
+        r.appendChild(pgEl("span", "", label));
+        r.appendChild(pgEl("span", "", value));
+        box2.appendChild(r);
+      }
+      line("Last week", prev.hasData ? pgFmtDur(prev.ms) : "no data");
+      line("This week", pgFmtDur(wk.ms));
+      if (prev.hasData) {
+        var diff = wk.ms - prev.ms;
+        line("Change", diff === 0 ? "No change" : (diff < 0 ? "↓ " : "↑ ") + pgFmtDur(Math.abs(diff)), true);
+      }
+      line("Average per day", pgFmtDur(wk.ms / 7));
+      line("Openings", String(wk.opens));
+      line("Intentional pauses", String(wk.pauses));
+      line("Went back", String(wk.wentBack));
+      content.appendChild(box2);
+    }
+
+    var done = pgEl("p", "muted-line", "You're done for now. Put the phone away.");
+    done.style.marginTop = "22px";
+    done.style.textAlign = "center";
+    content.appendChild(done);
+  }
+
+  function renderPgPerms(content) {
+    pgBack(content, function () { pgView = { screen: "main" }; renderPhoneGuard(); });
+    content.appendChild(pgEl("h2", "", "Before you turn this on"));
+    content.appendChild(pgEl("p", "muted-line", "NURA can detect when selected apps are opened so it can give you a short pause before you continue. It only sees which app is in front — never what is inside it. Everything stays on this phone."));
+
+    var st = pgStatus() || {};
+    var cfg = pgConfig();
+    var n = pgNative();
+
+    function item(title, status, why, btnLabel, fn, required) {
+      var card = pgEl("div", "money-habit-card");
+      card.style.marginTop = "12px";
+      card.appendChild(pgEl("p", "name", (status ? "✓ " : "") + title + (required ? "" : " (optional)")));
+      card.appendChild(pgEl("p", "cost-line", why));
+      if (!status) {
+        var row = pgEl("div", "money-quick-actions");
+        row.appendChild(pgBtn(btnLabel, "action-btn primary", fn));
+        card.appendChild(row);
+      }
+      content.appendChild(card);
+    }
+    item("Usage Access", st.usageAccess,
+      "Needed so NURA can tell when one of your chosen apps comes to the front. Android will open a Settings list: find NURA, switch it on, then come back.",
+      "Enable Required Permission", function () { n.openUsageAccessSettings(); }, true);
+    item("Display over other apps", st.overlay,
+      "Needed so the short pause screen can appear on top of the app you're opening. Android will open Settings: switch it on for NURA, then come back.",
+      "Enable Required Permission", function () { n.openOverlaySettings(); }, true);
+    item("Notifications", st.notifications,
+      "Only used to tell you when a time limit you set is reached, and to show that monitoring is on. Never “come back” messages.",
+      "Allow notifications", function () { n.requestNotifications(); }, false);
+    item("Run in the background", st.batteryUnrestricted,
+      "Some phones, including Vivo, stop background apps to save battery. Allowing NURA keeps the pause reliable.",
+      "Open battery settings", function () { n.openBatterySettings(); }, false);
+
+    var pkgs = Object.keys(cfg.apps);
+    var appsCard = pgEl("div", "money-habit-card");
+    appsCard.style.marginTop = "12px";
+    appsCard.appendChild(pgEl("p", "name", (pkgs.length ? "✓ " : "") + "Apps to watch"));
+    appsCard.appendChild(pgEl("p", "cost-line", pkgs.length ? pkgs.length + " selected. NURA watches only these." : "Choose the apps you want a pause for. You decide the list."));
+    var arow = pgEl("div", "money-quick-actions");
+    arow.appendChild(pgBtn(pkgs.length ? "Change apps" : "Choose apps", "action-btn primary", function () { pgView = { screen: "apps" }; renderPhoneGuard(); }));
+    appsCard.appendChild(arow);
+    content.appendChild(appsCard);
+
+    var ready = st.usageAccess && st.overlay && pkgs.length > 0;
+    var go = pgBtn("Turn on Intentional Open", "btn btn-primary btn-full", function () {
+      if (!ready) return;
+      cfg.enabled = true;
+      if (!pgSave(cfg)) { showToast("Couldn't start monitoring"); return; }
+      pgView = { screen: "main" };
+      setTimeout(renderPhoneGuard, 800);
+    });
+    go.style.marginTop = "16px";
+    if (!ready) { go.disabled = true; go.style.opacity = "0.5"; }
+    content.appendChild(go);
+    if (!ready) content.appendChild(pgEl("p", "muted-line", "Turn on the two required permissions and choose at least one app.")).style.marginTop = "8px";
+  }
+
+  function renderPgApps(content) {
+    pgBack(content, function () { pgView = { screen: "main" }; renderPhoneGuard(); });
+    content.appendChild(pgEl("h2", "", "Choose apps to watch"));
+    var cfg = pgConfig();
+    if (!pgAppsCache) pgAppsCache = pgParse(function () { return pgNative().listApps(); }, []);
+    var search = pgEl("input", "text-input");
+    search.type = "text";
+    search.placeholder = "Search apps";
+    search.value = pgAppFilter;
+    content.appendChild(search);
+    var list = pgEl("div", "");
+    content.appendChild(list);
+
+    function drawList() {
+      list.innerHTML = "";
+      var q = pgAppFilter.trim().toLowerCase();
+      var rows = pgAppsCache.filter(function (a) { return !q || a.label.toLowerCase().indexOf(q) !== -1; });
+      rows.sort(function (a, b) {
+        var sa = cfg.apps[a.pkg] ? 0 : 1, sb = cfg.apps[b.pkg] ? 0 : 1;
+        return sa - sb || a.label.toLowerCase().localeCompare(b.label.toLowerCase());
+      });
+      if (!rows.length) list.appendChild(pgEl("p", "muted-line", "No apps found."));
+      rows.forEach(function (a) {
+        var label = pgEl("label", "money-checkbox-row");
+        var cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.checked = !!cfg.apps[a.pkg];
+        cb.addEventListener("change", function () {
+          if (cb.checked) cfg.apps[a.pkg] = { label: a.label, dailyTargetMin: 0, openLimit: 0, sessionMin: 0 };
+          else delete cfg.apps[a.pkg];
+          pgSave(cfg);
+        });
+        label.appendChild(cb);
+        label.appendChild(pgEl("span", "", a.label));
+        list.appendChild(label);
+      });
+    }
+    search.addEventListener("input", function () { pgAppFilter = search.value; drawList(); });
+    drawList();
+    var done = pgBtn("Done", "btn btn-primary btn-full", function () { pgView = { screen: "main" }; renderPhoneGuard(); });
+    done.style.marginTop = "14px";
+    content.appendChild(done);
+  }
+
+  function renderPgAppEdit(content) {
+    var cfg = pgConfig();
+    var a = cfg.apps[pgView.pkg];
+    if (!a) { pgView = { screen: "main" }; return renderPhoneGuard(); }
+    pgBack(content, function () { pgView = { screen: "main" }; renderPhoneGuard(); });
+    content.appendChild(pgEl("h2", "", a.label));
+    function setField(k, v) { a[k] = v; pgSave(cfg); renderPhoneGuard(); }
+    content.appendChild(pgEl("p", "muted-line", "Daily target (minutes a day)"));
+    content.appendChild(pgStepper(a.dailyTargetMin, 0, 600, 5, function (v) { return v === 0 ? "None" : v + " min"; }, function (v) { setField("dailyTargetMin", v); }));
+    content.appendChild(pgEl("p", "muted-line", "Opening limit (opens a day)"));
+    content.appendChild(pgStepper(a.openLimit, 0, 100, 1, function (v) { return v === 0 ? "None" : String(v); }, function (v) { setField("openLimit", v); }));
+    content.appendChild(pgEl("p", "muted-line", "Session timer (minutes each visit)"));
+    content.appendChild(pgStepper(a.sessionMin, 0, 120, 5, function (v) { return v === 0 ? "None" : v + " min"; }, function (v) { setField("sessionMin", v); }));
+    content.appendChild(pgEl("p", "muted-line", "These are your own limits — NURA doesn't set any for you. Reaching one sends a single reminder.")).style.marginTop = "8px";
+  }
+
+  function renderPgRules(content) {
+    var cfg = pgConfig();
+    pgBack(content, function () { pgView = { screen: "main" }; renderPhoneGuard(); });
+    content.appendChild(pgEl("h2", "", "Pause rules"));
+    function setField(k, v) { cfg[k] = v; pgSave(cfg); renderPhoneGuard(); }
+    content.appendChild(pgEl("p", "muted-line", "Pause again after this many opens…"));
+    content.appendChild(pgStepper(cfg.repeatCount, 2, 10, 1, function (v) { return v + " opens"; }, function (v) { setField("repeatCount", v); }));
+    content.appendChild(pgEl("p", "muted-line", "…within this many minutes"));
+    content.appendChild(pgStepper(cfg.repeatWindowMin, 5, 120, 5, function (v) { return v + " min"; }, function (v) { setField("repeatWindowMin", v); }));
+    content.appendChild(pgEl("p", "muted-line", "After I continue, don't ask again for"));
+    content.appendChild(pgStepper(cfg.graceMin, 5, 120, 5, function (v) { return v + " min"; }, function (v) { setField("graceMin", v); }));
+    var row = pgEl("div", "money-quick-actions");
+    row.appendChild(pgBtn("Pause on every fresh open", "preset-plan-chip" + (cfg.pauseFreshOpen ? " active-chip" : ""), function () { setField("pauseFreshOpen", true); }));
+    row.appendChild(pgBtn("Only on repeated opens", "preset-plan-chip" + (!cfg.pauseFreshOpen ? " active-chip" : ""), function () { setField("pauseFreshOpen", false); }));
+    content.appendChild(row);
+  }
+
+  function initPhoneGuard() {
+    document.getElementById("duniya-phone-guard-back").addEventListener("click", function () {
+      pgView = { screen: "main" };
+      pickerStep = { view: "phone-distraction", bodyPart: null };
+      setActiveView("duniya-tool");
+    });
+    window.nuraNativeResumed = function () {
+      var v = document.getElementById("view-duniya-phone-guard");
+      if (v && !v.classList.contains("hidden")) renderPhoneGuard();
+    };
+    window.nuraAndroidBack = function () {
+      var vis = document.querySelector(".view:not(.hidden)");
+      var name = vis ? vis.dataset.view : "home";
+      if (name === "duniya-phone-guard" && pgView.screen !== "main") { pgView = { screen: "main" }; renderPhoneGuard(); return true; }
+      if (name === "home") return false;
+      setActiveView(name === "duniya-phone-guard" ? "duniya" : "home");
+      return true;
+    };
+  }
+
   // ---- Personal Growth ----
 
   var DUNIYA_GROWTH_AREAS = [
@@ -6521,6 +6943,7 @@
     initDuniyaWellbeing();
     initDuniyaCareer();
     initDuniyaMoney();
+    initPhoneGuard();
     initDuniyaGrowth();
     initDuniyaPlan();
     renderHome();
