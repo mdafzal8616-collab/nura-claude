@@ -57,6 +57,34 @@ class NativeBridge(private val activity: MainActivity) {
         return out.toString()
     }
 
+    // Payment apps NURA may open for "Move Money Now". Fixed list on purpose.
+    private val payApps = listOf(
+        "com.google.android.apps.nbu.paisa.user" to "Google Pay",
+        "com.phonepe.app" to "PhonePe",
+        "net.one97.paytm" to "Paytm",
+        "in.org.npci.upiapp" to "BHIM"
+    )
+
+    @JavascriptInterface
+    fun listPaymentApps(): String {
+        val out = JSONArray()
+        for ((pkg, label) in payApps) {
+            if (activity.packageManager.getLaunchIntentForPackage(pkg) != null) {
+                out.put(JSONObject().put("pkg", pkg).put("label", label))
+            }
+        }
+        return out.toString()
+    }
+
+    /** Only opens the app. Nothing is sent to it and nothing is read from it. */
+    @JavascriptInterface
+    fun launchApp(pkg: String): Boolean {
+        if (payApps.none { it.first == pkg }) return false
+        val i = activity.packageManager.getLaunchIntentForPackage(pkg) ?: return false
+        launch(i)
+        return true
+    }
+
     @JavascriptInterface
     fun getConfig(): String = Store.getConfig(activity).toString()
 

@@ -4353,7 +4353,7 @@
   function moneySourceLabel(key) {
     if (key === "unallocated") return "Moved from unallocated savings";
     if (key === "legacy") return "Earlier savings";
-    if (key === "manual") return "Added manually";
+    if (key === "manual") return "Saved";
     var s = MONEY_SOURCES.filter(function (x) { return x.key === key; })[0];
     return s ? s.label : "Added manually";
   }
@@ -4520,13 +4520,48 @@
     saveMoneyGoals(goals);
     return goal;
   }
-  function goalPct(g) { return g.targetAmount ? Math.min(100, Math.floor((g.currentSavedAmount / g.targetAmount) * 100)) : 0; }
+  function goalPct(g) { return g.targetAmount ? Math.min(100, Math.round((g.currentSavedAmount / g.targetAmount) * 1000) / 10) : 0; }
+
+  // Money avoided under "I only avoided spending it" that hasn't been moved
+  // into a goal. Never counted in the goal's saved amount or progress bar.
+  function avoidedForGoal(goalId) {
+    var t = 0;
+    getAvoidedPurchases().forEach(function (p) {
+      if (p.avoidedOnly && p.forGoalId === goalId) t += p.amount - (p.movedAmount || 0);
+    });
+    return t;
+  }
+  function goalNumberRows(g) {
+    return [
+      ["Actually Saved", fmtRupee(g.currentSavedAmount), true],
+      ["Avoided Spending", fmtRupee(avoidedForGoal(g.id))],
+      ["Remaining", fmtRupee(Math.max(0, g.targetAmount - g.currentSavedAmount))],
+      ["Progress", goalPct(g) + "%"]
+    ];
+  }
 
   function addContribution(goalId, amount, sourceKey, note, refId) {
     var list = getContribs();
-    list.push({ id: uid("contrib"), goalId: goalId, amount: amount, source: sourceKey, sourceLabel: moneySourceLabel(sourceKey), note: note || "", date: todayKey(), at: new Date().toISOString(), refId: refId || null });
+    var rec = { id: uid("contrib"), goalId: goalId, amount: amount, source: sourceKey, sourceLabel: moneySourceLabel(sourceKey), note: note || "", date: todayKey(), at: new Date().toISOString(), refId: refId || null };
+    list.push(rec);
     saveContribs(list);
     syncGoals();
+    return rec.id;
+  }
+
+  // Turns "avoided, not saved" money into real savings. Only called when the
+  // user taps a Move button. recId null = everything avoided for that goal.
+  function moveAvoidedToGoal(goalId, recId) {
+    var ps = getAvoidedPurchases(), total = 0;
+    ps.forEach(function (p) {
+      if (!p.avoidedOnly || p.forGoalId !== goalId) return;
+      if (recId && p.id !== recId) return;
+      var left = p.amount - (p.movedAmount || 0);
+      if (left > 0) { total += left; p.movedAmount = p.amount; }
+    });
+    if (total <= 0) return null;
+    saveAvoidedPurchases(ps);
+    return addContribution(goalId, total, "avoided-purchase", "Avoided spending", null);
   }
   function unallocatedTotal() {
     var t = 0;
@@ -4733,17 +4768,16 @@
 
   function renderMoneyGoalCard(g) {
     var card = mEl("div", "money-habit-card");
-    card.appendChild(mEl("p", "name", g.name + (g.completedAt ? " ✓" : "")));
-    card.appendChild(mEl("p", "money-goal-amount", fmtRupee(g.currentSavedAmount) + " / " + fmtRupee(g.targetAmount)));
+    card.appendChild(mEl("p", "name", g.name + " Goal — " + fmtRupee(g.targetAmount) + (g.completedAt ? " ✓" : "")));
     var track = mEl("div", "plan-progress-track");
     var fill = mEl("div", "plan-progress-fill");
     fill.style.width = goalPct(g) + "%";
     track.appendChild(fill);
     card.appendChild(track);
-    card.appendChild(mEl("p", "muted-line", goalPct(g) + "% · " + fmtRupee(Math.max(0, g.targetAmount - g.currentSavedAmount)) + " remaining"));
+    card.appendChild(mRows(goalNumberRows(g)));
     var row = mEl("div", "money-quick-actions");
-    row.appendChild(mBtn("Open", "action-btn primary", function () { goMoneyScreen("goal", { goalId: g.id }); }));
-    row.appendChild(mBtn("+ Add Money", "action-btn", function () { goMoneyScreen("add-money", { goalId: g.id }); }));
+    row.appendChild(mBtn("+ Add Saving", "action-btn primary", function () { goMoneyScreen("add-money", { goalId: g.id }); }));
+    row.appendChild(mBtn("Open", "action-btn", function () { goMoneyScreen("goal", { goalId: g.id }); }));
     card.appendChild(row);
     return card;
   }
@@ -4842,7 +4876,7 @@
     var q = mEl("div", "money-quick-actions");
     q.appendChild(mBtn("+ I avoided a purchase", "preset-plan-chip", function () { goMoneyScreen("avoided-purchase", { itemName: "", amount: "" }); }));
     q.appendChild(mBtn("Should I buy this?", "preset-plan-chip", function () { goMoneyScreen("should-i-buy", { phase: "entry" }); }));
-    q.appendChild(mBtn("Add money to savings", "preset-plan-chip", function () {
+    q.appendChild(mBtn("+ Add Saving", "preset-plan-chip", function () {
       if (!getMoneyGoals().length) { showToast("Create a savings goal first"); goMoneyScreen("new-goal", { returnTo: { screen: "add-money" } }); return; }
       goMoneyScreen("add-money", {});
     }));
@@ -4903,15 +4937,19 @@
     fill.style.width = goalPct(g) + "%";
     track.appendChild(fill);
     content.appendChild(track);
-    content.appendChild(mRows([
-      ["Target", fmtRupee(g.targetAmount)],
-      ["Actually saved", fmtRupee(g.currentSavedAmount)],
-      ["Remaining", fmtRupee(Math.max(0, g.targetAmount - g.currentSavedAmount))],
-      ["Progress", goalPct(g) + "% complete", true]
-    ]));
+    var goalRows = goalNumberRows(g);
+    goalRows.splice(0, 0, ["Target", fmtRupee(g.targetAmount)]);
+    content.appendChild(mRows(goalRows));
     if (g.completedAt) content.appendChild(mEl("p", "rec-note", "🎉 You reached this goal."));
-    var add = mBtn("+ Add Money", "btn btn-primary btn-full", function () { goMoneyScreen("add-money", { goalId: g.id, fromGoal: true }); });
+    var add = mBtn("+ Add Saving", "btn btn-primary btn-full", function () { goMoneyScreen("add-money", { goalId: g.id, fromGoal: true }); });
     content.appendChild(add);
+    var avoidedLeft = avoidedForGoal(g.id);
+    if (avoidedLeft > 0) {
+      content.appendChild(mBtn("Move " + fmtRupee(avoidedLeft) + " avoided spending to this goal", "btn btn-outline btn-full", function () {
+        var cid = moveAvoidedToGoal(g.id, null);
+        goMoneyScreen("saved-done", { goalId: g.id, amount: avoidedLeft, contribId: cid });
+      }));
+    }
     if (unallocatedTotal() > 0) {
       content.appendChild(mBtn("Move unallocated savings here (" + fmtRupee(unallocatedTotal()) + ")", "btn btn-outline btn-full", function () { goMoneyScreen("move-unalloc", { goalId: g.id }); }));
     }
@@ -4922,7 +4960,7 @@
     if (!recent.length) content.appendChild(mEl("p", "muted-line", "Nothing added yet. This only grows when you confirm money went in."));
     recent.forEach(function (c) {
       var d = new Date(c.date + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
-      var line = mEl("p", "muted-line", "+ " + fmtRupee(c.amount) + " — " + (c.note || c.sourceLabel) + " · " + d);
+      var line = mEl("p", "muted-line", "+ " + fmtRupee(c.amount) + " — " + (c.note || c.sourceLabel) + (c.keptIn ? " · " + c.keptIn : "") + " · " + d);
       line.style.marginBottom = "4px";
       content.appendChild(line);
     });
@@ -4934,40 +4972,135 @@
     var goals = getMoneyGoals();
     if (!goals.length) { goMoneyScreen("new-goal", { returnTo: { screen: "add-money" } }); return; }
     if (!moneyView.goalId) moneyView.goalId = goals[0].id;
+    if (!moneyView.goalId) {
+      var last = localStorage.getItem("nc_money_last_goal");
+      moneyView.goalId = goals.some(function (g) { return g.id === last; }) ? last : goals[0].id;
+    }
     buildMoneyBack(content, function () { goMoneyScreen(moneyView.fromGoal ? "goal" : "dashboard", { goalId: moneyView.goalId }); });
-    content.appendChild(mEl("h2", "", "How much are you adding?"));
-    content.appendChild(mNumInput("₹500", moneyView.amount, function (v) { moneyView.amount = v; }));
+    content.appendChild(mEl("h2", "", "How much did you save?"));
+    var input = mNumInput("₹800", moneyView.amount, function (v) { moneyView.amount = v; updateQ(); });
+    content.appendChild(input);
     if (goals.length > 1) {
-      var gl = mEl("p", "muted-line", "Which goal?");
-      gl.style.marginTop = "12px";
-      content.appendChild(gl);
       var chips = mEl("div", "money-quick-actions");
       goals.forEach(function (g) {
-        chips.appendChild(mBtn(g.name + " — " + fmtRupee(g.currentSavedAmount) + " / " + fmtRupee(g.targetAmount), "preset-plan-chip" + (moneyView.goalId === g.id ? " active-chip" : ""), function () { moneyView.goalId = g.id; renderDuniyaMoney(); }));
+        chips.appendChild(mBtn(g.name, "preset-plan-chip" + (moneyView.goalId === g.id ? " active-chip" : ""), function () { moneyView.goalId = g.id; renderDuniyaMoney(); }));
       });
       content.appendChild(chips);
-    } else {
-      var only = mEl("p", "muted-line", "Goal: " + goals[0].name);
-      only.style.marginTop = "8px";
-      content.appendChild(only);
     }
-    var sl = mEl("p", "muted-line", "Where did this money come from? (optional)");
-    sl.style.marginTop = "12px";
-    content.appendChild(sl);
-    var srow = mEl("div", "money-quick-actions");
-    MONEY_SOURCES.forEach(function (s) {
-      srow.appendChild(mBtn(s.label, "preset-plan-chip" + (moneyView.source === s.key ? " active-chip" : ""), function () { moneyView.source = moneyView.source === s.key ? null : s.key; renderDuniyaMoney(); }));
+    var q = mEl("p", "");
+    q.style.fontWeight = "600";
+    q.style.margin = "14px 0 8px";
+    function updateQ() {
+      var a = parseFloat(moneyView.amount);
+      q.textContent = "Did you actually keep/move this " + (a > 0 ? fmtRupee(a) : "money") + " for your goal?";
+    }
+    updateQ();
+    content.appendChild(q);
+    function amountOrToast() {
+      var a = parseFloat(moneyView.amount);
+      if (!a || a <= 0) { showToast("Enter how much"); return 0; }
+      return a;
+    }
+    content.appendChild(mBtn("Yes, I saved it", "btn btn-primary btn-full", function () {
+      var a = amountOrToast();
+      if (!a) return;
+      localStorage.setItem("nc_money_last_goal", moneyView.goalId);
+      var cid = addContribution(moneyView.goalId, a, "manual", "", null);
+      goMoneyScreen("saved-done", { goalId: moneyView.goalId, amount: a, contribId: cid });
+    }));
+    content.appendChild(mBtn("I only avoided spending it", "btn btn-outline btn-full", function () {
+      var a = amountOrToast();
+      if (!a) return;
+      localStorage.setItem("nc_money_last_goal", moneyView.goalId);
+      var rec = { id: uid("avoid"), itemName: "Avoided spending", amount: a, date: todayKey(), at: new Date().toISOString(), resolved: true, avoidedOnly: true, forGoalId: moneyView.goalId, movedAmount: 0, goalAmount: 0, goalId: null, unallocAmount: 0, spentAmount: 0 };
+      var list = getAvoidedPurchases();
+      list.push(rec);
+      saveAvoidedPurchases(list);
+      goMoneyScreen("avoided-done", { goalId: moneyView.goalId, amount: a, recId: rec.id });
+    }));
+    setTimeout(function () { if (document.body.contains(input) && !moneyView.amount) input.focus(); }, 60);
+  }
+
+  // Result of "Yes, I saved it": small, nothing here blocks the user.
+  function renderMoneySavedDone(content) {
+    var g = getGoal(moneyView.goalId);
+    if (!g) { goMoneyScreen("dashboard"); return; }
+    content.appendChild(mEl("h2", "", fmtRupee(moneyView.amount) + " added to your " + g.name + " goal."));
+    content.appendChild(mRows([
+      [g.name + " Goal", fmtRupee(g.currentSavedAmount) + " / " + fmtRupee(g.targetAmount), true],
+      ["Progress", goalPct(g) + "%"]
+    ]));
+    var kl = mEl("p", "muted-line", "Where did you keep it? (optional)");
+    kl.style.marginTop = "6px";
+    content.appendChild(kl);
+    var row = mEl("div", "money-quick-actions");
+    ["Bank", "UPI", "Cash", "Other"].forEach(function (place) {
+      row.appendChild(mBtn(place, "preset-plan-chip" + (moneyView.kept === place ? " active-chip" : ""), function () {
+        moneyView.kept = place;
+        var list = getContribs();
+        list.forEach(function (c) { if (c.id === moneyView.contribId) c.keptIn = place; });
+        saveContribs(list);
+        renderDuniyaMoney();
+      }));
     });
-    content.appendChild(srow);
-    var save = mBtn("Add to goal", "btn btn-primary btn-full", function () {
-      var amount = parseFloat(moneyView.amount);
-      if (!amount || amount <= 0) { showToast("Enter an amount"); return; }
-      var g = getGoal(moneyView.goalId);
-      addContribution(g.id, amount, moneyView.source || "manual", "", null);
-      goMoneyScreen("alloc-done", { kind: "goal", amount: amount, goalId: g.id });
+    row.appendChild(mBtn("Skip", "preset-plan-chip", function () { goMoneyScreen("dashboard"); }));
+    content.appendChild(row);
+    content.appendChild(mBtn(moneyView.showPay ? "Hide payment apps" : "Move Money Now", "btn btn-outline btn-full", function () { moneyView.showPay = !moneyView.showPay; renderDuniyaMoney(); }));
+    if (moneyView.showPay) renderPayApps(content);
+    var done = mBtn("Done", "btn btn-primary btn-full", function () { goMoneyScreen("dashboard"); });
+    done.style.marginTop = "6px";
+    content.appendChild(done);
+  }
+
+  // Result of "I only avoided spending it": recorded apart from real savings.
+  function renderMoneyAvoidedDone(content) {
+    var g = getGoal(moneyView.goalId);
+    content.appendChild(mEl("h2", "", "Avoided Spending: +" + fmtRupee(moneyView.amount)));
+    content.appendChild(mEl("p", "muted-line", "Recorded separately. It isn't added to your savings or your goal progress."));
+    var mv = mBtn("Move " + fmtRupee(moneyView.amount) + " to my goal", "btn btn-primary btn-full", function () {
+      var cid = moveAvoidedToGoal(moneyView.goalId, moneyView.recId);
+      goMoneyScreen("saved-done", { goalId: moneyView.goalId, amount: moneyView.amount, contribId: cid });
     });
-    save.style.marginTop = "14px";
-    content.appendChild(save);
+    mv.style.marginTop = "12px";
+    if (g) content.appendChild(mv);
+    content.appendChild(mBtn("Done", "btn btn-outline btn-full", function () { goMoneyScreen("dashboard"); }));
+  }
+
+  // Opens an installed payment/banking app. NURA never handles credentials.
+  var PAY_APPS = [
+    { pkg: "com.google.android.apps.nbu.paisa.user", label: "Google Pay" },
+    { pkg: "com.phonepe.app", label: "PhonePe" },
+    { pkg: "net.one97.paytm", label: "Paytm" },
+    { pkg: "in.org.npci.upiapp", label: "BHIM" }
+  ];
+  function renderPayApps(content) {
+    var box = mEl("div", "money-cost-breakdown");
+    var native = window.NuraNative;
+    var row = mEl("div", "money-quick-actions");
+    row.style.margin = "0";
+    if (native && native.listPaymentApps) {
+      var apps = [];
+      try { apps = JSON.parse(native.listPaymentApps()); } catch (e) { apps = []; }
+      if (!apps.length) box.appendChild(mEl("p", "muted-line", "No payment app found on this phone. Open your banking app yourself."));
+      apps.forEach(function (a) {
+        row.appendChild(mBtn(a.label, "action-btn primary", function () { native.launchApp(a.pkg); }));
+      });
+    } else if (/Android/i.test(navigator.userAgent)) {
+      PAY_APPS.forEach(function (a) {
+        var link = mEl("a", "action-btn primary", a.label);
+        link.href = "intent://#Intent;package=" + a.pkg + ";end";
+        link.style.textDecoration = "none";
+        row.appendChild(link);
+      });
+      box.appendChild(mEl("p", "muted-line", "Opens the app if it's installed."));
+    } else {
+      box.appendChild(mEl("p", "muted-line", "Open your banking or payment app on your phone to move the money."));
+    }
+    box.appendChild(row);
+    var note = mEl("p", "muted-line", "NURA never asks for or stores PINs, passwords, OTPs or card details.");
+    note.style.marginTop = "8px";
+    box.appendChild(note);
+    content.appendChild(box);
   }
 
   // -- Log an expense --
@@ -5625,6 +5758,8 @@
     if (s === "new-goal") renderMoneyNewGoal(content);
     else if (s === "goal") renderMoneyGoal(content);
     else if (s === "add-money") renderMoneyAddMoney(content);
+    else if (s === "saved-done") renderMoneySavedDone(content);
+    else if (s === "avoided-done") renderMoneyAvoidedDone(content);
     else if (s === "expense") renderMoneyExpense(content);
     else if (s === "allocate") renderMoneyAllocate(content);
     else if (s === "alloc-done") renderMoneyAllocDone(content);

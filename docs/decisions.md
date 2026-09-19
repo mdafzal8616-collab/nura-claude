@@ -2,6 +2,19 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-19 — Money Habits: "+ Add Saving" in 2–3 taps
+
+Simplified the everyday saving entry without redesigning Money Habits. **+ Add Saving** (on every goal card, the goal screen and Quick Actions) → "How much did you save?" → "Did you actually keep/move this ₹X for your goal?" → **Yes, I saved it** or **I only avoided spending it**. The goal is preselected (the last-used goal; goal chips appear only when there are several), so a normal save is: tap Add Saving → type amount → Yes → Done. The old source list (Salary, Gift, …) was removed from this flow; contributions from it are labelled "Saved".
+
+- **Yes** adds the amount to the goal immediately and shows one small screen: goal progress, an optional "Where did you keep it? Bank / UPI / Cash / Other / Skip" (stored on that contribution, shown in Recent activity, never blocking), **Move Money Now**, and Done.
+- **Only avoided** records "Avoided Spending: +₹X" separately (`avoidedOnly` avoided-purchase record tied to the goal); it does not touch saved money or the progress bar. One optional button, "Move ₹X to my goal", converts it into a real contribution. The goal screen also offers to move all of a goal's outstanding avoided spending.
+- **Dashboard** goal cards now show the four clear numbers: Actually Saved, Avoided Spending (not yet moved), Remaining, Progress (one decimal, e.g. 16.8%). Only Actually Saved moves the bar.
+- **Move Money Now** opens an installed payment app. In the Android app: native `listPaymentApps` / `launchApp` with a fixed allow-list (Google Pay, PhonePe, Paytm, BHIM); it only opens the app. In Android Chrome: `intent://` links ("opens the app if it's installed"). On desktop: plain text. NURA never asks for or stores PINs, passwords, OTPs or card details; the panel says so.
+
+**Tested**: your example (Phone ₹50,000: saved ₹8,400, avoided ₹2,300 → Remaining ₹41,600, Progress 16.8%, bar 16.8%), the 3-tap flow, optional UPI tag and skip, both "Move to goal" paths (progress only rises on move), amount validation, second goal with last-used default, weekly report (avoided ₹2,700 vs saved ₹12,300 kept apart), the older avoided-purchase/"what happened to this money" flow still works, reload persistence, no console errors. Payment-app opening was tested against a stand-in bridge only, not on a phone.
+
+**Not done**: no edit/delete of a saving entry; "Move Money Now" can't pre-fill an amount or payee (deliberately, no payment details are handled).
+
 ## 2026-09-19 — Money Habits: savings goals only grow when the user confirms money was saved
 
 **Problem**: goals could be created but there was no honest way to grow them — avoided purchases either auto-counted or went to a vague "general" bucket, and there was only one goal.
