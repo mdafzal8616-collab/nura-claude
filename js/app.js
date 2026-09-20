@@ -42,6 +42,7 @@
     if (isNaN(m)) return;
     var before = nuraDayKey();
     var prev = getDayFajrMin();
+    if (prev === m) return;
     dayFajrMin = m;
     if (nuraDayKey() !== before) { dayFajrMin = prev; return; }
     writeJSON("nc_day_boundary", { fajrMin: m, fajr: hhmm, savedAt: new Date().toISOString() });
@@ -769,9 +770,15 @@
 
   // Saved times for the current NURA day, or null. Needs Sunrise (older caches lack it).
   function cachedTimingsForToday() {
+    // The user's own saved times always win over anything calculated.
+    var man = getManualTimes();
+    if (man) {
+      setDayBoundary(man.Fajr);
+      return { Fajr: man.Fajr, Dhuhr: man.Dhuhr, Asr: man.Asr, Maghrib: man.Maghrib, Isha: man.Isha };
+    }
     var settings = getPrayerSettings();
     var cache = readJSON("nc_prayer_times_cache", null);
-    if (settings && cache && cache.date === todayKey() && cache.signature === prayerSignature(settings) && cache.timings && cache.timings.Sunrise) {
+    if (settings && settings.mode !== "custom" && cache && cache.date === todayKey() && cache.signature === prayerSignature(settings) && cache.timings) {
       setDayBoundary(cache.timings.Fajr);
       return cache.timings;
     }
@@ -781,6 +788,7 @@
   function fetchPrayerTimesForToday(forceRefresh) {
     var settings = getPrayerSettings();
     if (!settings) return Promise.reject(new Error("no prayer settings"));
+    if (getManualTimes()) return Promise.resolve(cachedTimingsForToday());
     var sig = prayerSignature(settings);
     var forKey = todayKey();
     var cached = forceRefresh ? null : cachedTimingsForToday();
@@ -1975,7 +1983,7 @@
   // Section windows (Fajr->sunrise, sunrise->Dhuhr, ...) use the day's prayer times;
   // the Isha/Night split is a display grouping only (90 minutes after Isha).
 
-  var dayView = { setup: false, open: {}, token: 0, timerId: null, lastDay: null, stageEnd: null, finalStage: false, timings: null, currentId: null, doneAdvance: false };
+  var dayView = { setup: false, open: {}, token: 0, timerId: null, lastDay: null, stageEnd: null, finalStage: false, timings: null, currentId: null, adding: null, tasbihOpen: {}, returnHome: false, nextTime: null };
 
   function dfEl(tag, cls, text) {
     var e = document.createElement(tag);
@@ -1985,6 +1993,11 @@
   }
   function dfClock(d) { return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
   function dfPad(n) { return String(n).padStart(2, "0"); }
+  function dfRemain(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return (h ? h + "h " : "") + m + "m " + x + "s";
+  }
   function dfCountdown(ms) {
     var s = Math.max(0, Math.floor(ms / 1000));
     return dfPad(Math.floor(s / 3600)) + ":" + dfPad(Math.floor((s % 3600) / 60)) + ":" + dfPad(s % 60);
@@ -2048,27 +2061,75 @@
     renderDayFlow();
   }
 
+  // ---- manual prayer times (the user's own jama'ah times always win) ----
+  var PRAYER_TIMES_KEY = "nc_prayer_manual";
+  function getManualTimes() {
+    var m = readJSON(PRAYER_TIMES_KEY, null);
+    if (!m) return null;
+    for (var i = 0; i < PRAYER_ORDER.length; i++) { if (!/^\d{1,2}:\d{2}$/.test(String(m[PRAYER_ORDER[i]] || ""))) return null; }
+    return m;
+  }
+  function saveManualTimes(m) {
+    var clean = {};
+    PRAYER_ORDER.forEach(function (n) { clean[n] = m[n]; });
+    clean.savedAt = new Date().toISOString();
+    writeJSON(PRAYER_TIMES_KEY, clean);
+    // other modules (Plan My Day, Salah priority) only need *some* prayer settings to exist
+    if (!getPrayerSettings()) savePrayerSettings({ mode: "custom", method: 1 });
+    setDayBoundary(clean.Fajr);
+    journeyPatch(todayKey(), { times: null });
+    dayView.timings = null;
+  }
+
   // ---- times, sections, current position ----
   function dayTimes(T) {
     var t = { fajr: dayAt(T.Fajr), dhuhr: dayAt(T.Dhuhr), asr: dayAt(T.Asr), maghrib: dayAt(T.Maghrib), isha: dayAt(T.Isha), nextFajr: dayAt(T.Fajr, 1) };
-    t.sunrise = T.Sunrise ? dayAt(T.Sunrise) : new Date(t.fajr.getTime() + 75 * 60000);
-    t.ishaEnd = new Date(Math.min(t.nextFajr.getTime(), t.isha.getTime() + 90 * 60000));
+    t.third = new Date(t.maghrib.getTime() + (t.nextFajr - t.maghrib) * 2 / 3);
     return t;
   }
+  // Prayer blocks hold the Salah flow; period blocks hold the user's own schedule.
+  // The 45-minute prayer block length is a display grouping, not a ruling.
+  var DAY_GROUP_MS = 45 * 60000;
   var DAY_SECTIONS = [
-    { id: "fajr", title: "Fajr", stage: "Fajr time", icon: "🌅", sub: "Start your day with intention.", from: "fajr", to: "sunrise", salah: "Fajr" },
-    { id: "morning", title: "Morning", stage: "Morning", icon: "☀️", sub: "Your first focused hours.", from: "sunrise", to: "dhuhr" },
-    { id: "dhuhr", title: "Dhuhr", stage: "Afternoon", icon: "🌤", sub: "Pause at midday.", from: "dhuhr", to: "asr", salah: "Dhuhr" },
-    { id: "asr", title: "Asr", stage: "Late afternoon", icon: "🌇", sub: "Finish the afternoon well.", from: "asr", to: "maghrib", salah: "Asr" },
-    { id: "maghrib", title: "Maghrib", stage: "Evening", icon: "🌙", sub: "The day softens.", from: "maghrib", to: "isha", salah: "Maghrib" },
-    { id: "isha", title: "Isha", stage: "Isha time", icon: "🌙", sub: "Closing the day.", from: "isha", to: "ishaEnd", salah: "Isha" },
-    { id: "night", title: "Night", stage: "Night", icon: "🌌", sub: "Rest well. A new day begins at Fajr.", from: "ishaEnd", to: "nextFajr" }
+    { id: "fajr", title: "Fajr", icon: "🌅", kind: "salah", salah: "Fajr" },
+    { id: "morning", title: "Morning", icon: "☀️", kind: "period" },
+    { id: "dhuhr", title: "Dhuhr", icon: "🌤", kind: "salah", salah: "Dhuhr" },
+    { id: "afternoon", title: "Afternoon", icon: "🌤", kind: "period" },
+    { id: "asr", title: "Asr", icon: "🌇", kind: "salah", salah: "Asr" },
+    { id: "evening", title: "Evening", icon: "🌆", kind: "period" },
+    { id: "maghrib", title: "Maghrib", icon: "🌙", kind: "salah", salah: "Maghrib" },
+    { id: "isha", title: "Isha", icon: "🌙", kind: "salah", salah: "Isha" },
+    { id: "night", title: "Night", icon: "🌌", kind: "period" },
+    { id: "tahajjud", title: "Tahajjud", icon: "✨", kind: "tahajjud" }
   ];
-  function daySectionIndex(t, now) {
-    for (var i = DAY_SECTIONS.length - 1; i >= 0; i--) {
-      if (now >= t[DAY_SECTIONS[i].from]) return i;
-    }
+  function daySectionStarts(t) {
+    var g = DAY_GROUP_MS;
+    var s = [
+      t.fajr,
+      new Date(Math.min(t.fajr.getTime() + g, t.dhuhr.getTime())),
+      t.dhuhr,
+      new Date(Math.min(t.dhuhr.getTime() + g, t.asr.getTime())),
+      t.asr,
+      new Date(Math.min(t.asr.getTime() + g, t.maghrib.getTime())),
+      t.maghrib,
+      t.isha,
+      new Date(Math.min(t.isha.getTime() + g, t.nextFajr.getTime())),
+      t.third
+    ];
+    for (var i = 1; i < s.length; i++) { if (s[i] < s[i - 1]) s[i] = s[i - 1]; }
+    return s;
+  }
+  function daySectionIndex(starts, now) {
+    for (var i = starts.length - 1; i >= 0; i--) { if (now >= starts[i]) return i; }
     return 0;
+  }
+  // The period block a moment belongs to: tasks live in Morning/Afternoon/Evening/Night.
+  function periodIndexFor(idx) {
+    var id = DAY_SECTIONS[idx].id;
+    var to = { fajr: "morning", dhuhr: "afternoon", asr: "evening", maghrib: "night", isha: "night", tahajjud: "night" };
+    var target = to[id] || id;
+    for (var i = 0; i < DAY_SECTIONS.length; i++) { if (DAY_SECTIONS[i].id === target) return i; }
+    return idx;
   }
   function nextSalahInfo(t, now) {
     var list = [["Fajr", t.fajr], ["Dhuhr", t.dhuhr], ["Asr", t.asr], ["Maghrib", t.maghrib], ["Isha", t.isha], ["Fajr", t.nextFajr]];
@@ -2078,83 +2139,365 @@
     return null;
   }
 
-  // ---- rows ----
-  function salahItem(name, t, now) {
-    var start = t[name.toLowerCase()];
-    var done = !!getSalahCompletions()[name];
-    var future = start > now;
-    return {
-      label: name + " Salah", sub: dfClock(start), done: done, locked: future, lockedNote: "at " + dfClock(start),
-      toggle: function () { if (done) setSalahIncomplete(name); else setSalahComplete(name); }
-    };
+  // ---- the Salah flow: Fard -> Sunnah -> Tasbihat -> Qur'an ----
+  // Fard = nc_salah_completions, Sunnah = the Sunnah log (same rows as the Sunnah page),
+  // Tasbihat + Qur'an + skips = nc_salah_flow (per NURA day, per prayer).
+  var SALAH_STEPS = {
+    Fajr: { before: [{ id: "fj-sunnah-before", label: "Sunnah before Fajr (2 rakah)" }], after: [], dhikr: "fj-dhikr" },
+    Dhuhr: { before: [{ id: "dh-before", label: "Sunnah before Dhuhr" }], after: [{ id: "dh-after", label: "Sunnah after Dhuhr" }], dhikr: "dh-dhikr" },
+    Asr: { before: [], after: [], dhikr: "as-dhikr" },
+    Maghrib: { before: [], after: [], dhikr: "mg-dhikr" },
+    Isha: { before: [], after: [{ id: "wt-pray", label: "Witr" }], dhikr: "is-dhikr" }
+  };
+  var TASBIH_PHASES = [
+    { label: "SubhanAllah", target: 33 },
+    { label: "Alhamdulillah", target: 33 },
+    { label: "Allahu Akbar", target: 34 }
+  ];
+  var FLOW_KEY = "nc_salah_flow";
+  function flowGet(prayer) { return (readJSON(FLOW_KEY, {})[todayKey()] || {})[prayer] || {}; }
+  function flowPatch(prayer, patch) {
+    var all = readJSON(FLOW_KEY, {});
+    var d = todayKey();
+    all[d] = all[d] || {};
+    var cur = all[d][prayer] || {};
+    Object.keys(patch).forEach(function (k) { if (patch[k] === null) delete cur[k]; else cur[k] = patch[k]; });
+    all[d][prayer] = cur;
+    writeJSON(FLOW_KEY, all);
   }
-  function sunnahItem(actionId, label) {
-    var done = !!getDaySunnahLog(todayKey())[actionId];
-    return { label: label, done: done, toggle: function () { toggleSunnahAction(actionId); } };
+  function flowSkip(prayer, key, on) {
+    var sk = flowGet(prayer).skip || {};
+    var next = {};
+    Object.keys(sk).forEach(function (k) { next[k] = sk[k]; });
+    if (on) next[key] = true; else delete next[key];
+    flowPatch(prayer, { skip: next });
+  }
+  function tasbihCounts(prayer) { var c = flowGet(prayer).tasbih; return c && c.c ? c.c : [0, 0, 0]; }
+  function tasbihSetDone(prayer, done, counts) {
+    var cfg = SALAH_STEPS[prayer];
+    var log = getDaySunnahLog(todayKey());
+    flowPatch(prayer, { tasbih: { c: counts, done: done, at: done ? new Date().toISOString() : null } });
+    // keep the Sunnah page's "Dhikr after salah" in step with what was done here
+    if (cfg.dhikr && !!log[cfg.dhikr] !== done) toggleSunnahAction(cfg.dhikr);
+  }
+  function tasbihTap(prayer, delta) {
+    var c = tasbihCounts(prayer).slice();
+    var p = 0;
+    if (delta > 0) {
+      while (p < TASBIH_PHASES.length && c[p] >= TASBIH_PHASES[p].target) p++;
+      if (p >= TASBIH_PHASES.length) return c;
+      c[p]++;
+    } else {
+      p = TASBIH_PHASES.length - 1;
+      while (p >= 0 && c[p] <= 0) p--;
+      if (p < 0) return c;
+      c[p]--;
+    }
+    var full = TASBIH_PHASES.every(function (ph, i) { return c[i] >= ph.target; });
+    tasbihSetDone(prayer, full, c);
+    return c;
   }
 
-  // Plan My Day tasks, placed by their time into the section that contains it.
-  function planItemsBySection(t, curIdx) {
+  // ---- Qur'an activity (recorded from the real Qur'an page) ----
+  var QURAN_PROGRESS_KEY = "nc_quran_progress";
+  function quranProgress() { return readJSON(QURAN_PROGRESS_KEY, { last: null, days: {} }); }
+  function quranAyahsToday() {
+    var d = quranProgress().days[todayKey()];
+    return d ? Object.keys(d).length : 0;
+  }
+  function quranSurahName(n) {
+    var m = (window.NURA_QURAN_SURAHS || []).filter(function (s) { return s.number === n; })[0];
+    return m ? m.nameSimple : "Surah " + n;
+  }
+  // Called when an ayah has stayed on screen a few seconds - that is "read", not scrolled past.
+  function quranCountAyah(surah, ayah) {
+    var q = quranProgress();
+    var d = todayKey();
+    q.days[d] = q.days[d] || {};
+    q.days[d][surah + ":" + ayah] = 1;
+    q.last = { surah: surah, ayah: ayah, at: new Date().toISOString() };
+    writeJSON(QURAN_PROGRESS_KEY, q);
+    var total = Object.keys(q.days[d]).length;
+    ProgressStore.record({ date: d, categoryId: "deen", sectionId: "quran", sectionTitle: "Qur'an", actionId: "quran_reading", title: "Qur'an reading", metricType: "count", unit: "ayahs", mode: "upsert", value: total, source: "quran" });
+    var intent = readJSON("nc_quran_intent", null);
+    if (intent && intent.date === d && total > (intent.base || 0)) {
+      flowPatch(intent.prayer, { quran: true });
+      try { localStorage.removeItem("nc_quran_intent"); } catch (e) {}
+    }
+  }
+  var quranObserver = null;
+  var quranDwell = {};
+  function quranWatch(list, surah) {
+    if (quranObserver) quranObserver.disconnect();
+    Object.keys(quranDwell).forEach(function (k) { clearTimeout(quranDwell[k]); });
+    quranDwell = {};
+    if (!("IntersectionObserver" in window)) return;
+    quranObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        var n = Number(en.target.getAttribute("data-ayah"));
+        var k = surah + ":" + n;
+        if (en.isIntersecting) {
+          if (!quranDwell[k]) quranDwell[k] = setTimeout(function () { delete quranDwell[k]; quranCountAyah(surah, n); }, 3000);
+        } else if (quranDwell[k]) { clearTimeout(quranDwell[k]); delete quranDwell[k]; }
+      });
+    }, { threshold: 0.3 });
+    list.querySelectorAll(".quran-ayah-card").forEach(function (c) { quranObserver.observe(c); });
+  }
+
+  // ---- Home -> Sunnah / Qur'an pages, with a way back ----
+  var dayNavBusy = false;
+  function updateSunnahReturn() {
+    var bar = document.getElementById("sunnah-return");
+    if (bar) bar.classList.toggle("hidden", !dayView.returnHome);
+  }
+  function openFromHome(subtab, after) {
+    dayNavBusy = true;
+    setActiveView("sunnah");
+    dayNavBusy = false;
+    dayView.returnHome = true;
+    updateSunnahReturn();
+    switchSunnahSubtab(subtab);
+    if (after) after();
+  }
+  function openSunnahSection(sectionId) {
+    sunnahSectionOpenState[sectionId] = true;
+    openFromHome("routine", renderRoutine);
+  }
+  function openQuranFromHome(prayer, continueReading) {
+    var last = quranProgress().last;
+    if (prayer) writeJSON("nc_quran_intent", { prayer: prayer, date: todayKey(), base: quranAyahsToday() });
+    openFromHome("quran", function () {
+      if (continueReading && last) openQuranSurah(last.surah, last.ayah);
+    });
+  }
+
+  // ---- rows ----
+  function sunnahRow(id, label, prayer, opts) {
+    var log = getDaySunnahLog(todayKey());
+    var skipped = !!(prayer && (flowGet(prayer).skip || {})[id]);
+    var it = { label: label, done: !!log[id], skipped: skipped, toggle: function () { toggleSunnahAction(id); } };
+    if (prayer && opts && opts.skippable) { it.skip = function () { flowSkip(prayer, id, true); }; it.unskip = function () { flowSkip(prayer, id, false); }; }
+    if (opts && opts.section) it.open = function () { openSunnahSection(opts.section); };
+    return it;
+  }
+
+  function salahFlowItems(sec, t, now) {
+    var name = sec.salah, cfg = SALAH_STEPS[name], f = flowGet(name), items = [];
+    var start = t[name.toLowerCase()];
+    var fardDone = !!getSalahCompletions()[name];
+    cfg.before.forEach(function (s) { items.push(sunnahRow(s.id, s.label, name, { skippable: true })); });
+    var fard = { label: name + " Salah", sub: dfClock(start), done: fardDone, kind: "fard" };
+    if (start > now) { fard.locked = true; fard.lockedNote = "at " + dfClock(start); }
+    fard.toggle = function () { if (fardDone) setSalahIncomplete(name); else setSalahComplete(name); };
+    items.push(fard);
+    if (!fardDone) return items;
+    cfg.after.forEach(function (s) { items.push(sunnahRow(s.id, s.label, name, { skippable: true })); });
+
+    var tb = f.tasbih || {};
+    var tc = tasbihCounts(name);
+    var skipT = !!(f.skip || {}).tasbihat;
+    var tsum = tc[0] + tc[1] + tc[2];
+    items.push({
+      label: "Tasbihat", done: !!tb.done, skipped: skipT, kind: "tasbih", prayer: name,
+      sub: tb.done ? "SubhanAllah ×33 · Alhamdulillah ×33 · Allahu Akbar ×34" : (tsum ? tsum + " of 100 so far" : "After Salah · ×33 ×33 ×34"),
+      toggle: function () { if (tb.done) tasbihSetDone(name, false, tc); else tasbihSetDone(name, true, [33, 33, 34]); },
+      skip: function () { flowSkip(name, "tasbihat", true); }, unskip: function () { flowSkip(name, "tasbihat", false); }
+    });
+
+    var last = quranProgress().last;
+    var skipQ = !!(f.skip || {}).quran;
+    items.push({
+      label: "Qur'an", done: !!f.quran, skipped: skipQ, kind: "quran", prayer: name,
+      sub: last ? "Continue: " + quranSurahName(last.surah) + " · Ayah " + last.ayah : "Read a little, at your pace",
+      toggle: function () { flowPatch(name, { quran: f.quran ? null : true }); },
+      skip: function () { flowSkip(name, "quran", true); }, unskip: function () { flowSkip(name, "quran", false); },
+      actions: (last ? [{ label: "Continue", primary: true, fn: function () { openQuranFromHome(name, true); } }] : []).concat([{ label: last ? "Open Qur'an" : "Read Qur'an", primary: !last, fn: function () { openQuranFromHome(name, false); } }])
+    });
+    return items;
+  }
+
+  // The user's own tasks (Plan My Day activities), each in the period block that holds its time.
+  function planItemsBySection(t, starts, curIdx) {
     var out = {};
     var acts = getPlanActivities();
     if (!acts.length) return out;
     var built = getPlanBuilt();
-    var starts = {};
-    if (built && built.timeline) built.timeline.forEach(function (e) { if (e.refId && (e.kind === "fixed" || e.kind === "flexible" || e.kind === "sunnah")) starts[e.refId] = e; });
+    var slots = {};
+    if (built && built.timeline) built.timeline.forEach(function (e) { if (e.refId && (e.kind === "fixed" || e.kind === "flexible")) slots[e.refId] = e; });
     var dayStart = dayAt("00:00").getTime();
     acts.forEach(function (a) {
       if (a.status === "skipped") return;
-      var slot = starts[a.id];
-      var startMin = slot ? slot.startMin : (a.mode === "fixed" && a.startTime ? planTimeToMinutes(a.startTime) : null);
-      var idx = curIdx;
-      var sub = "Anytime today";
-      if (startMin !== null) {
-        var at = new Date(dayStart + startMin * 60000);
-        idx = daySectionIndex(t, at);
-        sub = slot && slot.endMin - slot.startMin > 1 ? planMinutesToClock(slot.startMin) + " – " + planMinutesToClock(slot.endMin) : planMinutesToClock(startMin);
-        if (!slot && a.endTime) sub = planMinutesToClock(startMin) + " – " + planMinutesToClock(planTimeToMinutes(a.endTime));
+      var slot = slots[a.id];
+      var startMin = a.mode === "fixed" && a.startTime ? planTimeToMinutes(a.startTime) : (slot ? slot.startMin : null);
+      var idx = periodIndexFor(curIdx);
+      var sub = "";
+      if (a.homeBlock) {
+        for (var i = 0; i < DAY_SECTIONS.length; i++) { if (DAY_SECTIONS[i].id === a.homeBlock) idx = i; }
+        if (startMin !== null) sub = planMinutesToClock(startMin);
+      } else if (startMin !== null) {
+        idx = periodIndexFor(daySectionIndex(starts, new Date(dayStart + startMin * 60000)));
       }
-      if (a.status === "delayed") sub += " · Delayed";
-      (out[DAY_SECTIONS[idx].id] = out[DAY_SECTIONS[idx].id] || []).push({
-        label: a.name, sub: sub, done: a.status === "done", kind: "plan", sortMin: startMin === null ? 9999 : startMin,
+      if (startMin !== null) {
+        var endMin = slot && slot.endMin - slot.startMin > 1 ? slot.endMin : (a.endTime ? planTimeToMinutes(a.endTime) : null);
+        sub = endMin ? planMinutesToClock(startMin) + " – " + planMinutesToClock(endMin) : planMinutesToClock(startMin);
+      }
+      if (a.status === "delayed") sub += (sub ? " · " : "") + "Delayed";
+      var row = {
+        label: a.name, sub: sub, done: a.status === "done", kind: "task", sortMin: startMin === null ? 9999 : startMin,
         toggle: function () { setPlanActivityStatus(a.id, a.status === "done" ? "pending" : "done"); }
-      });
+      };
+      if (a.homeBlock) row.remove = function () { removeHomeTask(a.id); };
+      (out[DAY_SECTIONS[idx].id] = out[DAY_SECTIONS[idx].id] || []).push(row);
     });
     Object.keys(out).forEach(function (k) { out[k].sort(function (x, y) { return x.sortMin - y.sortMin; }); });
     return out;
   }
+  function addHomeTask(blockId, name, time) {
+    var list = getPlanActivities();
+    var a = { id: uid("plan"), name: name, mode: time ? "fixed" : "flexible", status: "pending", category: "dunya", homeBlock: blockId, prepMinutes: 0, travelBeforeMinutes: 0, travelAfterMinutes: 0, createdFrom: "home" };
+    if (time) { a.startTime = time; a.endTime = null; } else { a.durationMinutes = 30; }
+    list.push(a);
+    savePlanActivities(list);
+  }
+  function removeHomeTask(id) {
+    var list = getPlanActivities();
+    var a = list.filter(function (x) { return x.id === id; })[0];
+    savePlanActivities(list.filter(function (x) { return x.id !== id; }));
+    if (a) { var rec = planTaskRecord(a.name, todayKey()); ProgressStore.remove({ date: todayKey(), categoryId: rec.categoryId, sectionId: rec.sectionId, actionId: rec.actionId }); }
+    var built = getPlanBuilt();
+    if (built && built.timeline) { built.timeline = built.timeline.filter(function (e) { return e.refId !== id; }); savePlanBuilt(built); }
+  }
 
   function sectionItems(sec, t, now, planMap) {
     var items = [];
-    if (sec.salah) items.push(salahItem(sec.salah, t, now));
-    if (sec.id === "fajr") {
-      items.push(sunnahItem("ma-dhikr", "Morning Adhkar"));
-      items.push(sunnahItem("ma-quran", "Qur'an"));
-      items.push({ custom: "intention" });
-      items.push(sunnahItem("fj-sunnah-before", "Fajr Sunnah (2 rakah)"));
+    if (sec.kind === "salah") {
+      items = salahFlowItems(sec, t, now);
+      if (sec.id === "fajr") items.push({ custom: "intention" });
+      if (sec.id === "isha" && getSalahCompletions().Isha) items.push({ custom: "almost" });
+      return items;
     }
+    if (sec.kind === "tahajjud") { items.push({ custom: "tahajjud", t: t }); return items; }
+    // period block: the user's own tasks first, then a time-appropriate Sunnah suggestion
+    var mine = (planMap[sec.id] || []).slice();
     if (sec.id === "morning") {
-      var habits = getHabits();
-      var log = getHabitLogToday();
+      var habits = getHabits(), log = getHabitLogToday();
       habits.slice(0, 4).forEach(function (h) {
         var done = log[h.id] === "done";
-        items.push({ label: h.name, sub: "Habit", done: done, toggle: function () { setHabitStatus(h.id, done ? "" : "done"); } });
+        mine.push({ label: h.name, sub: "Habit", done: done, kind: "task", toggle: function () { setHabitStatus(h.id, done ? "" : "done"); } });
       });
-      if (habits.length > 4) items.push({ custom: "morehabits", count: habits.length - 4 });
-      items.push(sunnahItem("id-duha", "Duha prayer (optional)"));
+      if (habits.length > 4) mine.push({ custom: "morehabits", count: habits.length - 4 });
     }
-    if (sec.id === "maghrib") items.push(sunnahItem("ea-dhikr", "Evening Adhkar"));
-    (planMap[sec.id] || []).forEach(function (p) { items.push(p); });
-    if (sec.id === "isha" && getSalahCompletions().Isha) items.push({ custom: "almost" });
+    if (mine.length) { items.push({ heading: "Your tasks" }); mine.forEach(function (m) { items.push(m); }); }
+    var sug = [];
+    if (sec.id === "morning") sug.push(sunnahRow("ma-dhikr", "Morning Adhkar", null, { section: "morning-adhkar" }));
+    if (sec.id === "evening") sug.push(sunnahRow("ea-dhikr", "Evening Adhkar", null, { section: "evening-adhkar" }));
     if (sec.id === "night") {
-      items.push(sunnahItem("bs-dua", "Dua before sleeping"));
-      items.push({ custom: "sleep" });
-      items.push({ custom: "tahajjud", t: t });
+      sug.push(sunnahRow("bs-ayatkursi", "Ayat al-Kursi before sleep", null, { section: "before-sleep" }));
+      sug.push(sunnahRow("bs-dua", "Dua before sleeping", null, { section: "before-sleep" }));
     }
+    if (sug.length) { items.push({ heading: "Sunnah for now" }); sug.forEach(function (s) { items.push(s); }); }
+    if (sec.id === "night") items.push({ custom: "sleep" });
+    items.push({ custom: "addtask", block: sec.id });
     return items;
   }
 
+  function renderStepRow(it, container) {
+    var row = dfEl("div", "flow-item" + (it.done ? " is-done" : "") + (it.locked ? " is-locked" : "") + (it.skipped ? " is-skipped" : ""));
+    var btn = dfEl("button", "flow-check" + (it.done ? " done" : ""), it.done ? "✓" : "");
+    btn.type = "button";
+    btn.setAttribute("aria-label", (it.done ? "Undo " : "Mark done: ") + it.label);
+    btn.setAttribute("aria-pressed", it.done ? "true" : "false");
+    if (it.locked || it.skipped) btn.disabled = true;
+    else btn.addEventListener("click", function () { it.toggle(); renderDayFlow(); });
+    row.appendChild(btn);
+    var lb = dfEl("div", "flow-label-box");
+    lb.appendChild(dfEl("span", "flow-label", it.label));
+    var subTxt = it.locked ? it.lockedNote : (it.skipped ? "Skipped for today" : it.sub);
+    if (subTxt) lb.appendChild(dfEl("span", "flow-sub", subTxt));
+    row.appendChild(lb);
+
+    var side = dfEl("div", "flow-side");
+    if (it.skipped && it.unskip) {
+      var un = dfEl("button", "flow-link", "Undo"); un.type = "button";
+      un.addEventListener("click", function () { it.unskip(); renderDayFlow(); });
+      side.appendChild(un);
+    } else if (!it.done && !it.locked) {
+      if (it.kind === "fard") {
+        var md = dfEl("button", "btn btn-primary flow-mini", "Mark done"); md.type = "button";
+        md.addEventListener("click", function () { it.toggle(); renderDayFlow(); });
+        side.appendChild(md);
+      }
+      if (it.kind === "tasbih") {
+        var key = it.prayer + "|tasbih";
+        var op = dfEl("button", "btn btn-primary flow-mini", dayView.tasbihOpen[key] ? "Close" : "Open"); op.type = "button";
+        op.addEventListener("click", function () { dayView.tasbihOpen[key] = !dayView.tasbihOpen[key]; renderDayFlow(); });
+        side.appendChild(op);
+      }
+      (it.actions || []).forEach(function (a) {
+        var b = dfEl("button", "btn flow-mini " + (a.primary ? "btn-primary" : "btn-outline"), a.label); b.type = "button";
+        b.addEventListener("click", a.fn);
+        side.appendChild(b);
+      });
+      if (it.open) {
+        var o = dfEl("button", "flow-link", "Open ›"); o.type = "button";
+        o.addEventListener("click", it.open);
+        side.appendChild(o);
+      }
+      if (it.skip) {
+        var sk = dfEl("button", "flow-link flow-skip", "Skip"); sk.type = "button";
+        sk.addEventListener("click", function () { it.skip(); renderDayFlow(); });
+        side.appendChild(sk);
+      }
+    } else if (it.done && it.open) {
+      var o2 = dfEl("button", "flow-link", "Open ›"); o2.type = "button";
+      o2.addEventListener("click", it.open);
+      side.appendChild(o2);
+    }
+    if (it.remove) {
+      var rm = dfEl("button", "flow-link flow-remove", "×"); rm.type = "button";
+      rm.setAttribute("aria-label", "Remove task " + it.label);
+      rm.addEventListener("click", function () { it.remove(); renderDayFlow(); });
+      side.appendChild(rm);
+    }
+    if (side.childNodes.length) row.appendChild(side);
+    container.appendChild(row);
+
+    if (it.kind === "tasbih" && !it.done && !it.skipped && dayView.tasbihOpen[it.prayer + "|tasbih"]) renderTasbihPanel(it.prayer, container);
+  }
+
+  function renderTasbihPanel(prayer, container) {
+    var box = dfEl("div", "flow-tasbih");
+    var c = tasbihCounts(prayer);
+    var p = 0;
+    while (p < TASBIH_PHASES.length - 1 && c[p] >= TASBIH_PHASES[p].target) p++;
+    var name = dfEl("p", "flow-tasbih-name", TASBIH_PHASES[p].label);
+    var count = dfEl("p", "flow-tasbih-count", c[p] + " / " + TASBIH_PHASES[p].target);
+    var plus = dfEl("button", "flow-tasbih-plus", "+"); plus.type = "button";
+    plus.setAttribute("aria-label", "Count " + TASBIH_PHASES[p].label);
+    plus.addEventListener("click", function () {
+      var n = tasbihTap(prayer, 1);
+      var full = TASBIH_PHASES.every(function (ph, i) { return n[i] >= ph.target; });
+      if (full) { renderDayFlow(); return; }
+      var q = 0;
+      while (q < TASBIH_PHASES.length - 1 && n[q] >= TASBIH_PHASES[q].target) q++;
+      name.textContent = TASBIH_PHASES[q].label;
+      count.textContent = n[q] + " / " + TASBIH_PHASES[q].target;
+      plus.setAttribute("aria-label", "Count " + TASBIH_PHASES[q].label);
+      sum.textContent = n[0] + n[1] + n[2] + " of 100";
+    });
+    var sum = dfEl("p", "flow-sub", c[0] + c[1] + c[2] + " of 100");
+    var ctl = dfEl("div", "flow-tasbih-ctl");
+    var undo = dfEl("button", "flow-link", "−1"); undo.type = "button";
+    undo.addEventListener("click", function () { tasbihTap(prayer, -1); renderDayFlow(); });
+    var reset = dfEl("button", "flow-link", "Reset"); reset.type = "button";
+    reset.addEventListener("click", function () { tasbihSetDone(prayer, false, [0, 0, 0]); renderDayFlow(); });
+    ctl.appendChild(undo); ctl.appendChild(reset);
+    box.appendChild(name); box.appendChild(count); box.appendChild(plus); box.appendChild(sum); box.appendChild(ctl);
+    container.appendChild(box);
+  }
+
   function renderFlowItem(it, container) {
+    if (it.heading) { container.appendChild(dfEl("p", "flow-heading", it.heading)); return; }
     if (it.custom === "intention") {
       var j = journeyGet();
       var wrap = dfEl("div", "flow-item flow-intention");
@@ -2200,27 +2543,38 @@
       container.appendChild(more);
       return;
     }
-    if (it.custom === "almost") {
-      container.appendChild(dfEl("p", "flow-almost", "Your day is almost complete."));
-      return;
-    }
+    if (it.custom === "almost") { container.appendChild(dfEl("p", "flow-almost", "Your day is almost complete.")); return; }
     if (it.custom === "sleep") { renderSleepRow(container); return; }
     if (it.custom === "tahajjud") { renderTahajjudCard(container, it.t); return; }
+    if (it.custom === "addtask") { renderAddTask(container, it.block); return; }
+    renderStepRow(it, container);
+  }
 
-    var row2 = dfEl("div", "flow-item" + (it.done ? " is-done" : "") + (it.locked ? " is-locked" : ""));
-    var btn = dfEl("button", "flow-check" + (it.done ? " done" : ""), it.done ? "✓" : "");
-    btn.type = "button";
-    btn.setAttribute("aria-label", (it.done ? "Undo " : "Mark done: ") + it.label);
-    btn.setAttribute("aria-pressed", it.done ? "true" : "false");
-    if (it.locked) btn.disabled = true;
-    else btn.addEventListener("click", function () { it.toggle(); renderDayFlow(); });
-    row2.appendChild(btn);
-    var lb = dfEl("div", "flow-label-box");
-    lb.appendChild(dfEl("span", "flow-label", it.label));
-    var subTxt = it.locked ? it.lockedNote : it.sub;
-    if (subTxt) lb.appendChild(dfEl("span", "flow-sub", subTxt));
-    row2.appendChild(lb);
-    container.appendChild(row2);
+  function renderAddTask(container, blockId) {
+    if (dayView.adding !== blockId) {
+      var b = dfEl("button", "flow-link flow-addtask", "+ Add task");
+      b.type = "button";
+      b.addEventListener("click", function () { dayView.adding = blockId; renderDayFlow(); });
+      container.appendChild(b);
+      return;
+    }
+    var row = dfEl("div", "flow-addrow");
+    var name = dfEl("input", "text-input"); name.type = "text"; name.maxLength = 60; name.placeholder = "Task name"; name.setAttribute("aria-label", "Task name");
+    var time = dfEl("input", "text-input flow-time"); time.type = "time"; time.setAttribute("aria-label", "Time (optional)");
+    var add = dfEl("button", "btn btn-primary", "Add"); add.type = "button";
+    var cancel = dfEl("button", "flow-link", "Cancel"); cancel.type = "button";
+    var go = function () {
+      var v = name.value.trim();
+      if (!v) { showToast("Enter a task name"); return; }
+      addHomeTask(blockId, v, time.value || "");
+      dayView.adding = null;
+      renderDayFlow();
+    };
+    add.addEventListener("click", go);
+    name.addEventListener("keydown", function (e) { if (e.key === "Enter") go(); });
+    cancel.addEventListener("click", function () { dayView.adding = null; renderDayFlow(); });
+    row.appendChild(name); row.appendChild(time); row.appendChild(add); row.appendChild(cancel);
+    container.appendChild(row);
   }
 
   function renderSleepRow(container) {
@@ -2228,13 +2582,13 @@
     var p = getCurrentPriority();
     if (p && p.kind === "sleep" && p.date === todayKey()) {
       box.appendChild(dfEl("p", "flow-label", "Sleep"));
-      box.appendChild(dfEl("p", "flow-sub", "You chose Better Sleep as today's priority — track it in the Today's Priority card above."));
+      box.appendChild(dfEl("p", "flow-sub", "Tracked in the Today's Priority card (Better Sleep)."));
       container.appendChild(box);
       return;
     }
     var open = openSleep();
     var j = journeyGet();
-    box.appendChild(dfEl("p", "flow-label", "Prepare for sleep"));
+    box.appendChild(dfEl("p", "flow-label", "Sleep"));
     if (open) {
       box.appendChild(dfEl("p", "flow-sub", "Sleeping since " + dfClock(new Date(open.start)) + ". Tap when you wake."));
       var w = dfEl("button", "btn btn-primary btn-full", "I'm Awake");
@@ -2245,7 +2599,7 @@
       var hrs = j.sleep.hours || 0;
       box.appendChild(dfEl("p", "flow-sub", "Slept " + Math.floor(hrs) + "h " + Math.round((hrs % 1) * 60) + "m (estimated from your two taps)."));
     } else {
-      box.appendChild(dfEl("p", "flow-sub", "Start when you go to bed. Your sleep is saved for your weekly report."));
+      box.appendChild(dfEl("p", "flow-sub", "Saved for your weekly report."));
       var s = dfEl("button", "btn btn-primary btn-full", "Start Sleep");
       s.type = "button";
       s.addEventListener("click", startSleepNow);
@@ -2256,38 +2610,39 @@
 
   function renderTahajjudCard(container, t) {
     var box = dfEl("div", "flow-special flow-tahajjud");
-    box.appendChild(dfEl("p", "flow-label", "🌙 Optional night worship"));
-    var third = new Date(t.maghrib.getTime() + (t.nextFajr - t.maghrib) * 2 / 3);
-    box.appendChild(dfEl("p", "flow-sub", "The last third of tonight begins at " + dfClock(third) + ". Only if you wish — no pressure."));
+    box.appendChild(dfEl("p", "flow-sub", "Optional · the last third of tonight begins at " + dfClock(t.third)));
     var done = !!getDaySunnahLog(todayKey())["th-pray"];
     var b = dfEl("button", "flow-tahajjud-btn" + (done ? " done" : ""), done ? "✓ Tahajjud prayed" : "○ Add Tahajjud");
     b.type = "button";
     b.setAttribute("aria-pressed", done ? "true" : "false");
     b.addEventListener("click", function () { toggleSunnahAction("th-pray"); renderDayFlow(); });
     box.appendChild(b);
+    var o = dfEl("button", "flow-link", "Tahajjud in Sunnah ›"); o.type = "button";
+    o.addEventListener("click", function () { openSunnahSection("tahajjud"); });
+    box.appendChild(o);
     container.appendChild(box);
   }
 
-  // ---- status card ----
-  function renderDayStatus(el, t, secs, curIdx, now, note) {
+  // ---- status card: NEXT SALAH ----
+  function renderDayStatus(el, t, starts, timeIdx, now, note) {
     el.innerHTML = "";
-    var sec = secs[curIdx];
-    var head = dfEl("div", "day-stage");
-    head.appendChild(dfEl("span", "day-stage-icon", sec.icon));
-    var col = dfEl("div", "day-stage-text");
-    col.appendChild(dfEl("p", "day-stage-name", sec.stage));
     var nx = nextSalahInfo(t, now);
+    el.appendChild(dfEl("p", "day-next-label", "NEXT SALAH"));
     if (nx) {
-      var line = dfEl("p", "day-stage-next");
-      line.appendChild(document.createTextNode("Next: " + nx.name + (nx.newDay ? " (new day)" : "") + " · " + dfClock(nx.time) + " · in "));
-      var cd = dfEl("b", "", dfCountdown(nx.time - now));
+      var top = dfEl("div", "day-next-row");
+      top.appendChild(dfEl("span", "day-next-name", nx.name + (nx.newDay ? " (new day)" : "")));
+      top.appendChild(dfEl("span", "day-next-time", dfClock(nx.time)));
+      el.appendChild(top);
+      var rem = dfEl("p", "day-next-remaining");
+      var cd = dfEl("b", "", dfRemain(nx.time - now));
       cd.id = "day-countdown";
-      line.appendChild(cd);
-      col.appendChild(line);
+      rem.appendChild(cd);
+      rem.appendChild(document.createTextNode(" remaining"));
+      el.appendChild(rem);
       dayView.nextTime = nx.time.getTime();
     }
-    head.appendChild(col);
-    el.appendChild(head);
+    var sec = DAY_SECTIONS[timeIdx];
+    el.appendChild(dfEl("p", "day-stage-line", sec.icon + " " + (sec.kind === "tahajjud" ? "Tahajjud time (optional)" : sec.title)));
 
     var strip = dfEl("div", "day-prayer-strip");
     var comps = getSalahCompletions();
@@ -2300,50 +2655,70 @@
     });
     el.appendChild(strip);
 
-    var afterMidnight = calDateKey(now) !== todayKey();
-    if (afterMidnight) el.appendChild(dfEl("p", "day-note", "Still tonight's journey — your new day begins at Fajr (" + dfClock(t.nextFajr) + ")."));
+    if (calDateKey(now) !== todayKey()) el.appendChild(dfEl("p", "day-note", "Still tonight's journey — your new day begins at Fajr (" + dfClock(t.nextFajr) + ")."));
     if (note) el.appendChild(dfEl("p", "day-note day-note-warn", note));
-    var change = dfEl("button", "flow-link day-change", "Change prayer location");
+    var change = dfEl("button", "btn btn-outline day-set-times", getManualTimes() ? "Edit prayer times" : "Set Prayer Times");
     change.type = "button";
     change.addEventListener("click", function () { dayView.setup = true; renderDayFlow(); });
     el.appendChild(change);
   }
 
-  // ---- first-time / change setup (prayer times drive the whole day) ----
-  function renderDaySetup(statusEl, flowEl, hasSettings) {
+  // ---- Set Prayer Times: the user's own times, saved on the device ----
+  function renderTimesForm(statusEl, flowEl, hasTimes) {
     statusEl.innerHTML = "";
     flowEl.innerHTML = "";
-    statusEl.appendChild(dfEl("p", "day-stage-name", "Set up your prayer times"));
-    statusEl.appendChild(dfEl("p", "muted-line", "NURA follows your day from Fajr to Fajr, so it needs your prayer times. Location is used only to calculate them. Until you set this up, NURA changes day at midnight."));
-    var allow = dfEl("button", "btn btn-primary btn-full", "Use my location");
-    allow.type = "button";
-    allow.addEventListener("click", function () {
-      if (!navigator.geolocation) { showToast("Location isn't available here — enter your city instead"); return; }
-      showToast("Getting your location…");
-      navigator.geolocation.getCurrentPosition(function (pos) {
-        savePrayerSettings({ mode: "auto", lat: pos.coords.latitude, lon: pos.coords.longitude, method: 1 });
-        dayView.setup = false;
-        renderHome();
-      }, function () { showToast("Location not allowed — enter your city instead"); }, { timeout: 10000 });
+    statusEl.appendChild(dfEl("p", "day-next-label", "SET PRAYER TIMES"));
+    statusEl.appendChild(dfEl("p", "muted-line", hasTimes
+      ? "Your times, your mosque. Change them any time — they stay saved."
+      : "Enter the prayer times you follow (your mosque's jama'ah times are fine). You only do this once. Until then NURA changes day at midnight."));
+    var cur = getManualTimes() || dayView.timings || {};
+    var inputs = {};
+    PRAYER_ORDER.forEach(function (n) {
+      var row = dfEl("label", "times-row");
+      row.appendChild(dfEl("span", "times-name", n));
+      var inp = dfEl("input", "text-input times-input");
+      inp.type = "time";
+      inp.value = cur[n] ? String(cur[n]).replace(/^(\d):/, "0$1:") : "";
+      inp.setAttribute("aria-label", n + " time");
+      inputs[n] = inp;
+      row.appendChild(inp);
+      statusEl.appendChild(row);
     });
-    statusEl.appendChild(allow);
-    statusEl.appendChild(dfEl("p", "muted-line day-or", "or enter your city"));
-    var city = dfEl("input", "text-input"); city.type = "text"; city.placeholder = "City"; city.setAttribute("aria-label", "City");
-    var country = dfEl("input", "text-input"); country.type = "text"; country.placeholder = "Country"; country.setAttribute("aria-label", "Country");
-    var method = dfEl("select", "text-input"); method.setAttribute("aria-label", "Calculation method");
-    PRAYER_METHODS.forEach(function (m) { var o = document.createElement("option"); o.value = m.id; o.textContent = m.label; method.appendChild(o); });
-    var cur = getPrayerSettings();
-    if (cur && cur.mode === "manual") { city.value = cur.city; country.value = cur.country; method.value = String(cur.method); }
-    var save = dfEl("button", "btn btn-outline btn-full", "Save city");
+    var msg = dfEl("p", "day-note", "");
+    var save = dfEl("button", "btn btn-primary btn-full", "Save prayer times");
     save.type = "button";
     save.addEventListener("click", function () {
-      if (!city.value.trim() || !country.value.trim()) { showToast("Enter both city and country"); return; }
-      savePrayerSettings({ mode: "manual", city: city.value.trim(), country: country.value.trim(), method: Number(method.value) });
+      var vals = {}, prev = "";
+      for (var i = 0; i < PRAYER_ORDER.length; i++) {
+        var n = PRAYER_ORDER[i];
+        if (!inputs[n].value) { msg.textContent = "Please set " + n + "."; return; }
+        if (prev && inputs[n].value <= prev) { msg.textContent = n + " should be later than the prayer before it."; return; }
+        vals[n] = inputs[n].value;
+        prev = inputs[n].value;
+      }
+      saveManualTimes(vals);
       dayView.setup = false;
+      showToast("Prayer times saved");
       renderHome();
     });
-    statusEl.appendChild(city); statusEl.appendChild(country); statusEl.appendChild(method); statusEl.appendChild(save);
-    if (hasSettings) {
+    statusEl.appendChild(save);
+    var suggest = dfEl("button", "flow-link", "Suggest times from my location (optional)");
+    suggest.type = "button";
+    suggest.addEventListener("click", function () {
+      if (!navigator.geolocation) { msg.textContent = "Location isn't available here. Enter your times by hand."; return; }
+      msg.textContent = "Getting your location…";
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        fetch("https://api.aladhan.com/v1/timings?latitude=" + pos.coords.latitude + "&longitude=" + pos.coords.longitude + "&method=1")
+          .then(function (r) { if (!r.ok) throw new Error("x"); return r.json(); })
+          .then(function (d) {
+            PRAYER_ORDER.forEach(function (n) { inputs[n].value = cleanTimeStr(d.data.timings[n]); });
+            msg.textContent = "Suggestions filled in. Change them to match your mosque, then save.";
+          }).catch(function () { msg.textContent = "Couldn't fetch suggestions. Enter your times by hand."; });
+      }, function () { msg.textContent = "Location not allowed. Enter your times by hand."; }, { timeout: 10000 });
+    });
+    statusEl.appendChild(suggest);
+    statusEl.appendChild(msg);
+    if (hasTimes) {
       var cancel = dfEl("button", "flow-link", "Cancel");
       cancel.type = "button";
       cancel.addEventListener("click", function () { dayView.setup = false; renderDayFlow(); });
@@ -2355,7 +2730,7 @@
       var body = dfEl("div", "flow-body");
       var comps = getSalahCompletions();
       PRAYER_ORDER.forEach(function (n) {
-        renderFlowItem({ label: n + " Salah", done: !!comps[n], toggle: function () { if (comps[n]) setSalahIncomplete(n); else setSalahComplete(n); } }, body);
+        renderStepRow({ label: n + " Salah", done: !!comps[n], toggle: function () { if (comps[n]) setSalahIncomplete(n); else setSalahComplete(n); } }, body);
       });
       sec.appendChild(body);
       flowEl.appendChild(sec);
@@ -2370,19 +2745,21 @@
     journeyRoll(T);
     var now = new Date();
     var t = dayTimes(T);
-    var idx = daySectionIndex(t, now);
-    // Once Fajr (or Isha) and everything listed under it is done, the day moves forward
-    // to Morning (or Night) even before the clock does.
-    var timeIdx = idx;
-    if (DAY_SECTIONS[idx].id === "fajr" || DAY_SECTIONS[idx].id === "isha") {
-      var cur = sectionItems(DAY_SECTIONS[idx], t, now, planItemsBySection(t, idx)).filter(function (x) { return !x.custom && x.sortMin !== 9999; });
-      if (cur.length && cur.every(function (x) { return x.done; })) idx++;
+    var starts = daySectionStarts(t);
+    var timeIdx = daySectionIndex(starts, now);
+    var idx = timeIdx;
+
+    // A prayer block moves the day forward as soon as every step in it is done or skipped.
+    var sec0 = DAY_SECTIONS[idx];
+    if (sec0.kind === "salah") {
+      var steps = sectionItems(sec0, t, now, {}).filter(function (x) { return !x.custom && !x.heading && !x.skipped; });
+      if (getSalahCompletions()[sec0.salah] && steps.every(function (x) { return x.done; })) idx++;
     }
     dayView.currentId = DAY_SECTIONS[idx].id;
     dayView.finalStage = timeIdx === DAY_SECTIONS.length - 1;
-    dayView.stageEnd = t[DAY_SECTIONS[timeIdx].to].getTime();
+    dayView.stageEnd = (starts[timeIdx + 1] || t.nextFajr).getTime();
 
-    renderDayStatus(statusEl, t, DAY_SECTIONS, timeIdx, now, note);
+    renderDayStatus(statusEl, t, starts, timeIdx, now, note);
     flowEl.innerHTML = "";
 
     var open = openSleep();
@@ -2396,10 +2773,10 @@
       flowEl.appendChild(ban);
     }
 
-    var planMap = planItemsBySection(t, idx);
+    var planMap = planItemsBySection(t, starts, idx);
     DAY_SECTIONS.forEach(function (sec, i) {
       var items = sectionItems(sec, t, now, planMap);
-      var counted = items.filter(function (x) { return !x.custom; });
+      var counted = items.filter(function (x) { return !x.custom && !x.heading && !x.skipped; });
       var doneN = counted.filter(function (x) { return x.done; }).length;
       var state = i < idx ? "past" : (i === idx ? "current" : "future");
       var key = D + "|" + sec.id;
@@ -2412,17 +2789,19 @@
       head.type = "button";
       head.setAttribute("aria-expanded", opened ? "true" : "false");
       head.appendChild(dfEl("span", "flow-dot", allDone ? "✓" : ""));
-      var title = dfEl("span", "flow-title", sec.title.toUpperCase());
-      head.appendChild(title);
+      head.appendChild(dfEl("span", "flow-title", sec.title.toUpperCase()));
       var meta = dfEl("span", "flow-meta");
-      var timeTxt = dfClock(t[sec.from]);
-      meta.textContent = allDone ? "All done" : (state === "future" || !counted.length ? timeTxt : doneN + " of " + counted.length + " · " + timeTxt);
+      var timeTxt = dfClock(starts[i]);
+      if (sec.kind === "tahajjud") meta.textContent = allDone ? "Done" : "Optional · " + timeTxt;
+      else if (allDone) meta.textContent = "All done";
+      else if (state === "future" || !counted.length) meta.textContent = timeTxt;
+      else meta.textContent = doneN + " of " + counted.length + " completed";
       head.appendChild(meta);
+      head.appendChild(dfEl("span", "flow-chev", opened ? "⌃" : "⌄"));
       head.addEventListener("click", function () { dayView.open[key] = !opened; renderDayFlow(); });
       wrap.appendChild(head);
       if (opened) {
         var body = dfEl("div", "flow-body");
-        body.appendChild(dfEl("p", "flow-subtitle", sec.sub));
         items.forEach(function (it) { renderFlowItem(it, body); });
         wrap.appendChild(body);
       }
@@ -2436,7 +2815,8 @@
     var flowEl = document.getElementById("day-flow");
     if (!statusEl || !flowEl) return;
     var settings = getPrayerSettings();
-    if (!settings || dayView.setup) { renderDaySetup(statusEl, flowEl, !!settings); return; }
+    var hasTimes = !!getManualTimes() || !!settings;
+    if (!hasTimes || dayView.setup) { renderTimesForm(statusEl, flowEl, hasTimes); return; }
     var token = ++dayView.token;
     var keyAtStart = todayKey();
     var sync = cachedTimingsForToday();
@@ -2475,7 +2855,7 @@
       var el = document.getElementById("day-countdown");
       if (el && dayView.nextTime) {
         if (now >= dayView.nextTime) { renderHome(); return; }
-        el.textContent = dfCountdown(dayView.nextTime - now);
+        el.textContent = dfRemain(dayView.nextTime - now);
       }
     }, 1000);
   }
@@ -2485,7 +2865,7 @@
   function dayExtras() {
     var out = [];
     var T = dayView.timings;
-    if (T && getPrayerSettings()) {
+    if (T) {
       var t = dayTimes(T);
       var comps = getSalahCompletions();
       PRAYER_ORDER.forEach(function (n) {
@@ -3287,13 +3667,58 @@
     return wrap;
   }
 
+  // The Sunnah library, grouped by the part of life it belongs to. Only entries that already
+  // carry a verified source are listed; a group with none says so instead of inventing content.
+  var SUNNAH_GROUPS = [
+    { id: "morning", title: "Morning", note: "Waking, Fajr and the morning adhkar.", sections: ["morning-adhkar", "fajr", "ishraq-duha"] },
+    { id: "salah", title: "Salah", note: "Sunnah before and after the prayers, and dhikr after Salah.", sections: ["dhuhr", "jumuah", "asr", "maghrib", "isha", "witr"] },
+    { id: "daily", title: "Daily life", note: "Eating, drinking, dressing, entering and leaving home, cleanliness, dealing with people.", sections: [], empty: "Nothing here yet. NURA only publishes a Sunnah with a checked source and a named reviewer, and these are still being prepared." },
+    { id: "character", title: "Character (Akhlaq)", note: "Kind speech, patience, honesty, helping others.", sections: [], akhlaq: true },
+    { id: "night", title: "Evening & night", note: "Evening adhkar, before sleep, and Tahajjud.", sections: ["evening-adhkar", "before-sleep", "tahajjud"] }
+  ];
+
   function renderRoutine() {
     document.getElementById("sunnah-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
     var log = getDaySunnahLog(todayKey());
     var wrap = document.getElementById("routine-sections");
     wrap.innerHTML = "";
+    var used = {};
+    SUNNAH_GROUPS.forEach(function (g) {
+      var head = document.createElement("div");
+      head.className = "sunnah-group-head";
+      var h = document.createElement("h2");
+      h.className = "sunnah-group-title";
+      h.textContent = g.title;
+      head.appendChild(h);
+      var n = document.createElement("p");
+      n.className = "sunnah-group-note";
+      n.textContent = g.note;
+      head.appendChild(n);
+      wrap.appendChild(head);
+      g.sections.forEach(function (id) {
+        ROUTINE_SECTIONS.forEach(function (section) {
+          if (section.id === id) { used[id] = true; wrap.appendChild(buildRoutineSection(section, log)); }
+        });
+      });
+      if (g.empty) {
+        var e = document.createElement("p");
+        e.className = "sunnah-group-empty";
+        e.textContent = g.empty;
+        wrap.appendChild(e);
+      }
+      if (g.akhlaq) {
+        var doneN = AKHLAQ_ITEMS.filter(function (a) { return log[a.id]; }).length;
+        var open = document.createElement("button");
+        open.type = "button";
+        open.className = "btn btn-outline btn-full";
+        open.textContent = "Open Character (Akhlaq) · " + doneN + " of " + AKHLAQ_ITEMS.length + " today";
+        open.addEventListener("click", function () { switchSunnahSubtab("akhlaq"); });
+        wrap.appendChild(open);
+      }
+    });
+    // any future section not yet placed in a group still shows up
     ROUTINE_SECTIONS.forEach(function (section) {
-      wrap.appendChild(buildRoutineSection(section, log));
+      if (!used[section.id]) wrap.appendChild(buildRoutineSection(section, log));
     });
   }
 
@@ -3319,6 +3744,7 @@
   }
 
   function initSunnahSubtabs() {
+    document.getElementById("sunnah-return-btn").addEventListener("click", function () { setActiveView("home"); });
     var buttons = document.querySelectorAll("#sunnah-subtabs .subtab");
     buttons.forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -4111,9 +4537,10 @@
     });
   }
 
-  function openQuranSurah(number) {
+  function openQuranSurah(number, ayah) {
     quranState.view = "detail";
     quranState.surahNumber = number;
+    quranState.scrollTo = ayah || null;
     document.getElementById("quran-surah-list-view").classList.add("hidden");
     document.getElementById("quran-surah-detail-view").classList.remove("hidden");
     renderQuranSurahDetail();
@@ -4161,6 +4588,7 @@
           : "";
         var card = document.createElement("div");
         card.className = "quran-ayah-card";
+        card.setAttribute("data-ayah", v.ayah);
         card.innerHTML =
           '<div class="quran-ayah-top">' +
             '<span class="quran-ayah-num">Ayah ' + v.ayah + '</span>' +
@@ -4171,6 +4599,12 @@
           (urTexts[idx] ? '<p class="quran-ayah-translation quran-ayah-urdu"><span class="quran-ayah-translation-label" style="direction:ltr;display:inline-block;">UR</span> ' + urTexts[idx] + '</p>' : '');
         ayahList.appendChild(card);
       });
+      quranWatch(ayahList, number);
+      if (quranState.scrollTo) {
+        var target = ayahList.querySelector('[data-ayah="' + quranState.scrollTo + '"]');
+        if (target) target.scrollIntoView({ block: "start" });
+        quranState.scrollTo = null;
+      }
     }).catch(function () {
       if (quranState.surahNumber !== number) return;
       ayahList.innerHTML = '<p class="quran-error-note">Could not load this surah. Check your internet connection and try again.</p>';
@@ -4864,6 +5298,8 @@
   // ---------- NAV ----------
 
   function setActiveView(name) {
+    if (!dayNavBusy) dayView.returnHome = false;
+    updateSunnahReturn();
     document.querySelectorAll(".view").forEach(function (v) {
       v.classList.toggle("hidden", v.dataset.view !== name);
     });

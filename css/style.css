@@ -1015,3 +1015,40 @@ html, body {
 .flow-special .flow-sub { margin: 2px 0 8px; }
 .flow-tahajjud-btn { width: 100%; text-align: left; border: 1px dashed var(--gold); background: var(--surface); border-radius: 10px; padding: 10px 12px; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; }
 .flow-tahajjud-btn.done { border-style: solid; background: var(--mint); color: var(--on-accent); border-color: var(--mint); }
+
+/* ---------- Salah flow, Next Salah card, times form, Sunnah groups ---------- */
+.day-next-label { font-size: 11px; font-weight: 800; letter-spacing: 0.12em; color: var(--muted); margin: 0 0 4px; }
+.day-next-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.day-next-name { font-size: 26px; font-weight: 800; color: var(--mint); }
+.day-next-time { font-size: 15px; color: var(--muted); }
+.day-next-remaining { margin: 2px 0 0; font-size: 15px; color: var(--muted); }
+.day-next-remaining b { color: var(--text); font-size: 17px; font-variant-numeric: tabular-nums; }
+.day-stage-line { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.day-set-times { width: 100%; margin-top: 12px; }
+.times-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.times-name { font-weight: 600; min-width: 80px; }
+.times-input { flex: 1; margin: 0 !important; }
+.flow-chev { color: var(--muted); font-size: 14px; margin-left: 4px; }
+.flow-heading { font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin: 10px 0 2px; }
+.flow-side { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.flow-mini { padding: 6px 12px !important; font-size: 13px !important; min-height: 0 !important; width: auto !important; }
+.flow-skip { color: var(--muted); }
+.flow-remove { color: var(--danger); font-size: 18px; text-decoration: none; }
+.flow-item.is-skipped .flow-label { color: var(--muted); }
+.flow-item.is-skipped .flow-check { border-style: dashed; border-color: var(--border); }
+.flow-addtask { display: block; margin-top: 6px; }
+.flow-addrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.flow-addrow .text-input { flex: 1 1 140px; min-width: 0; margin: 0; }
+.flow-addrow .flow-time { flex: 0 0 110px; }
+.flow-tasbih { border-top: 1px dashed var(--border); text-align: center; padding: 12px 0 8px; }
+.flow-tasbih-name { margin: 0; font-size: 16px; font-weight: 700; color: var(--mint); }
+.flow-tasbih-count { margin: 2px 0 8px; font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.flow-tasbih-plus { width: 84px; height: 84px; border-radius: 50%; border: 0; background: var(--mint); color: var(--on-accent); font-size: 40px; line-height: 1; cursor: pointer; box-shadow: 0 3px 10px rgba(27, 94, 63, 0.25); }
+.flow-tasbih-plus:active { transform: scale(0.96); }
+.flow-tasbih-ctl { display: flex; justify-content: center; gap: 18px; }
+#sunnah-return { margin: 0 0 12px; }
+.sunnah-group-head { margin: 18px 0 8px; }
+.sunnah-group-title { margin: 0; font-size: 17px; color: var(--mint); }
+.sunnah-group-note { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+.sunnah-group-empty { font-size: 13px; color: var(--muted); background: var(--surface-2); border-radius: 12px; padding: 10px 12px; margin: 0 0 8px; }
+.flow-item { flex-wrap: wrap; }
