@@ -2,6 +2,18 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-20 — Today's Progress: one real, equal-weight calculation
+
+**Formula.** Today Progress = completed eligible items ÷ eligible items × 100, every item worth the same. Rounded, but never shows 100% unless everything is done, and never 0% once something is. The overall number is calculated directly from the totals (not an average of Deen and Dunya). Nothing is stored as a score; `todayItems()` rebuilds the list from the real stores each time, so refresh/navigation cannot change it.
+
+**Eligible today** = (a) planned: the 5 fard prayers and their steps (Sunnah before/after, Tasbihat, Qur'an per prayer — a step the user skipped leaves the list, shown as "skipped"), Morning/Evening Adhkar and the two before-sleep items that Home shows, the user's habits, Plan My Day tasks (not skipped), Top 3, today's Priority (not when it is Salah Consistency, since the prayers are already listed); plus (b) anything else actually done today via ProgressStore (study, fitness, Akhlaq, Tahajjud, career, money…) — doing it makes it part of today. Libraries (Sunnah, Dunya) never enter the denominator; old/tomorrow/deleted tasks don't either. Duplicates are counted once (list key + ProgressStore key); Tasbihat's single source is the Sunnah log's "Dhikr after salah" (also ticked from the Sunnah page); a stand-alone Qur'an-reading record counts only if no per-prayer Qur'an step was ticked.
+
+**Home card**: ring %, "12 of 28 activities completed", "Deen & Sunnah 7 / 15", "Dunya 5 / 13", View details (also tap the ring) and See weekly report. Empty list shows "Add or start an activity to begin today's progress." (in the real app the five prayers are always listed, so this state only appears if that ever changes). **Details** lists every item with ✓ / □ / – so the number is explainable.
+
+**Daily record.** `nc_daily_progress` keeps one summary per NURA day (eligible, completed, percent, Deen/Dunya counts, every item with its state), refreshed on every change, marked `final` when a later day starts, never edited afterwards. The Weekly Report's day rows read those (today reads live). Days from before this change have records but no saved denominator, so they show "N recorded (no daily total saved)" instead of an invented percentage. The old "regular items" and per-priority fractional scoring no longer feed Home.
+
+**Tested** (real stored data, shifted clock): pure formula A–G (10%, 50%, 100%, 1%, 73%, 35%, empty state = no percentage); the same numbers through real storage and the real Home UI (10/50/100 via prayers, adhkar, habits; 1/100, 73/100, 7/20); live update on each tap; uncheck lowers it; reload and navigation keep it; next NURA day starts 0 of N while yesterday's 10% stays saved and appears in the weekly report; extras and duplicate handling. Zero-eligible was verified on the pure calculation only.
+
 ## 2026-09-20 — Manual prayer times, Salah flow, Tasbihat, Qur'an link, grouped Sunnah
 
 **Manual prayer times win.** "Set Prayer Times" (first run, and "Edit prayer times" on the Next Salah card) saves the five times the user types in `nc_prayer_manual`, on the device, asked once. Location is only an optional "suggest" button that fills the boxes; nothing is saved until the user presses Save. When manual times exist, every consumer (Home countdown, Plan My Day, Salah priority) reads them; older city/GPS users keep working until they save their own. The NURA-day boundary is the saved Fajr. Validation: all five set and in increasing order.

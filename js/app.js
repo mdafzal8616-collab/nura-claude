@@ -572,7 +572,7 @@
         });
         return c;
       }).sort(function (a, b) { return a.order - b.order || (a.title < b.title ? -1 : 1); });
-      var days = dates.slice().reverse().map(function (date) { return scoreFrom(d, reg, date, date === todayKey() ? priorityExtras() : []); });
+      var days = dates.slice().reverse().map(function (date) { return scoreFrom(d, reg, date, []); });
       return { categories: list, days: days, activeDayCount: Object.keys(activeDays).length };
     }
 
@@ -694,17 +694,129 @@
     return { date: date, categoryId: "career", categoryTitle: "Career & Skills", sectionId: "lessons", sectionTitle: "Skill lessons", actionId: progSlug(key), title: prettifyId(String(key).split(":").pop()), metricType: "boolean", source: "career" };
   }
 
-  // Today's Priority is relevant today even before it is done (fractionally while in progress).
-  function priorityExtras() {
-    var extras = dayExtras();
+  // ---------- TODAY PROGRESS: ONE REAL, EQUAL-WEIGHT CALCULATION ----------
+  // Today Progress = completed eligible items / eligible items x 100. Every eligible item
+  // counts the same. Nothing is stored as a score: the list is rebuilt from the real stores
+  // (Salah, Sunnah log, Salah flow, habits, Plan My Day, priority, top 3, ProgressStore).
+  //
+  // ELIGIBLE today =
+  //   PLANNED   the 5 fard prayers and their Sunnah / Tasbihat / Qur'an steps (a step the
+  //             user skipped leaves the list), Morning/Evening Adhkar and the two before-sleep
+  //             items shown on Home, the user's habits, Plan My Day tasks (not skipped),
+  //             today's Top 3, and today's Priority
+  //   + ANYTHING ELSE the user actually did today (study, fitness, Akhlaq, Tahajjud, career,
+  //             money, ...). Doing it makes it part of the day; the libraries never do.
+  // An item found by two routes is counted once (`seen` = list keys, `covered` = ProgressStore keys).
+  function progRecKey(r) { return r.categoryId + "|" + r.sectionId + "|" + r.actionId; }
+  function progGroupOf(key) { return String(key).split("|")[0] === "deen" || String(key).indexOf("flow|quran|") === 0 ? "deen" : "dunya"; }
+
+  function todayItems() {
+    var d = todayKey(), items = [], seen = {}, covered = {};
+    function add(key, title, group, done, skipped, cover) {
+      if (seen[key]) return;
+      seen[key] = true;
+      if (cover) covered[cover] = true;
+      items.push({ key: key, title: title, group: group, done: !!done, skipped: !!skipped });
+    }
+    var comps = getSalahCompletions();
+    var log = getDaySunnahLog(d);
+    var flow = readJSON(FLOW_KEY, {})[d] || {};
+    var anyQuran = false;
+
+    PRAYER_ORDER.forEach(function (n) {
+      var cfg = SALAH_STEPS[n], f = flow[n] || {}, sk = f.skip || {};
+      var fk = "deen|salah|prayer_" + progSlug(n);
+      add(fk, n + " Salah", "deen", comps[n], false, fk);
+      cfg.before.concat(cfg.after).forEach(function (s) {
+        var k = progRecKey(sunnahRecord(s.id, d));
+        add(k, s.label, "deen", log[s.id], sk[s.id], k);
+      });
+      var dk = progRecKey(sunnahRecord(cfg.dhikr, d));
+      add(dk, n + " Tasbihat", "deen", log[cfg.dhikr], sk.tasbihat, dk);
+      add("flow|quran|" + n, n + " Qur'an", "deen", f.quran, sk.quran);
+      if (f.quran) anyQuran = true;
+    });
+    [["ma-dhikr", "Morning Adhkar"], ["ea-dhikr", "Evening Adhkar"], ["bs-ayatkursi", "Ayat al-Kursi before sleep"], ["bs-dua", "Dua before sleeping"]].forEach(function (s) {
+      var k = progRecKey(sunnahRecord(s[0], d));
+      add(k, s[1], "deen", log[s[0]], false, k);
+    });
+
+    getPlanActivities().forEach(function (a) {
+      if (a.status === "skipped") return;
+      var rk = progRecKey(planTaskRecord(a.name, d));
+      add("plan|" + a.id, a.name, "dunya", a.status === "done", false, rk);
+    });
+    var hlog = getHabitLogToday();
+    getHabits().forEach(function (h) {
+      var rk = "habits|daily_habits|" + h.id;
+      add(rk, h.name, "dunya", hlog[h.id] === "done", false, rk);
+    });
+    var titles = readJSON("nc_duniya_top3_" + d, []);
+    var t3done = readJSON("nc_duniya_top3_done_" + d, []) || [];
+    (titles || []).forEach(function (t, i) {
+      if (!t) return;
+      var rk = progRecKey(top3Record(i, t, d));
+      add("top3|" + i, t, "dunya", t3done[i], false, rk);
+    });
     var p = getCurrentPriority();
-    if (!p || p.date !== todayKey()) return extras;
-    var parts = priorityParts(p);
-    var score = p.status === "pending" ? Math.max(0, Math.min(1, computeProgressPercent(p) / 100)) : 1;
-    extras.push({ key: parts.categoryId + "|" + parts.sectionId + "|" + parts.actionId, title: p.title, score: score });
-    return extras;
+    if (p && p.date === d) {
+      var pp = priorityParts(p), pk = pp.categoryId + "|" + pp.sectionId + "|" + pp.actionId;
+      if (p.kind === "salah") covered[pk] = true; // the prayers themselves are already listed
+      else add(pk, p.title, progGroupOf(pk), p.status === "completed", false, pk);
+    }
+
+    // Whatever else was actually done today becomes part of today.
+    ProgressStore.dayScore(d, []).items.forEach(function (x) {
+      if (x.regular || covered[x.key] || seen[x.key]) return;
+      if (x.key === "deen|quran|quran_reading" && anyQuran) return;
+      add(x.key, x.title, progGroupOf(x.key), x.score >= 1);
+    });
+    return items;
   }
-  function progressToday() { return ProgressStore.dayScore(todayKey(), priorityExtras()); }
+
+  // Pure calculation over a list of {group, done, skipped}. Nothing here reads storage.
+  function progressCalc(items) {
+    var counted = items.filter(function (x) { return !x.skipped; });
+    var out = { items: items, total: counted.length, done: 0, percent: null, deen: { done: 0, total: 0 }, dunya: { done: 0, total: 0 } };
+    counted.forEach(function (x) {
+      var g = x.group === "deen" ? out.deen : out.dunya;
+      g.total++;
+      if (x.done) { g.done++; out.done++; }
+    });
+    if (out.total) {
+      var pct = Math.round((out.done / out.total) * 100);
+      if (out.done < out.total && pct >= 100) pct = 99;
+      if (out.done > 0 && pct < 1) pct = 1;
+      out.percent = pct;
+    }
+    return out;
+  }
+  function progressToday() { return progressCalc(todayItems()); }
+  window.NuraTodayProgress = { calc: progressCalc, items: todayItems, today: progressToday };
+
+  // One saved summary per NURA day, refreshed whenever today's list changes, so the weekly
+  // report reads real stored days. Earlier days are marked final and never touched again.
+  var DAILY_PROGRESS_KEY = "nc_daily_progress";
+  function saveDaySnapshot(p) {
+    p = p || progressToday();
+    var d = todayKey();
+    var all = readJSON(DAILY_PROGRESS_KEY, null);
+    if (!all || !all.days) all = { version: 1, days: {} };
+    if (!p.total && !all.days[d]) return;
+    var snap = {
+      date: d, eligible: p.total, completed: p.done, percent: p.percent,
+      deen: { done: p.deen.done, total: p.deen.total }, dunya: { done: p.dunya.done, total: p.dunya.total },
+      items: p.items.map(function (x) { return { k: x.key, t: x.title, g: x.group, d: x.done ? 1 : 0, s: x.skipped ? 1 : 0 }; })
+    };
+    var before = all.days[d] ? JSON.stringify(all.days[d].items) + all.days[d].eligible + "/" + all.days[d].completed : "";
+    var changed = before !== JSON.stringify(snap.items) + snap.eligible + "/" + snap.completed;
+    Object.keys(all.days).forEach(function (k) { if (k < d && !all.days[k].final) { all.days[k].final = true; changed = true; } });
+    if (!changed) return;
+    snap.updatedAt = new Date().toISOString();
+    all.days[d] = snap;
+    writeJSON(DAILY_PROGRESS_KEY, all);
+  }
+  function daySnapshot(date) { var a = readJSON(DAILY_PROGRESS_KEY, null); return a && a.days ? a.days[date] || null : null; }
 
   function progFormat(a) {
     var t = a.total;
@@ -1471,22 +1583,29 @@
 
   // Today's Progress comes from the central ProgressStore (see the formula there),
   // not from Today's Priority alone.
-  function renderProgressRing(p) {
+  function renderProgressRing() {
     var ds = progressToday();
-    var pct = ds.percent === null ? 0 : ds.percent;
     var circumference = 213.6;
-    document.getElementById("progress-ring-fill").style.strokeDashoffset = circumference * (1 - pct / 100);
-    document.getElementById("progress-ring-percent").textContent = pct + "%";
-    var line = document.getElementById("progress-line");
-    var sum = document.getElementById("progress-summary-line");
-    if (!sum && line && line.parentNode) {
-      sum = document.createElement("p");
-      sum.className = "muted-line";
-      sum.id = "progress-summary-line";
-      sum.style.fontWeight = "600";
-      line.parentNode.insertBefore(sum, line);
+    var empty = ds.percent === null;
+    document.getElementById("progress-ring-fill").style.strokeDashoffset = circumference * (1 - (empty ? 0 : ds.percent) / 100);
+    document.getElementById("progress-ring-percent").textContent = empty ? "–" : ds.percent + "%";
+    document.getElementById("progress-summary-line").textContent = empty
+      ? "Add or start an activity to begin today's progress."
+      : ds.done + " of " + ds.total + " activit" + (ds.total === 1 ? "y" : "ies") + " completed";
+    var groups = document.getElementById("progress-groups");
+    groups.innerHTML = "";
+    if (!empty) {
+      [["Deen & Sunnah", ds.deen], ["Dunya", ds.dunya]].forEach(function (g) {
+        if (!g[1].total) return;
+        var row = document.createElement("div");
+        row.className = "progress-group-row";
+        var a = document.createElement("span"); a.textContent = g[0];
+        var b = document.createElement("span"); b.className = "progress-group-count"; b.textContent = g[1].done + " / " + g[1].total;
+        row.appendChild(a); row.appendChild(b);
+        groups.appendChild(row);
+      });
     }
-    if (sum) sum.textContent = ds.total ? ds.done + " of " + ds.total + " item" + (ds.total === 1 ? "" : "s") + " done today" : "";
+    saveDaySnapshot(ds);
   }
 
   // Refresh Home's progress card and graph right away when a record changes.
@@ -1512,22 +1631,32 @@
       container.appendChild(row);
     }
 
-    // Today: computed from the same records as everything else.
+    // Today: the exact list the percentage was calculated from.
     var ds = progressToday();
-    progRow(todayEl, "Today's progress", ds.percent === null ? "Nothing yet" : ds.percent + "%", true);
-    progRow(todayEl, "Items done", String(ds.done));
-    if (ds.total - ds.done > 0) progRow(todayEl, "Still open (your regular items)", String(ds.total - ds.done));
-    ProgressStore.summarizeRange([todayKey()]).categories.forEach(function (c) {
-      c.sectionList.forEach(function (s) {
-        s.actionList.forEach(function (a) { progRow(todayEl, c.title + " · " + a.title, a.metricType === "boolean" ? "Done" : progFormat(a)); });
+    if (ds.percent === null) {
+      progRow(todayEl, "Today", "Add or start an activity to begin", true);
+    } else {
+      progRow(todayEl, "Today — " + ds.percent + "%", ds.done + " of " + ds.total + " completed", true);
+      [["Deen & Sunnah", "deen"], ["Dunya", "dunya"]].forEach(function (g) {
+        var list = ds.items.filter(function (x) { return x.group === g[1]; });
+        if (!list.length) return;
+        progRow(todayEl, g[0], ds[g[1]].done + " / " + ds[g[1]].total, true);
+        list.forEach(function (x) { progRow(todayEl, (x.skipped ? "– " : x.done ? "✓ " : "□ ") + x.title, x.skipped ? "skipped" : ""); });
       });
-    });
+    }
 
-    // Weekly report: every category that has recorded activity, generated from the records.
+    // Weekly report: one real saved summary per day; never a made-up value.
     var rep = ProgressStore.summarizeRange(getLastNDateKeys(7));
-    rep.days.forEach(function (day) {
-      var label = new Date(day.key || day.date + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-      progRow(weekEl, label, day.percent === null ? "No activity" : day.percent + "% · " + day.done + " of " + day.total);
+    getLastNDateKeys(7).slice().reverse().forEach(function (dateKey) {
+      var label = new Date(dateKey + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+      var s = dateKey === todayKey() ? ds : daySnapshot(dateKey);
+      if (s && (s.total || s.eligible)) {
+        var tot = s.total !== undefined ? s.total : s.eligible, dn = s.done !== undefined ? s.done : s.completed;
+        progRow(weekEl, label, s.percent + "% · " + dn + " of " + tot + " (Deen " + s.deen.done + "/" + s.deen.total + " · Dunya " + s.dunya.done + "/" + s.dunya.total + ")");
+      } else {
+        var n = ProgressStore.getDay(dateKey).length;
+        progRow(weekEl, label, n ? n + " recorded (no daily total saved)" : "No activity");
+      }
     });
     if (!rep.categories.length) progRow(weekEl, "Activity this week", "Nothing recorded yet");
     rep.categories.forEach(function (c) {
@@ -1581,23 +1710,7 @@
   }
 
   function renderProgressLine(p) {
-    var line = document.getElementById("progress-line");
-    renderProgressRing(p);
-    if (!p) { line.textContent = "Choose today's priority above to begin."; return; }
-    if (p.kind === "salah") {
-      var completions = getSalahCompletions();
-      var doneCount = PRAYER_ORDER.filter(function (n) { return completions[n]; }).length;
-      line.textContent = doneCount + " of 5 prayers marked complete today.";
-      return;
-    }
-    if (p.kind === "sleep") {
-      line.textContent = p.wakeTime ? "Sleep logged ✓" : "Asleep since " + new Date(p.sleepStart).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) + ".";
-      return;
-    }
-    if (p.status !== "pending") { line.textContent = "Completed today ✓"; return; }
-    if (focusState.linkedPriorityId === p.id && focusState.running) { line.textContent = "In progress — timer running."; return; }
-    if (focusState.linkedPriorityId === p.id && focusState.remaining !== focusSecondsTotal()) { line.textContent = "Paused — pick up when ready."; return; }
-    line.textContent = "Not started yet.";
+    renderProgressRing();
   }
 
   // ---------- SALAH VIEW ----------
@@ -2224,6 +2337,7 @@
       flowPatch(intent.prayer, { quran: true });
       try { localStorage.removeItem("nc_quran_intent"); } catch (e) {}
     }
+    saveDaySnapshot();
   }
   var quranObserver = null;
   var quranDwell = {};
@@ -2297,10 +2411,12 @@
     var tc = tasbihCounts(name);
     var skipT = !!(f.skip || {}).tasbihat;
     var tsum = tc[0] + tc[1] + tc[2];
+    // one source of truth: the Sunnah log's "Dhikr after salah" (also ticked on the Sunnah page)
+    var tdone = !!getDaySunnahLog(todayKey())[cfg.dhikr];
     items.push({
-      label: "Tasbihat", done: !!tb.done, skipped: skipT, kind: "tasbih", prayer: name,
-      sub: tb.done ? "SubhanAllah ×33 · Alhamdulillah ×33 · Allahu Akbar ×34" : (tsum ? tsum + " of 100 so far" : "After Salah · ×33 ×33 ×34"),
-      toggle: function () { if (tb.done) tasbihSetDone(name, false, tc); else tasbihSetDone(name, true, [33, 33, 34]); },
+      label: "Tasbihat", done: tdone, skipped: skipT, kind: "tasbih", prayer: name,
+      sub: tdone ? "SubhanAllah ×33 · Alhamdulillah ×33 · Allahu Akbar ×34" : (tsum ? tsum + " of 100 so far" : "After Salah · ×33 ×33 ×34"),
+      toggle: function () { if (tdone) tasbihSetDone(name, false, tc); else tasbihSetDone(name, true, [33, 33, 34]); },
       skip: function () { flowSkip(name, "tasbihat", true); }, unskip: function () { flowSkip(name, "tasbihat", false); }
     });
 
@@ -2808,6 +2924,7 @@
       flowEl.appendChild(wrap);
     });
     startDayTimer();
+    renderProgressRing();
   }
 
   function renderDayFlow() {
@@ -2860,25 +2977,6 @@
     }, 1000);
   }
 
-  // Items that are relevant today but not done yet, so Today's Journey is honest
-  // about what is still open (passed prayers, pending Plan My Day tasks).
-  function dayExtras() {
-    var out = [];
-    var T = dayView.timings;
-    if (T) {
-      var t = dayTimes(T);
-      var comps = getSalahCompletions();
-      PRAYER_ORDER.forEach(function (n) {
-        if (!comps[n] && t[n.toLowerCase()] <= new Date()) out.push({ key: "deen|salah|prayer_" + progSlug(n), title: n + " prayer", score: 0 });
-      });
-    }
-    getPlanActivities().forEach(function (a) {
-      if (a.status === "skipped" || a.status === "done") return;
-      out.push({ key: "productivity|plan_my_day|task_" + progSlug(a.name), title: a.name, score: 0 });
-    });
-    return out;
-  }
-
   function renderHome() {
     ensureJourneyStarted();
     document.getElementById("home-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -2915,6 +3013,8 @@
     document.getElementById("priority-change-btn").addEventListener("click", chooseDifferentPriority);
 
     document.getElementById("open-weekly-report").addEventListener("click", openProgressDetails);
+    document.getElementById("open-progress-details").addEventListener("click", openProgressDetails);
+    document.getElementById("today-progress-card").querySelector(".progress-ring-row").addEventListener("click", openProgressDetails);
     document.getElementById("progress-details-close").addEventListener("click", function () {
       document.getElementById("modal-progress-details").classList.add("hidden");
     });
@@ -5299,6 +5399,7 @@
 
   function setActiveView(name) {
     if (!dayNavBusy) dayView.returnHome = false;
+    try { saveDaySnapshot(); } catch (e) {}
     updateSunnahReturn();
     document.querySelectorAll(".view").forEach(function (v) {
       v.classList.toggle("hidden", v.dataset.view !== name);
@@ -11587,6 +11688,7 @@
     AppData.boot();
     ProgressStore.importLegacy();
     ProgressStore.onChange(progressRefreshHome);
+    ProgressStore.onChange(function () { saveDaySnapshot(); });
     AppData.restoreFromBrowserBackup();
     initProfilePhoto();
     initNav();

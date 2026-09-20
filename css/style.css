@@ -1052,3 +1052,10 @@ html, body {
 .sunnah-group-note { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
 .sunnah-group-empty { font-size: 13px; color: var(--muted); background: var(--surface-2); border-radius: 12px; padding: 10px 12px; margin: 0 0 8px; }
 .flow-item { flex-wrap: wrap; }
+
+/* ---------- Today's Progress card ---------- */
+.progress-ring-text { flex: 1; min-width: 0; }
+.progress-summary { margin: 0; font-size: 15px; font-weight: 600; color: var(--text); }
+.progress-groups { margin: 12px 0 10px; }
+.progress-group-row { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.progress-group-count { font-weight: 700; color: var(--mint); font-variant-numeric: tabular-nums; }

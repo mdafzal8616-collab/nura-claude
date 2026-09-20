@@ -99,9 +99,9 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="card" id="today-progress-card">
       <div class="card-row">
-        <h2>Today's Journey</h2>
+        <h2>Today's Progress</h2>
       </div>
       <div class="progress-ring-row">
         <div class="progress-ring-wrap">
@@ -109,10 +109,15 @@
             <circle cx="40" cy="40" r="34" class="progress-ring-track"/>
             <circle cx="40" cy="40" r="34" class="progress-ring-fill" id="progress-ring-fill"/>
           </svg>
-          <span class="progress-ring-percent" id="progress-ring-percent">0%</span>
+          <span class="progress-ring-percent" id="progress-ring-percent">–</span>
         </div>
-        <p class="muted-line" id="progress-line">Not started yet.</p>
+        <div class="progress-ring-text">
+          <p class="progress-summary" id="progress-summary-line"></p>
+          <p class="hidden" id="progress-line"></p>
+        </div>
       </div>
+      <div class="progress-groups" id="progress-groups"></div>
+      <button class="btn btn-outline btn-full" id="open-progress-details" type="button">View details</button>
       <button class="flow-link" id="open-weekly-report" type="button">See weekly report</button>
     </section>
   </main>
