@@ -2,6 +2,26 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-20 — One central Progress Store (Home, daily history and weekly report now share it)
+
+**Root cause found**: Home's ring, the 7-day graph and the details view were calculated only from *Today's Priority*. Sunnah, Akhlaq, habits, Salah, money, Personal Growth etc. each wrote to their own separate storage that nothing read, so completing them left Home at 0% and out of the weekly view.
+
+**Fix**: a single `ProgressStore` (`window.NuraProgress`) in `js/app.js`. Storage: `nc_progress` = `{ schemaVersion, days: { "YYYY-MM-DD": [record] } }` (local calendar dates; a new day simply starts an empty list, old days are never touched). Record = `{ id, date, categoryId, sectionId, actionId, title, metricType, value, unit, completedAt, metadata, source, schemaVersion }` — raw facts (25 min, ₹500, "did action X"), never scores. Metric types: boolean, count, duration, amount, percentage, rating, quantity. Booleans/percentages/ratings upsert (one per action per day, so no duplicates); count/duration/amount/quantity are events that add up unless `mode:"upsert"|"set"`. `remove()` / `toggle()` provide undo.
+
+**Future-proof**: nothing in Home or the report is hard-coded to a feature. A new feature only calls `NuraProgress.record({ categoryId, sectionId, actionId, title, metricType, value, unit })` (documented at the top of the module) and it appears in Today's Progress, daily history and the weekly report automatically; unknown categories are titled from their id until registered. Display names live in `nc_progress_registry`, separate from stable ids, so a rename (`registerCategory/Section/Action`) changes what the report shows without touching stored records.
+
+**Compatibility**: `schemaVersion` on the store and on every record, plus a `MIGRATIONS` map for upgrading older data in order; unknown newer versions are left untouched. A one-time, idempotent import (`nc_progress_imported_v1`) brought over what the separate stores already held (Sunnah/Akhlaq, Salah, habits, Priority log, Personal Growth, money contributions, Plan My Day tasks, Top 3, career lessons).
+
+**Today's Progress formula (documented in code, recomputable for any past day)**: relevant items = items done on ≥2 of the previous 7 days ("regular") + everything done that day + today's Priority (counted fractionally while a timer runs). Progress = average item score; score is 1 for a recorded item (or min(1, total/target) if a daily target is registered), value/100 for percentages. You are not penalised for features you don't use. Caveat: on a brand-new day the % starts low if you have regular items not yet done — that is intended.
+
+**Wired features (live, with undo where the feature has one)**: Sunnah routine, Akhlaq, Salah, Tasbih (count), Hadith quiz, Duniya habits, Today's Priority (study minutes / sleep hours / fitness / etc.), ad-hoc focus sessions, Top 3 tasks, Plan My Day tasks, Career lessons, Money savings (amount), Personal Growth. **Deliberately not in the central store**: Recovery (sensitive; only neutral totals are shown), Phone Control native stats (device-only data), and the Memory engine's own log.
+
+**UI**: Home ring + "N of M items done today" + 7-day graph, and the report modal (now titled Weekly Report) are generated from the store: per-day % and item counts, plus every category/section that has records, with metric-aware summaries (minutes, hours, ₹, counts). Refreshes immediately when a record changes.
+
+**Tested** (browser): exact acceptance flow (two Akhlaq actions → Home 0% → 100% without refresh → refresh keeps both → weekly report shows Deen › Akhlaq 2 done → Sunnah action updates Home and report → reload); Undo removes records; repeated record() calls create one record; a temporary `future_test` category plus reading/nutrition/reflection recorded only via the API showed up in Today, per-date history and the weekly report with correct count/quantity/rating summaries, then were removed; renaming via the registry kept history; date separation (records moved back a day = new empty day, yesterday's 100% intact); legacy import of nine old stores (12 records, re-run added no duplicates); habits done/undo; money saving; Study priority pending→done (67%→100%, "15 min" stored); no console errors; other screens unaffected.
+
+**Limits**: Qur'an/Dua browsing has no "done" action in the app yet, so it is only counted through Sunnah routine items that link to them; Mental Wellbeing exercises and the older Growth log aren't connected yet; Money and Personal Growth keep their own deeper feature reports as well; the Android APK was rebuilt but only the website was exercised in tests; day changes were simulated by shifting stored dates.
+
 ## 2026-09-19 — User Understanding & Memory Engine (local-first, rule-based)
 
 Built a persistent memory layer so NURA stops re-asking for the same routine. Observe → remember → find patterns → confidence → personalise → ask only when unsure → learn from corrections. **No LLM and no network** (none exists in the project); everything is structured data + plain rules. It learns only from activity inside NURA — never messages, photos, browsing, mic, camera, contacts or other apps.

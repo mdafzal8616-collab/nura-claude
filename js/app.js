@@ -75,6 +75,434 @@
     return out;
   }
 
+  // ---------- PROGRESS STORE: THE ONE SOURCE OF TRUTH ----------
+  // Every meaningful action anywhere in NURA is written here, as a RAW fact
+  // ("studied 25 minutes", "did Akhlaq action X", "saved ₹200"). Home's
+  // Today's Progress, daily history, the weekly report and any future analytics
+  // are all CALCULATED from these records, never stored as scores.
+  //
+  // HOW A NEW FEATURE PLUGS IN (nothing else needs editing):
+  //   NuraProgress.record({
+  //     categoryId: "reading",        // stable id, never shown to the user
+  //     sectionId:  "books",          // stable id
+  //     actionId:   "read_20_pages",  // stable id
+  //     title:      "Read 20 pages",  // display title (may change later)
+  //     metricType: "count",          // boolean | count | duration | amount | percentage | rating | quantity
+  //     value:      20,               // omit for boolean (true)
+  //     unit:       "pages"           // optional
+  //   });
+  //   NuraProgress.remove({ categoryId, sectionId, actionId })   // undo (today, or pass date)
+  //   NuraProgress.toggle({...})                                 // record if absent, else remove
+  // Optional: categoryTitle / sectionTitle / metadata / date ("YYYY-MM-DD", local) / mode.
+  //
+  // STORAGE: localStorage "nc_progress" = { schemaVersion, days: { "YYYY-MM-DD": [record, ...] } }
+  //   record = { id, date, categoryId, sectionId, actionId, title, metricType, value, unit,
+  //              completedAt, metadata, source, schemaVersion }
+  // Display names live apart from ids in "nc_progress_registry", so renaming a
+  // feature ("Study & Focus" -> "Focus & Learning") never orphans history.
+  //
+  // DUPLICATES: boolean/percentage/rating records are upserted (one per day per
+  // action id). count/duration/amount/quantity records are events that add up
+  // unless mode:"upsert"|"set" is passed, which replaces the day's value.
+  //
+  // TODAY'S PROGRESS (one documented formula, recomputable any time):
+  //   relevant items for a day = items the user does regularly (done on at least
+  //   2 of the previous 7 days) + everything done that day + today's Priority.
+  //   progress = average item score over the relevant items.
+  //   item score: boolean/count/duration/amount/quantity = 1 when recorded (or
+  //   min(1, total/target) if a daily target is registered); percentage = value/100;
+  //   an in-progress Priority counts by its fraction.
+  //   You are never penalised for features you don't use: only regular items count.
+
+  var ProgressStore = (function () {
+    var SCHEMA = 1;
+    var KEY = "nc_progress";
+    var REG = "nc_progress_registry";
+    var LEGACY_FLAG = "nc_progress_imported_v1";
+    var listeners = [];
+    var UPSERT_METRICS = ["boolean", "percentage", "rating"];
+
+    // Display defaults only (order + titles). Not logic: unknown categories work too.
+    var CATEGORY_DEFAULTS = {
+      deen: { title: "Deen", order: 10 }, study_focus: { title: "Study & Focus", order: 20 },
+      phone_control: { title: "Phone Control", order: 30 }, sleep: { title: "Sleep", order: 40 },
+      fitness: { title: "Fitness", order: 50 }, habits: { title: "Habits & Discipline", order: 60 },
+      productivity: { title: "Productivity", order: 70 }, wellbeing: { title: "Mental Wellbeing", order: 80 },
+      career: { title: "Career & Skills", order: 90 }, money: { title: "Money", order: 100 },
+      personal_growth: { title: "Personal Growth", order: 110 }, todays_priority: { title: "Today's Priority", order: 200 }
+    };
+
+    // Older saved data is upgraded in order; unknown newer versions are left untouched.
+    var MIGRATIONS = {};
+
+    function isObj(v) { return v && typeof v === "object" && !Array.isArray(v); }
+    function prettify(id) { return String(id).replace(/[_\-:]+/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); }); }
+    function itemKey(r) { return r.categoryId + "|" + r.sectionId + "|" + r.actionId; }
+
+    function load() {
+      var d = readJSON(KEY, null);
+      if (!isObj(d)) d = { schemaVersion: SCHEMA, days: {} };
+      if (!isObj(d.days)) d.days = {};
+      var v = d.schemaVersion || 1;
+      while (v < SCHEMA && MIGRATIONS[v]) { d = MIGRATIONS[v](d); v = d.schemaVersion; }
+      return d;
+    }
+    function save(d) { writeJSON(KEY, d); }
+    function loadReg() {
+      var r = readJSON(REG, null);
+      if (!isObj(r)) r = {};
+      if (!isObj(r.categories)) r.categories = {};
+      if (!isObj(r.sections)) r.sections = {};
+      if (!isObj(r.actions)) r.actions = {};
+      return r;
+    }
+
+    // ---- registry: stable id -> display info (explicit registration wins over auto) ----
+    function setReg(bucket, id, info, explicit) {
+      var r = loadReg();
+      var cur = r[bucket][id] || {};
+      if (cur.explicit && !explicit) {
+        // keep the deliberate title, but still learn metric/unit/target if missing
+        ["metricType", "unit", "target", "order"].forEach(function (k) { if (info[k] !== undefined && cur[k] === undefined) cur[k] = info[k]; });
+      } else {
+        Object.keys(info).forEach(function (k) { if (info[k] !== undefined && info[k] !== null) cur[k] = info[k]; });
+        if (explicit) cur.explicit = true;
+      }
+      r[bucket][id] = cur;
+      writeJSON(REG, r);
+    }
+    function registerCategory(id, info) { setReg("categories", id, info || {}, true); }
+    function registerSection(cat, id, info) { setReg("sections", cat + "|" + id, info || {}, true); }
+    function registerAction(cat, sec, id, info) { setReg("actions", cat + "|" + sec + "|" + id, info || {}, true); }
+    function categoryTitle(id, reg) {
+      reg = reg || loadReg();
+      return (reg.categories[id] && reg.categories[id].title) || (CATEGORY_DEFAULTS[id] && CATEGORY_DEFAULTS[id].title) || prettify(id);
+    }
+    function categoryOrder(id, reg) {
+      reg = reg || loadReg();
+      var c = reg.categories[id];
+      if (c && c.order !== undefined) return c.order;
+      return CATEGORY_DEFAULTS[id] ? CATEGORY_DEFAULTS[id].order : 500;
+    }
+    function sectionTitle(cat, id, reg) {
+      reg = reg || loadReg();
+      var s = reg.sections[cat + "|" + id];
+      return (s && s.title) || prettify(id);
+    }
+    function actionInfo(r, reg) {
+      reg = reg || loadReg();
+      return reg.actions[itemKey(r)] || {};
+    }
+
+    // ---- writing ----
+    function notify() {
+      listeners.forEach(function (fn) { try { fn(); } catch (e) {} });
+    }
+    function onChange(fn) { if (typeof fn === "function") listeners.push(fn); }
+
+    function record(input) {
+      if (!isObj(input) || !input.categoryId || !input.sectionId || !input.actionId) return null;
+      var date = input.date || todayKey();
+      var metric = input.metricType || "boolean";
+      var value = input.value !== undefined ? input.value : (metric === "boolean" ? true : 1);
+      if (metric === "boolean" && !value) return remove(input) ? null : null;
+      var mode = input.mode || (UPSERT_METRICS.indexOf(metric) !== -1 ? "upsert" : "event");
+      var rec = {
+        id: input.id || (mode === "event" ? uid("pr") : date + "|" + input.categoryId + "|" + input.sectionId + "|" + input.actionId),
+        date: date, categoryId: input.categoryId, sectionId: input.sectionId, actionId: input.actionId,
+        title: input.title || prettify(input.actionId), metricType: metric, value: value, unit: input.unit || null,
+        completedAt: input.completedAt || new Date().toISOString(), metadata: isObj(input.metadata) ? input.metadata : {},
+        source: input.source || "app", schemaVersion: SCHEMA
+      };
+      var d = load();
+      var day = Array.isArray(d.days[date]) ? d.days[date] : (d.days[date] = []);
+      var at = -1;
+      day.forEach(function (x, i) { if (x.id === rec.id) at = i; });
+      if (at === -1) day.push(rec); else day[at] = rec;
+      d.schemaVersion = SCHEMA;
+      save(d);
+      var reg = loadReg();
+      if (!reg.categories[rec.categoryId] || !reg.categories[rec.categoryId].explicit) setReg("categories", rec.categoryId, { title: input.categoryTitle }, false);
+      if (input.sectionTitle) setReg("sections", rec.categoryId + "|" + rec.sectionId, { title: input.sectionTitle }, false);
+      setReg("actions", itemKey(rec), { title: rec.title, metricType: metric, unit: rec.unit, target: input.target }, false);
+      notify();
+      return rec;
+    }
+
+    function remove(spec) {
+      if (!isObj(spec)) return 0;
+      var date = spec.date || todayKey();
+      var d = load();
+      var day = Array.isArray(d.days[date]) ? d.days[date] : [];
+      var kept = day.filter(function (r) {
+        if (spec.id) return r.id !== spec.id;
+        return !(r.categoryId === spec.categoryId && r.sectionId === spec.sectionId && r.actionId === spec.actionId);
+      });
+      var removed = day.length - kept.length;
+      if (removed) {
+        if (kept.length) d.days[date] = kept; else delete d.days[date];
+        save(d);
+        notify();
+      }
+      return removed;
+    }
+
+    function has(date, categoryId, sectionId, actionId) {
+      var day = load().days[date] || [];
+      return day.some(function (r) { return r.categoryId === categoryId && r.sectionId === sectionId && r.actionId === actionId; });
+    }
+    function toggle(input) {
+      var date = input.date || todayKey();
+      if (has(date, input.categoryId, input.sectionId, input.actionId)) { remove(input); return false; }
+      record(input);
+      return true;
+    }
+    function getDay(date) { var day = load().days[date]; return Array.isArray(day) ? day.slice() : []; }
+    function hasAny() { var d = load(); return Object.keys(d.days).length > 0; }
+
+    // ---- reading: everything below is derived from raw records ----
+    function aggregate(records) {
+      var items = {};
+      records.forEach(function (r) {
+        var k = itemKey(r);
+        var it = items[k] || (items[k] = { key: k, categoryId: r.categoryId, sectionId: r.sectionId, actionId: r.actionId, title: r.title, metricType: r.metricType, unit: r.unit, total: 0, events: 0, sum: 0, n: 0, last: "" });
+        it.events++;
+        if (r.completedAt >= it.last) { it.last = r.completedAt; it.title = r.title; }
+        var v = r.value;
+        if (r.metricType === "boolean") it.total = v ? 1 : it.total;
+        else if (r.metricType === "percentage") it.total = Number(v) || 0;
+        else if (r.metricType === "rating") { it.sum += Number(v) || 0; it.n++; it.total = it.sum / it.n; }
+        else it.total += Number(v) || 0;
+      });
+      return items;
+    }
+    function itemScore(it, reg) {
+      if (it.metricType === "percentage") return Math.max(0, Math.min(1, it.total / 100));
+      var info = reg.actions[it.key] || {};
+      if (info.target > 0 && it.metricType !== "boolean") return Math.max(0, Math.min(1, it.total / info.target));
+      return it.total > 0 || it.metricType === "rating" ? 1 : 0;
+    }
+    function regularKeys(d, date) {
+      var counts = {};
+      for (var i = 1; i <= 7; i++) {
+        var k = todayKey(new Date(new Date(date + "T12:00:00").getTime() - i * 86400000));
+        var seen = {};
+        (d.days[k] || []).forEach(function (r) { seen[itemKey(r)] = true; });
+        Object.keys(seen).forEach(function (s) { counts[s] = (counts[s] || 0) + 1; });
+      }
+      return Object.keys(counts).filter(function (s) { return counts[s] >= 2; });
+    }
+
+    // extras: [{ key, title, score }] items that are relevant today but not (fully) done yet
+    function scoreFrom(d, reg, date, extras) {
+      var items = aggregate(d.days[date] || []);
+      var relevant = {};
+      Object.keys(items).forEach(function (k) { relevant[k] = { key: k, title: items[k].title, score: itemScore(items[k], reg), done: true }; });
+      regularKeys(d, date).forEach(function (k) {
+        if (!relevant[k]) {
+          var p = k.split("|");
+          var info = reg.actions[k] || {};
+          relevant[k] = { key: k, title: info.title || prettify(p[2]), score: 0, done: false, regular: true };
+        }
+      });
+      (extras || []).forEach(function (e) {
+        if (!relevant[e.key]) relevant[e.key] = { key: e.key, title: e.title, score: e.score || 0, done: (e.score || 0) >= 1, extra: true };
+      });
+      var list = Object.keys(relevant).map(function (k) { return relevant[k]; });
+      var total = list.length;
+      var sum = list.reduce(function (s, x) { return s + x.score; }, 0);
+      return {
+        date: date, total: total, done: list.filter(function (x) { return x.score >= 1; }).length,
+        percent: total ? Math.round((sum / total) * 100) : null,
+        items: list, hasRecords: (d.days[date] || []).length > 0
+      };
+    }
+    function dayScore(date, extras) { return scoreFrom(load(), loadReg(), date, extras); }
+
+    // A category -> section -> action rollup for any set of dates (newest-first array).
+    function summarizeRange(dates) {
+      var d = load(), reg = loadReg();
+      var cats = {}, activeDays = {};
+      dates.forEach(function (date) {
+        var items = aggregate(d.days[date] || []);
+        Object.keys(items).forEach(function (k) {
+          var it = items[k];
+          var c = cats[it.categoryId] || (cats[it.categoryId] = { id: it.categoryId, title: categoryTitle(it.categoryId, reg), order: categoryOrder(it.categoryId, reg), days: {}, sections: {} });
+          c.days[date] = true;
+          activeDays[date] = true;
+          var s = c.sections[it.sectionId] || (c.sections[it.sectionId] = { id: it.sectionId, title: sectionTitle(it.categoryId, it.sectionId, reg), actions: {} });
+          var a = s.actions[it.actionId] || (s.actions[it.actionId] = { id: it.actionId, key: k, title: (reg.actions[k] && reg.actions[k].title) || it.title, metricType: it.metricType, unit: it.unit, total: 0, days: 0, n: 0 });
+          a.days++;
+          if (it.metricType === "boolean") a.total += it.total ? 1 : 0;
+          else if (it.metricType === "percentage" || it.metricType === "rating") { a.n++; a.total = (a.total * (a.n - 1) + it.total) / a.n; }
+          else a.total += it.total;
+        });
+      });
+      var list = Object.keys(cats).map(function (id) {
+        var c = cats[id];
+        c.activeDays = Object.keys(c.days).length;
+        c.sectionList = Object.keys(c.sections).map(function (sid) {
+          var s = c.sections[sid];
+          s.actionList = Object.keys(s.actions).map(function (aid) { return s.actions[aid]; });
+          return s;
+        });
+        return c;
+      }).sort(function (a, b) { return a.order - b.order || (a.title < b.title ? -1 : 1); });
+      var days = dates.slice().reverse().map(function (date) { return scoreFrom(d, reg, date, date === todayKey() ? priorityExtras() : []); });
+      return { categories: list, days: days, activeDayCount: Object.keys(activeDays).length };
+    }
+
+    // ---- one-time import of what NURA's separate stores already hold ----
+    function importLegacy() {
+      if (localStorage.getItem(LEGACY_FLAG)) return;
+      try {
+        var sun = readJSON("nc_sunnah_log", {});
+        Object.keys(sun).forEach(function (date) {
+          Object.keys(sun[date] || {}).forEach(function (aid) { if (sun[date][aid]) record(sunnahRecord(aid, date)); });
+        });
+        var sal = readJSON("nc_salah_completions", {});
+        Object.keys(sal).forEach(function (date) {
+          Object.keys(sal[date] || {}).forEach(function (name) { if (sal[date][name]) record(salahRecord(name, date)); });
+        });
+        var habits = readJSON("nc_duniya_habits", []);
+        var hlog = readJSON("nc_duniya_habit_log", {});
+        Object.keys(hlog).forEach(function (date) {
+          Object.keys(hlog[date] || {}).forEach(function (hid) {
+            if (hlog[date][hid] !== "done") return;
+            var h = habits.filter(function (x) { return x.id === hid; })[0];
+            record(habitRecord(hid, h ? h.name : hid, date));
+          });
+        });
+        readJSON("nc_priority_log", []).forEach(function (e) {
+          if (e && (e.status === "completed" || e.status === "partial") && e.date) {
+            var rec = priorityRecord({ planKey: e.planKey, kind: null, title: e.title, minutes: e.minutes, status: e.status, date: e.date });
+            if (rec && !has(e.date, rec.categoryId, rec.sectionId, rec.actionId)) record(rec);
+          }
+        });
+        readJSON("nc_pg_history", []).forEach(function (e) {
+          if (e && (e.status === "completed" || e.status === "partial") && e.date) record(growthRecord(e));
+        });
+        readJSON("nc_money_contribs", []).forEach(function (c) {
+          if (c && c.id && c.amount > 0 && c.source !== "unallocated") record(moneyRecord(c));
+        });
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          var m;
+          if ((m = k.match(/^nc_plan_activities_(\d{4}-\d{2}-\d{2})$/))) {
+            readJSON(k, []).forEach(function (a) { if (a && a.status === "done" && a.name) record(planTaskRecord(a.name, m[1])); });
+          } else if ((m = k.match(/^nc_duniya_top3_done_(\d{4}-\d{2}-\d{2})$/))) {
+            var titles = readJSON("nc_duniya_top3_" + m[1], []);
+            (readJSON(k, []) || []).forEach(function (done, idx) { if (done && titles[idx]) record(top3Record(idx, titles[idx], m[1])); });
+          }
+        }
+        var car = readJSON("nc_duniya_career_progress", {});
+        Object.keys(car).forEach(function (key) {
+          var e = car[key];
+          if (e && e.done && e.completedDate) record(careerRecord(key, e.completedDate));
+        });
+        localStorage.setItem(LEGACY_FLAG, "1");
+      } catch (err) { /* import is best-effort; live recording still works */ }
+    }
+
+    return {
+      schemaVersion: SCHEMA, record: record, remove: remove, toggle: toggle, has: has, getDay: getDay, hasAny: hasAny,
+      dayScore: dayScore, summarizeRange: summarizeRange, onChange: onChange, importLegacy: importLegacy,
+      registerCategory: registerCategory, registerSection: registerSection, registerAction: registerAction,
+      categoryTitle: function (id) { return categoryTitle(id); }
+    };
+  })();
+  window.NuraProgress = ProgressStore;
+
+  // ---- how each existing feature describes itself to the store (data, not report logic) ----
+  function progSlug(s) { return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "item"; }
+
+  function sunnahRecord(actionId, date) {
+    var found = null;
+    if (typeof ROUTINE_SECTIONS !== "undefined") {
+      ROUTINE_SECTIONS.forEach(function (sec) { sec.actions.forEach(function (a) { if (a.id === actionId) found = { sectionId: "sunnah_" + progSlug(sec.id), sectionTitle: "Sunnah — " + sec.title, title: a.name }; }); });
+    }
+    if (!found && typeof AKHLAQ_ITEMS !== "undefined") {
+      AKHLAQ_ITEMS.forEach(function (a) { if (a.id === actionId) found = { sectionId: "akhlaq", sectionTitle: "Akhlaq", title: a.name }; });
+    }
+    if (!found) found = { sectionId: "sunnah_other", sectionTitle: "Sunnah", title: actionId };
+    return { date: date, categoryId: "deen", categoryTitle: "Deen", sectionId: found.sectionId, sectionTitle: found.sectionTitle, actionId: actionId, title: found.title, metricType: "boolean", source: "sunnah" };
+  }
+  function salahRecord(name, date) {
+    return { date: date, categoryId: "deen", sectionId: "salah", sectionTitle: "Salah", actionId: "prayer_" + progSlug(name), title: name + " prayer", metricType: "boolean", source: "salah" };
+  }
+  function habitRecord(habitId, name, date) {
+    return { date: date, categoryId: "habits", sectionId: "daily_habits", sectionTitle: "Daily habits", actionId: habitId, title: name, metricType: "boolean", source: "habits" };
+  }
+  var PROG_KIND_CATEGORY = { study: "study_focus", sleep: "sleep", fitness: "fitness", phone: "phone_control", salah: "deen" };
+  function priorityParts(p) {
+    var kind = p.kind || p.planKey || null;
+    var cat = PROG_KIND_CATEGORY[kind] || "todays_priority";
+    return { categoryId: cat, sectionId: "todays_priority", actionId: p.planKey || ("custom_" + progSlug(p.title)) };
+  }
+  function priorityRecord(p) {
+    if (!p) return null;
+    var parts = priorityParts(p);
+    var rec = { date: p.date || todayKey(), categoryId: parts.categoryId, sectionId: parts.sectionId, sectionTitle: "Today's Priority", actionId: parts.actionId, title: p.title || "Priority", source: "priority" };
+    if (p.status === "partial") { rec.metricType = "percentage"; rec.value = 50; return rec; }
+    if (p.kind === "sleep" && p.wakeTime && p.sleepStart) {
+      rec.metricType = "duration"; rec.unit = "h"; rec.mode = "upsert";
+      rec.value = Math.max(0, Math.round(((new Date(p.wakeTime) - new Date(p.sleepStart)) / 3600000) * 10) / 10);
+      return rec;
+    }
+    if (p.minutes && (p.kind === "study" || p.planKey === "study")) { rec.metricType = "duration"; rec.unit = "min"; rec.mode = "upsert"; rec.value = p.minutes; return rec; }
+    rec.metricType = "boolean";
+    return rec;
+  }
+  function growthRecord(e) {
+    return { date: e.date, categoryId: "personal_growth", categoryTitle: "Personal Growth", sectionId: e.area || "growth", sectionTitle: (typeof gwTrack === "function" && gwTrack(e.area)) ? gwTrack(e.area).label : prettifyId(e.area), actionId: e.actionId || ("day_" + e.planDay), title: e.challenge || "Personal Growth action", metricType: e.status === "partial" ? "percentage" : "boolean", value: e.status === "partial" ? 50 : true, metadata: { result: e.status, difficulty: e.difficulty || null, planDay: e.planDay }, source: "personalGrowth" };
+  }
+  function prettifyId(id) { return String(id || "").replace(/[_\-]+/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); }); }
+  function moneyRecord(c) {
+    return { id: "contrib:" + c.id, date: c.date, categoryId: "money", categoryTitle: "Money", sectionId: "savings", sectionTitle: "Savings", actionId: "money_saved", title: "Money saved", metricType: "amount", value: c.amount, unit: "INR", metadata: { source: c.source }, source: "money" };
+  }
+  function planTaskRecord(name, date) {
+    return { date: date, categoryId: "productivity", sectionId: "plan_my_day", sectionTitle: "Plan My Day", actionId: "task_" + progSlug(name), title: name, metricType: "boolean", source: "plan" };
+  }
+  function top3Record(idx, title, date) {
+    return { date: date, categoryId: "productivity", sectionId: "top3", sectionTitle: "Top 3 tasks", actionId: "top3_" + progSlug(title), title: title, metricType: "boolean", source: "productivity" };
+  }
+  function careerRecord(key, date) {
+    return { date: date, categoryId: "career", categoryTitle: "Career & Skills", sectionId: "lessons", sectionTitle: "Skill lessons", actionId: progSlug(key), title: prettifyId(String(key).split(":").pop()), metricType: "boolean", source: "career" };
+  }
+
+  // Today's Priority is relevant today even before it is done (fractionally while in progress).
+  function priorityExtras() {
+    var p = getCurrentPriority();
+    if (!p || p.date !== todayKey()) return [];
+    var parts = priorityParts(p);
+    var score = p.status === "pending" ? Math.max(0, Math.min(1, computeProgressPercent(p) / 100)) : 1;
+    return [{ key: parts.categoryId + "|" + parts.sectionId + "|" + parts.actionId, title: p.title, score: score }];
+  }
+  function progressToday() { return ProgressStore.dayScore(todayKey(), priorityExtras()); }
+
+  function progFormat(a) {
+    var t = a.total;
+    if (a.metricType === "boolean") return t + " done";
+    if (a.metricType === "duration") {
+      if (a.unit === "h") return (Math.round(t * 10) / 10) + " h";
+      var m = Math.round(t);
+      return m >= 60 ? Math.floor(m / 60) + "h " + (m % 60) + "m" : m + " min";
+    }
+    if (a.metricType === "amount") return a.unit === "INR" ? fmtRupee(t) : (Math.round(t * 100) / 100) + (a.unit ? " " + a.unit : "");
+    if (a.metricType === "percentage") return Math.round(t) + "%";
+    if (a.metricType === "rating") return (Math.round(t * 10) / 10) + " avg";
+    return (Math.round(t * 100) / 100) + (a.unit ? " " + a.unit : "");
+  }
+  function progSectionText(s) {
+    var boolCount = 0, parts = [];
+    s.actionList.forEach(function (a) {
+      if (a.metricType === "boolean") boolCount += a.total;
+      else parts.push(a.title + ": " + progFormat(a));
+    });
+    if (boolCount) parts.unshift(boolCount + " done");
+    return parts.join(" · ");
+  }
+
   // ---------- MOTIVATIONAL LINE ----------
   // One line, stable for the whole day (picked deterministically from the
   // date), not re-randomized on every render.
@@ -180,6 +608,7 @@
     all[today] = all[today] || {};
     all[today][name] = true;
     writeJSON("nc_salah_completions", all);
+    ProgressStore.record(salahRecord(name, today));
   }
 
   function requestLocationForPrayerTimes() {
@@ -246,12 +675,21 @@
 
   function savePriority(p) {
     writeJSON("nc_priority_current", p);
+    if (p && p.date) {
+      var prec = priorityRecord(p);
+      if (p.status === "completed" || p.status === "partial") ProgressStore.record(prec);
+      progressRefreshHome();
+    }
   }
 
   function appendPriorityLog(entry) {
     var log = readJSON("nc_priority_log", []);
     log.push(entry);
     writeJSON("nc_priority_log", log);
+    if (entry && entry.date && (entry.status === "completed" || entry.status === "partial")) {
+      var lrec = priorityRecord({ planKey: entry.planKey, kind: (PRESET_PLANS.filter(function (x) { return x.key === entry.planKey; })[0] || {}).kind || null, title: entry.title, minutes: entry.minutes, status: entry.status, date: entry.date });
+      if (lrec && !ProgressStore.has(entry.date, lrec.categoryId, lrec.sectionId, lrec.actionId)) ProgressStore.record(lrec);
+    }
     if (entry && entry.planKey === "study") {
       memLog(entry.status === "not-yet" ? "task_skipped" : "study_completed", "study", { minutes: entry.minutes, result: entry.status, forDate: entry.date });
     }
@@ -790,31 +1228,42 @@
     return 0;
   }
 
+  // Today's Progress comes from the central ProgressStore (see the formula there),
+  // not from Today's Priority alone.
   function renderProgressRing(p) {
-    var pct = computeProgressPercent(p);
+    var ds = progressToday();
+    var pct = ds.percent === null ? 0 : ds.percent;
     var circumference = 213.6;
     document.getElementById("progress-ring-fill").style.strokeDashoffset = circumference * (1 - pct / 100);
     document.getElementById("progress-ring-percent").textContent = pct + "%";
+    var line = document.getElementById("progress-line");
+    var sum = document.getElementById("progress-summary-line");
+    if (!sum && line && line.parentNode) {
+      sum = document.createElement("p");
+      sum.className = "muted-line";
+      sum.id = "progress-summary-line";
+      sum.style.fontWeight = "600";
+      line.parentNode.insertBefore(sum, line);
+    }
+    if (sum) sum.textContent = ds.total ? ds.done + " of " + ds.total + " item" + (ds.total === 1 ? "" : "s") + " done today" : "";
+  }
+
+  // Refresh Home's progress card and graph right away when a record changes.
+  function progressRefreshHome() {
+    var v = document.getElementById("view-home");
+    if (!v || v.classList.contains("hidden")) return;
+    try { renderProgressRing(getCurrentPriority()); renderProgressGraph(); } catch (e) {}
   }
 
   // ---------- 7-DAY PROGRESS GRAPH (real data only) ----------
 
   function getDayProgressPercent(dateKey) {
-    if (dateKey === todayKey()) {
-      return computeProgressPercent(getCurrentPriority());
-    }
-    var log = readJSON("nc_priority_log", []);
-    var entries = log.filter(function (e) { return e.date === dateKey; });
-    if (!entries.length) return null;
-    var last = entries[entries.length - 1];
-    if (last.status === "completed") return 100;
-    if (last.status === "partial") return 50;
-    return 0;
+    return ProgressStore.dayScore(dateKey, dateKey === todayKey() ? priorityExtras() : []).percent;
   }
 
   function renderProgressGraph() {
     var container = document.getElementById("progress-graph-container");
-    var anyData = readJSON("nc_priority_log", []).length > 0 || !!getCurrentPriority();
+    var anyData = ProgressStore.hasAny() || readJSON("nc_priority_log", []).length > 0 || !!getCurrentPriority();
     container.innerHTML = "";
 
     if (!anyData) {
@@ -853,31 +1302,41 @@
 
   function openProgressDetails() {
     var todayEl = document.getElementById("progress-details-today");
-    var p = getCurrentPriority();
     todayEl.innerHTML = "";
-    var rows = [
-      { label: "Completed actions", value: p && p.status !== "pending" ? "1" : "0" },
-      { label: "Pending actions", value: p && p.status === "pending" ? "1" : "0" },
-      { label: "Overall progress", value: computeProgressPercent(p) + "%" }
-    ];
-    rows.forEach(function (r) {
-      var row = document.createElement("div");
-      row.className = "progress-detail-row";
-      row.innerHTML = '<span class="progress-detail-label">' + r.label + '</span><span class="progress-detail-value">' + r.value + '</span>';
-      todayEl.appendChild(row);
-    });
-
     var weekEl = document.getElementById("progress-details-week");
     weekEl.innerHTML = "";
-    var dates = getLastNDateKeys(7).slice().reverse();
-    dates.forEach(function (dateKey) {
-      var pct = getDayProgressPercent(dateKey);
+
+    function progRow(container, label, value, strong) {
       var row = document.createElement("div");
       row.className = "progress-detail-row";
-      var label = new Date(dateKey + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-      var value = pct === null ? "No activity" : pct + "%";
-      row.innerHTML = '<span class="progress-detail-label">' + label + '</span><span class="progress-detail-value">' + value + '</span>';
-      weekEl.appendChild(row);
+      var l = document.createElement("span"); l.className = "progress-detail-label"; l.textContent = label;
+      var v = document.createElement("span"); v.className = "progress-detail-value"; v.textContent = value;
+      if (strong) { l.style.fontWeight = "700"; v.style.fontWeight = "700"; }
+      row.appendChild(l); row.appendChild(v);
+      container.appendChild(row);
+    }
+
+    // Today: computed from the same records as everything else.
+    var ds = progressToday();
+    progRow(todayEl, "Today's progress", ds.percent === null ? "Nothing yet" : ds.percent + "%", true);
+    progRow(todayEl, "Items done", String(ds.done));
+    if (ds.total - ds.done > 0) progRow(todayEl, "Still open (your regular items)", String(ds.total - ds.done));
+    ProgressStore.summarizeRange([todayKey()]).categories.forEach(function (c) {
+      c.sectionList.forEach(function (s) {
+        s.actionList.forEach(function (a) { progRow(todayEl, c.title + " · " + a.title, a.metricType === "boolean" ? "Done" : progFormat(a)); });
+      });
+    });
+
+    // Weekly report: every category that has recorded activity, generated from the records.
+    var rep = ProgressStore.summarizeRange(getLastNDateKeys(7));
+    rep.days.forEach(function (day) {
+      var label = new Date(day.key || day.date + "T00:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+      progRow(weekEl, label, day.percent === null ? "No activity" : day.percent + "% · " + day.done + " of " + day.total);
+    });
+    if (!rep.categories.length) progRow(weekEl, "Activity this week", "Nothing recorded yet");
+    rep.categories.forEach(function (c) {
+      progRow(weekEl, c.title, c.activeDays + " active day" + (c.activeDays === 1 ? "" : "s"), true);
+      c.sectionList.forEach(function (s) { progRow(weekEl, "  " + s.title, progSectionText(s)); });
     });
 
     memWeeklyInsights().forEach(function (s) {
@@ -885,15 +1344,6 @@
       row.className = "progress-detail-row";
       var l = document.createElement("span"); l.className = "progress-detail-label"; l.textContent = "NURA noticed";
       var v = document.createElement("span"); v.className = "progress-detail-value"; v.textContent = s;
-      row.appendChild(l); row.appendChild(v);
-      weekEl.appendChild(row);
-    });
-
-    gwProgressRows().forEach(function (r) {
-      var row = document.createElement("div");
-      row.className = "progress-detail-row";
-      var l = document.createElement("span"); l.className = "progress-detail-label"; l.textContent = r.label;
-      var v = document.createElement("span"); v.className = "progress-detail-value"; v.textContent = r.value;
       row.appendChild(l); row.appendChild(v);
       weekEl.appendChild(row);
     });
@@ -1536,6 +1986,8 @@
     document.getElementById("focus-check-done").addEventListener("click", function () {
       if (focusState.linkedPriorityId) {
         markPriorityStatusToday("completed");
+      } else if (focusState.adhocLabel) {
+        ProgressStore.record({ categoryId: "study_focus", sectionId: "focus_sessions", sectionTitle: "Focus sessions", actionId: "adhoc_focus", title: focusState.adhocLabel, metricType: "duration", unit: "min", value: Math.round(focusSecondsTotal() / 60), source: "focus" });
       }
       document.getElementById("modal-focus-check").classList.add("hidden");
       stopFocus();
@@ -1839,6 +2291,8 @@
     var log = getDaySunnahLog(key);
     log[actionId] = !log[actionId];
     setDaySunnahLog(key, log);
+    if (log[actionId]) ProgressStore.record(sunnahRecord(actionId, key));
+    else ProgressStore.remove({ date: key, categoryId: "deen", sectionId: sunnahRecord(actionId, key).sectionId, actionId: actionId });
     if (log[actionId]) memLog("sunnah_completed", "sunnah", { id: actionId });
   }
 
@@ -1878,7 +2332,7 @@
     wrap.className = "tasbih-counter";
 
     function resetState() {
-      state = { date: todayKey(), phaseIndex: 0, count: 0 };
+      state = { date: todayKey(), phaseIndex: 0, count: 0, total: state.total || 0 };
       saveTasbihState(key, state);
       render();
     }
@@ -1929,6 +2383,8 @@
       }
       circle.addEventListener("click", function () {
         state.count++;
+        state.total = (state.total || 0) + 1;
+        ProgressStore.record({ categoryId: "deen", sectionId: "dhikr", sectionTitle: "Dhikr", actionId: "tasbih_" + progSlug(key), title: "Tasbih count", metricType: "count", value: state.total, unit: "taps", mode: "set", source: "tasbih" });
         pulseCircle(circle);
         if (target && state.count >= target) {
           vibrateSafe([15, 40, 15]);
@@ -3299,6 +3755,7 @@
     progress[h.id] = { answered: true, pickedIndex: idx, correct: correct, coinsAwarded: already ? 0 : coinsAwarded };
     saveHadithProgress(progress);
     if (!already) memLog("hadith_read", "hadith", { correct: correct });
+    if (!already) ProgressStore.record({ categoryId: "deen", sectionId: "hadith", sectionTitle: "Hadith", actionId: "hadith_" + progSlug(h.id), title: "Hadith lesson + quiz", metricType: "boolean", metadata: { correct: correct }, source: "hadith" });
     renderHadithDetail();
     renderMore();
     if (!already && correct) showToast("Correct! +" + coinsAwarded + " coins");
@@ -3777,6 +4234,9 @@
     all[today] = all[today] || {};
     all[today][habitId] = status;
     writeJSON("nc_duniya_habit_log", all);
+    var habitRow = getHabits().filter(function (x) { return x.id === habitId; })[0];
+    if (status === "done") ProgressStore.record(habitRecord(habitId, habitRow ? habitRow.name : habitId, today));
+    else ProgressStore.remove({ date: today, categoryId: "habits", sectionId: "daily_habits", actionId: habitId });
     if (status === "done") memLog("habit_completed", "habits", { habitId: habitId });
   }
 
@@ -3862,6 +4322,9 @@
           var d = getTop3Done();
           d[idx] = !d[idx];
           saveTop3Done(d);
+          var top3Title = getTop3()[idx] || "Top task";
+          if (d[idx]) ProgressStore.record(top3Record(idx, top3Title, todayKey()));
+          else ProgressStore.remove({ categoryId: "productivity", sectionId: "top3", actionId: "top3_" + progSlug(top3Title) });
           renderDuniyaProductivity();
         });
         row.appendChild(input);
@@ -4296,6 +4759,7 @@
         entry.done = true;
         entry.completedDate = todayKey();
         saveCareerProgress(progress);
+        ProgressStore.record(careerRecord(key, todayKey()));
         openCareerLesson(catKey, lessonKey);
       });
       content.appendChild(doneBtn);
@@ -4587,6 +5051,7 @@
     saveContribs(list);
     syncGoals();
     memLog("money_saved_recorded", "money", { amount: amount, source: sourceKey });
+    if (sourceKey !== "unallocated") ProgressStore.record(moneyRecord(rec));
     return rec.id;
   }
 
@@ -4613,6 +5078,7 @@
   // Removes whatever was previously allocated from one avoided-money event
   // (used when that event is re-decided or a check-in is edited).
   function moneyUnallocateRef(refId) {
+    getContribs().forEach(function (c) { if (c.refId === refId) ProgressStore.remove({ date: c.date, id: "contrib:" + c.id }); });
     saveContribs(getContribs().filter(function (c) { return c.refId !== refId; }));
     saveUnalloc(getUnalloc().filter(function (e) { return e.refId !== refId; }));
     syncGoals();
@@ -7296,6 +7762,7 @@
     gwAdapt(m.track, status, fields.difficulty);
     gwRecount();
     memLog("personal_growth_completed", "personalGrowth", { track: m.track, result: status, planDay: day.n });
+    if (status === "completed" || status === "partial") ProgressStore.record(growthRecord(entry));
     return m;
   }
 
@@ -9169,6 +9636,11 @@
     if (actForMem && (status === "done" || status === "skipped")) {
       memLog(status === "done" ? "task_completed" : "task_skipped", "plan", { name: actForMem.name, startMin: slot ? slot.startMin : null });
     }
+    if (actForMem) {
+      var taskRec = planTaskRecord(actForMem.name, todayKey());
+      if (status === "done") ProgressStore.record(taskRec);
+      else ProgressStore.remove({ categoryId: taskRec.categoryId, sectionId: taskRec.sectionId, actionId: taskRec.actionId });
+    }
     var built = getPlanBuilt();
     if (built) {
       built.timeline.forEach(function (e) { if (e.refId === activityId) e.status = status; });
@@ -9826,6 +10298,8 @@
   // ---------- INIT ----------
 
   document.addEventListener("DOMContentLoaded", function () {
+    ProgressStore.importLegacy();
+    ProgressStore.onChange(progressRefreshHome);
     initNav();
     initNameModal();
     initPriorityUI();
