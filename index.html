@@ -29,15 +29,9 @@
       <span class="journey-badge-text" id="journey-badge-text">DAY 1 OF YOUR CHANGE JOURNEY</span>
     </div>
 
-    <div class="journey-visual" aria-hidden="true">
-      <svg viewBox="0 0 300 90" class="journey-svg">
-        <path d="M0 80 Q 90 80 140 55 T 300 15" fill="none" stroke="var(--border)" stroke-width="2"/>
-        <path d="M0 80 Q 90 80 140 55 T 210 32" fill="none" stroke="var(--mint)" stroke-width="2.5" stroke-linecap="round"/>
-        <circle cx="210" cy="32" r="5" fill="var(--mint)"/>
-        <circle cx="270" cy="18" r="14" fill="var(--gold-soft)" opacity="0.55"/>
-        <circle cx="270" cy="18" r="7" fill="var(--gold)"/>
-      </svg>
-    </div>
+    <section class="card day-status-card" id="day-status" aria-live="polite"></section>
+
+    <div class="day-flow" id="day-flow"></div>
 
     <div id="priority-card-home-slot"></div>
 
@@ -107,7 +101,7 @@
 
     <section class="card">
       <div class="card-row">
-        <h2>Today's Progress</h2>
+        <h2>Today's Journey</h2>
       </div>
       <div class="progress-ring-row">
         <div class="progress-ring-wrap">
@@ -119,7 +113,7 @@
         </div>
         <p class="muted-line" id="progress-line">Not started yet.</p>
       </div>
-      <div id="progress-graph-container"></div>
+      <button class="flow-link" id="open-weekly-report" type="button">See weekly report</button>
     </section>
   </main>
 

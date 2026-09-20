@@ -2,6 +2,22 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-20 — Fajr-to-Fajr Home: the NURA day, a line-by-line timeline, sleep and Tahajjud
+
+**The NURA day.** `todayKey()` with no argument now returns the NURA day, not the calendar day: a day runs from one Fajr to the next, so 1:30 AM still belongs to the previous night. Every module that files data under `todayKey()` (Salah, Sunnah, habits, Plan My Day, ProgressStore, priority) follows this automatically; an explicit `Date` argument is still a plain calendar key. The boundary is the user's own last-known Fajr (`nc_day_boundary`, saved whenever prayer times are fetched). A refreshed Fajr time is never applied if it would flip the current NURA day (protects against a one-minute flap at the boundary). If prayer times are not set up there is no Fajr to follow, so NURA falls back to midnight and Home says so; it never guesses a city.
+
+**Journey day** = NURA days since `journeyStartDate` + 1, so it advances at Fajr together with the daily record and is never reset by a new day. (Earlier it advanced at midnight.)
+
+**Daily record** (`nc_daily_journeys`, keyed by NURA date): that day's prayer times, the intention, sleep start/wake/hours, `startedAt`, `closedAt`. Nothing else is duplicated there — scores are still calculated from ProgressStore. Earlier days are stamped closed, never edited or deleted.
+
+**Home** is now: greeting, motivation line, journey day, a status card (stage, next Salah with a live HH:MM:SS countdown, the five prayer times with done marks), then the timeline Fajr → Morning → Dhuhr → Asr → Maghrib → Isha → Night, then Today's Priority, then a small Today's Journey ring. Current section is open and prominent, earlier sections collapse to one line (neutral "2 of 4", never "missed"), later ones are lighter; tap to expand any. Future prayers can't be ticked before their time. Fajr/Isha move the day forward early once everything listed under them is done. The 7-day graph and the static journey illustration were removed from Home; the weekly detail is behind "See weekly report".
+
+**What each row is.** Salah = `nc_salah_completions`; Morning/Evening Adhkar, Qur'an, Fajr Sunnah, Duha, dua before sleep, Tahajjud = the existing Sunnah log actions; habits = the existing habit log; Plan My Day tasks appear in the section that contains their start time (unscheduled ones show in the current section). Intention is free text stored in the daily record. Sleep: "Start Sleep" / "I'm Awake" (banner shows after Fajr so waking after the new day starts still works; hours are saved against the night the sleep began; if Better Sleep is today's priority, that card owns sleep). Tahajjud is optional, shown in Night with the start of the last third (computed from Maghrib and next Fajr), no pressure wording.
+
+**Today's Journey %** now counts the day's passed prayers and pending Plan My Day tasks as "open", so it is honest, not just what was ticked.
+
+**Limits / not done.** The Isha/Night split is a display grouping (90 min after Isha), not a religious ruling. Without Sunrise in an old cache NURA refetches; offline it shows the last saved times with a visible note. Past days' percentage in the weekly report is still computed from recorded items only (unfinished plan tasks of a past day are not counted). Android "Use my location" is not wired to native permissions yet — manual city works. Tested in a browser with a shifted clock (full Fajr-to-Fajr day, 1 AM, live boundary crossing); not tested on a real phone.
+
 ## 2026-09-20 — Persistent memory: name asked once, real journey day, profile photo, storage backup
 
 **Audit**: startup had no reset logic. `journeyStartDate` was only written when missing and the name prompt only appeared when no name was saved. The symptoms ("Day 1 again", name asked again) match the browser/WebView losing the site's saved data between launches, so besides tidying the layer I added protection against that and a visible status.
