@@ -558,6 +558,8 @@
         </div>
       </div>
       <button class="btn btn-outline btn-full" id="edit-name-btn">Change name</button>
+      <p class="muted-line" id="more-times-display" style="font-size:12.5px;margin:12px 0 6px;"></p>
+      <button class="btn btn-outline btn-full" id="edit-times-btn">Edit prayer times</button>
       <p class="muted-line" id="storage-status" style="font-size:11.5px;margin-top:8px;"></p>
       <button class="priority-change-link" id="reset-journey-btn">Restart my journey…</button>
     </section>
@@ -629,14 +631,24 @@
 
 </div>
 
-<!-- NAME MODAL -->
+<!-- ONBOARDING (first launch only) / CHANGE NAME -->
 <div class="modal-overlay hidden" id="modal-name">
   <div class="modal-sheet">
-    <h2>Welcome to NURA</h2>
-    <p class="modal-sub">What should we call you?</p>
-    <input type="text" id="name-input" class="text-input" placeholder="Your name" maxlength="30">
-    <button class="btn btn-primary btn-full" id="name-save">Continue</button>
-    <button class="priority-change-link" id="name-skip">Skip for now</button>
+    <div id="onb-step-name">
+      <h2>Welcome to NURA</h2>
+      <p class="modal-sub">What should we call you?</p>
+      <input type="text" id="name-input" class="text-input" placeholder="Your name" maxlength="30">
+      <button class="btn btn-primary btn-full" id="name-save">Continue</button>
+      <button class="priority-change-link" id="name-skip">Skip for now</button>
+    </div>
+    <div id="onb-step-times" class="hidden">
+      <h2>Your prayer times</h2>
+      <p class="modal-sub">Enter the times you follow (your mosque's times are fine). You only do this once, and can change them any time in Profile.</p>
+      <div id="onb-times-inputs"></div>
+      <p class="day-note" id="onb-times-msg"></p>
+      <button class="btn btn-primary btn-full" id="onb-times-save">Save and start</button>
+      <button class="priority-change-link" id="onb-times-skip">Set later</button>
+    </div>
   </div>
 </div>
 

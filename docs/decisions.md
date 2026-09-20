@@ -2,6 +2,18 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-20 — Onboarding once + one permanent profile (schema v2)
+
+**One record.** `nc_app_meta` (`AppData`) is the user profile: `preferredName`, `onboardingCompleted`, `prayerTimes {Fajr..Isha, savedAt}`, `preferences {}`, `journeyStartDate`, `photoSavedAt` (photo itself in `nc_profile_photo`), `dataVersion`. Prayer times moved in from the separate `nc_prayer_manual` key, which is kept only as a mirror; older data is adopted into the profile once (migration `MIGRATIONS[1]`, which also keeps a copy of the old record as `nc_app_meta_before_v2`). New permanent settings: `AppData.setPref(key, value)` / `getPref(key, fallback)` — no other code change. A layout change = one `MIGRATIONS[n]` function that only adds/moves data.
+
+**Onboarding.** Shown only while `onboardingCompleted` is not true: step 1 name, step 2 prayer times (both saved and verified the moment they are entered; "Skip for now" / "Set later" still complete onboarding). If the app is closed between the steps it resumes at the missing step. An existing user (name or prayer times already saved) is never re-onboarded. Name and prayer times are changed later from Profile (Change name / Edit prayer times) and never re-run onboarding.
+
+**Writes are verified.** `AppData.set` writes, reads the value back and returns true/false; a failed write is reported to the user (nothing pretends it saved) and counted in `status().writeErrors`. Every successful write is also copied straight away to the backup (Android private file / browser IndexedDB), not only on the 4-second timer. Startup fills in defaults only for fields that are missing and never overwrites a saved value.
+
+**Limits.** Data lives in the app's own storage: it is lost on uninstall, "clear data", a different phone, or an APK signed with a different key (Android refuses to update over it — the user must uninstall first). In a browser or dev server, storage belongs to the exact address, so a different port or domain starts empty. Cloud/account backup does not exist; Android Auto Backup is deliberately off (allowBackup=false) and enabling it is a privacy decision for the owner.
+
+**Tested** (browser): fresh start shows onboarding; name saved + reload resumes at prayer times; invalid/empty times rejected; save → reload goes straight to Home with saved name and times; dev-server restart on the same port keeps everything; simulated old v1 installation (with an unknown extra field and other feature data) migrates with nothing lost or replaced; changing Dhuhr in Profile survives reload; forced write failure returns false and leaves the old value; browser storage wiped with IndexedDB backup intact restores name, times and preferences with no onboarding. Not tested on a real phone: updating the APK over an installed APK.
+
 ## 2026-09-20 — Today's Progress: one real, equal-weight calculation
 
 **Formula.** Today Progress = completed eligible items ÷ eligible items × 100, every item worth the same. Rounded, but never shows 100% unless everything is done, and never 0% once something is. The overall number is calculated directly from the totals (not an average of Deen and Dunya). Nothing is stored as a score; `todayItems()` rebuilds the list from the real stores each time, so refresh/navigation cannot change it.

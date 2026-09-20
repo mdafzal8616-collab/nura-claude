@@ -110,9 +110,34 @@
   // uninstall; that would need account backup, which NURA does not have.
 
   var AppData = (function () {
-    var META = "nc_app_meta", PHOTO = "nc_profile_photo", SCHEMA = 1;
-    var MIGRATIONS = {};
+    var META = "nc_app_meta", PHOTO = "nc_profile_photo", SCHEMA = 2;
+    // USER PROFILE (this one record, nc_app_meta, is where permanent settings live):
+    //   preferredName, onboardingCompleted, prayerTimes {Fajr..Isha}, preferences {},
+    //   journeyStartDate, photoSavedAt (photo itself: nc_profile_photo), dataVersion.
+    // A new permanent setting = AppData.setPref("key", value) / getPref("key", fallback);
+    // nothing else has to change. A changed layout = one function in MIGRATIONS[n] that
+    // turns version n into n+1 and only ADDS or MOVES data (a copy of the old record is kept).
+    var MIGRATIONS = {
+      1: function (m) {
+        try { localStorage.setItem("nc_app_meta_before_v2", JSON.stringify(m)); } catch (e) {}
+        if (!validTimes(m.prayerTimes)) {
+          var old = readJSON("nc_prayer_manual", null);
+          if (validTimes(old)) m.prayerTimes = pickTimes(old);
+        }
+        if (!m.preferences || typeof m.preferences !== "object") m.preferences = {};
+        m.schemaVersion = 2;
+        return m;
+      }
+    };
     var wasFresh = false, restoredFrom = null, persistGranted = null, lastBackupAt = null, lastSnap = "";
+    var lastWriteOk = true, writeErrors = 0;
+    function validTimes(t) {
+      if (!t || typeof t !== "object") return false;
+      var names = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
+      for (var i = 0; i < names.length; i++) { if (!/^\d{1,2}:\d{2}$/.test(String(t[names[i]] || ""))) return false; }
+      return true;
+    }
+    function pickTimes(t) { return { Fajr: t.Fajr, Dhuhr: t.Dhuhr, Asr: t.Asr, Maghrib: t.Maghrib, Isha: t.Isha, savedAt: t.savedAt || new Date().toISOString() }; }
 
     function native() { return window.NuraNative && window.NuraNative.saveBackup ? window.NuraNative : null; }
     function ncKeys() {
@@ -150,7 +175,20 @@
       var m = readJSON(META, null);
       return m && typeof m === "object" && !Array.isArray(m) ? m : {};
     }
-    function saveMeta(m) { writeJSON(META, m); mirrorLegacy(m); }
+    // Writes, then reads the value back to prove it is really stored. Returns true/false.
+    function saveMeta(m) {
+      var ok = false;
+      try {
+        var json = JSON.stringify(m);
+        localStorage.setItem(META, json);
+        ok = localStorage.getItem(META) === json;
+      } catch (e) { ok = false; }
+      lastWriteOk = ok;
+      if (!ok) writeErrors++;
+      mirrorLegacy(m);
+      if (ok) backupTick(); // copy to the backup right away, not only every few seconds
+      return ok;
+    }
     function mirrorLegacy(m) {
       try {
         if (m.preferredName) localStorage.setItem("nc_user_name", m.preferredName); else localStorage.removeItem("nc_user_name");
@@ -167,7 +205,10 @@
       // one-time carry-over of what older versions saved under separate keys
       if (m.preferredName === undefined) { var ln = localStorage.getItem("nc_user_name"); if (ln) m.preferredName = ln; }
       if (!m.journeyStartDate) m.journeyStartDate = localStorage.getItem("nc_journey_start") || todayKey();
-      if (m.onboardingCompleted === undefined) m.onboardingCompleted = !!m.preferredName;
+      // defaults only for what is missing; an existing user (name or prayer times already saved) is never re-onboarded
+      if (m.onboardingCompleted === undefined) m.onboardingCompleted = !!(m.preferredName || validTimes(m.prayerTimes));
+      if (!m.preferences || typeof m.preferences !== "object") m.preferences = {};
+      m.dataVersion = SCHEMA;
       m.launchCount = (m.launchCount || 0) + 1;
       m.lastLaunchAt = now;
       saveMeta(m);
@@ -176,7 +217,29 @@
     }
 
     function get(k) { return meta()[k]; }
-    function set(k, v) { var m = meta(); m[k] = v; saveMeta(m); }
+    function set(k, v) { var m = meta(); m[k] = v; return saveMeta(m); }
+    function getPref(k, fallback) { var p = meta().preferences; return p && p[k] !== undefined ? p[k] : fallback; }
+    function setPref(k, v) {
+      var m = meta();
+      if (!m.preferences || typeof m.preferences !== "object") m.preferences = {};
+      m.preferences[k] = v;
+      return saveMeta(m);
+    }
+    function getPrayerTimes() { var t = meta().prayerTimes; return validTimes(t) ? t : null; }
+    function setPrayerTimes(t) {
+      if (!validTimes(t)) return false;
+      var m = meta();
+      m.prayerTimes = pickTimes(t);
+      m.prayerTimes.savedAt = new Date().toISOString();
+      return saveMeta(m);
+    }
+    function getProfile() {
+      var m = meta();
+      return {
+        name: m.preferredName || null, profilePhoto: !!getPhoto(), onboardingCompleted: !!m.onboardingCompleted,
+        prayerTimes: validTimes(m.prayerTimes) ? m.prayerTimes : null, preferences: m.preferences || {}, dataVersion: m.dataVersion || m.schemaVersion || null
+      };
+    }
     function journeyDay() {
       var start = get("journeyStartDate") || todayKey();
       var diff = Math.round((new Date(todayKey() + "T12:00:00") - new Date(start + "T12:00:00")) / 86400000);
@@ -268,12 +331,14 @@
       var m = meta();
       return {
         firstLaunchAt: m.firstLaunchAt || null, launchCount: m.launchCount || 0, journeyStartDate: m.journeyStartDate || null,
-        persistGranted: persistGranted, backup: native() ? "app" : "browser", lastBackupAt: lastBackupAt, restoredFrom: restoredFrom
+        persistGranted: persistGranted, backup: native() ? "app" : "browser", lastBackupAt: lastBackupAt, restoredFrom: restoredFrom,
+        lastWriteOk: lastWriteOk, writeErrors: writeErrors, dataVersion: m.dataVersion || null
       };
     }
 
     return {
       schemaVersion: SCHEMA, boot: boot, get: get, set: set, journeyDay: journeyDay, resetJourney: resetJourney,
+      getPref: getPref, setPref: setPref, getPrayerTimes: getPrayerTimes, setPrayerTimes: setPrayerTimes, getProfile: getProfile,
       getPhoto: getPhoto, setPhoto: setPhoto, removePhoto: removePhoto, status: status,
       restoreFromBrowserBackup: restoreFromBrowserBackup
     };
@@ -2176,22 +2241,39 @@
 
   // ---- manual prayer times (the user's own jama'ah times always win) ----
   var PRAYER_TIMES_KEY = "nc_prayer_manual";
+  // The user's prayer times live in the permanent profile (AppData.prayerTimes). The old key
+  // nc_prayer_manual is kept as a mirror and, for data saved by earlier versions, is adopted
+  // into the profile the first time it is seen. Nothing is ever replaced by a default.
   function getManualTimes() {
-    var m = readJSON(PRAYER_TIMES_KEY, null);
-    if (!m) return null;
-    for (var i = 0; i < PRAYER_ORDER.length; i++) { if (!/^\d{1,2}:\d{2}$/.test(String(m[PRAYER_ORDER[i]] || ""))) return null; }
-    return m;
+    var t = AppData.getPrayerTimes();
+    if (t) return t;
+    var old = readJSON(PRAYER_TIMES_KEY, null);
+    if (old && AppData.setPrayerTimes(old)) return AppData.getPrayerTimes();
+    return null;
   }
+  // Returns true only if the times were verified as stored.
   function saveManualTimes(m) {
     var clean = {};
     PRAYER_ORDER.forEach(function (n) { clean[n] = m[n]; });
-    clean.savedAt = new Date().toISOString();
-    writeJSON(PRAYER_TIMES_KEY, clean);
+    if (!AppData.setPrayerTimes(clean)) return false;
+    writeJSON(PRAYER_TIMES_KEY, AppData.getPrayerTimes());
     // other modules (Plan My Day, Salah priority) only need *some* prayer settings to exist
     if (!getPrayerSettings()) savePrayerSettings({ mode: "custom", method: 1 });
     setDayBoundary(clean.Fajr);
     journeyPatch(todayKey(), { times: null });
     dayView.timings = null;
+    return true;
+  }
+  // "05:10" style validation shared by onboarding, Home and Profile. Returns an error text or "".
+  function validatePrayerInputs(vals) {
+    var prev = "";
+    for (var i = 0; i < PRAYER_ORDER.length; i++) {
+      var n = PRAYER_ORDER[i];
+      if (!vals[n]) return "Please set " + n + ".";
+      if (prev && vals[n] <= prev) return n + " should be later than the prayer before it.";
+      prev = vals[n];
+    }
+    return "";
   }
 
   // ---- times, sections, current position ----
@@ -2804,15 +2886,11 @@
     var save = dfEl("button", "btn btn-primary btn-full", "Save prayer times");
     save.type = "button";
     save.addEventListener("click", function () {
-      var vals = {}, prev = "";
-      for (var i = 0; i < PRAYER_ORDER.length; i++) {
-        var n = PRAYER_ORDER[i];
-        if (!inputs[n].value) { msg.textContent = "Please set " + n + "."; return; }
-        if (prev && inputs[n].value <= prev) { msg.textContent = n + " should be later than the prayer before it."; return; }
-        vals[n] = inputs[n].value;
-        prev = inputs[n].value;
-      }
-      saveManualTimes(vals);
+      var vals = {};
+      PRAYER_ORDER.forEach(function (n) { vals[n] = inputs[n].value; });
+      var bad = validatePrayerInputs(vals);
+      if (bad) { msg.textContent = bad; return; }
+      if (!saveManualTimes(vals)) { msg.textContent = "Couldn't save on this device. Please try again."; return; }
       dayView.setup = false;
       showToast("Prayer times saved");
       renderHome();
@@ -5228,6 +5306,11 @@
   function renderMore() {
     var name = AppData.get("preferredName");
     document.getElementById("more-name-display").textContent = name ? name : "No name set yet.";
+    var pt = AppData.getPrayerTimes();
+    var ptEl = document.getElementById("more-times-display");
+    if (ptEl) ptEl.textContent = pt ? PRAYER_ORDER.map(function (n) { return n + " " + String(pt[n]).replace(/^(\d):/, "0$1:"); }).join(" · ") : "Prayer times not set yet.";
+    var etb = document.getElementById("edit-times-btn");
+    if (etb) etb.textContent = pt ? "Edit prayer times" : "Set prayer times";
     document.getElementById("coins-count").textContent = getCoins();
     renderAvatars();
     var st = AppData.status();
@@ -5348,9 +5431,10 @@
   }
 
   function initMore() {
-    document.getElementById("edit-name-btn").addEventListener("click", function () {
-      document.getElementById("name-input").value = AppData.get("preferredName") || "";
-      document.getElementById("modal-name").classList.remove("hidden");
+    document.getElementById("edit-name-btn").addEventListener("click", function () { window.nuraEditName(); });
+    document.getElementById("edit-times-btn").addEventListener("click", function () {
+      dayView.setup = true;
+      setActiveView("home");
     });
     document.getElementById("reset-journey-btn").addEventListener("click", function () {
       if (!window.confirm("Restart your journey from Day 1? Your saved progress and history stay; only the day counter restarts.")) return;
@@ -5443,36 +5527,89 @@
 
   // ---------- NAME MODAL ----------
 
+  // ONBOARDING: name, then prayer times — each saved (and verified) the moment it is entered.
+  // It is shown only while AppData.onboardingCompleted is not true, and it resumes at the step
+  // that is still missing (name saved, app closed -> next launch asks only for prayer times).
+  // "Change name" in Profile reuses step 1 on its own and never touches onboarding.
   function initNameModal() {
-    // Asked once, ever. Shown again only for a genuinely new user (nothing saved)
-    // or when the user chooses "Change name" in Profile.
     var modal = document.getElementById("modal-name");
+    var stepName = document.getElementById("onb-step-name");
+    var stepTimes = document.getElementById("onb-step-times");
     var input = document.getElementById("name-input");
     var saveBtn = document.getElementById("name-save");
     var skipBtn = document.getElementById("name-skip");
-    var isNewUser = !AppData.get("onboardingCompleted") && !AppData.get("preferredName");
-    if (isNewUser) modal.classList.remove("hidden"); else modal.classList.add("hidden");
+    var timesBox = document.getElementById("onb-times-inputs");
+    var timesMsg = document.getElementById("onb-times-msg");
+    var mode = "onboarding";
+    var timeInputs = {};
 
-    function save() {
-      var val = input.value.trim();
-      if (!val) { showToast("Enter your name to continue"); return; }
-      AppData.set("preferredName", val);
-      AppData.set("onboardingCompleted", true);
+    PRAYER_ORDER.forEach(function (n) {
+      var row = document.createElement("label");
+      row.className = "times-row";
+      var nm = document.createElement("span"); nm.className = "times-name"; nm.textContent = n;
+      var inp = document.createElement("input");
+      inp.type = "time"; inp.className = "text-input times-input"; inp.setAttribute("aria-label", n + " time");
+      timeInputs[n] = inp;
+      row.appendChild(nm); row.appendChild(inp);
+      timesBox.appendChild(row);
+    });
+
+    function show(step) {
+      modal.classList.remove("hidden");
+      stepName.classList.toggle("hidden", step !== "name");
+      stepTimes.classList.toggle("hidden", step !== "times");
+      if (step === "times") {
+        var saved = AppData.getPrayerTimes();
+        PRAYER_ORDER.forEach(function (n) { timeInputs[n].value = saved ? String(saved[n]).replace(/^(\d):/, "0$1:") : ""; });
+        timesMsg.textContent = "";
+      }
+    }
+    function finish() {
+      if (!AppData.set("onboardingCompleted", true)) { showToast("Couldn't save on this device. Please try again."); return false; }
       modal.classList.add("hidden");
       renderHome();
       renderMore();
+      return true;
     }
 
+    // decide once at startup, from what is saved
+    if (!AppData.get("onboardingCompleted")) {
+      if (AppData.getPrayerTimes()) finish();
+      else show(AppData.get("preferredName") ? "times" : "name");
+    } else modal.classList.add("hidden");
+
+    function saveName() {
+      var val = input.value.trim();
+      if (!val) { showToast("Enter your name to continue"); return; }
+      if (!AppData.set("preferredName", val)) { showToast("Couldn't save on this device. Please try again."); return; }
+      if (mode === "editName") { modal.classList.add("hidden"); renderHome(); renderMore(); return; }
+      renderAvatars();
+      show("times");
+    }
     skipBtn.addEventListener("click", function () {
-      AppData.set("onboardingCompleted", true);
-      modal.classList.add("hidden");
-      renderHome();
-      renderMore();
+      if (mode === "editName") { modal.classList.add("hidden"); return; }
+      show("times");
     });
-    saveBtn.addEventListener("click", save);
-    input.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") save();
+    saveBtn.addEventListener("click", saveName);
+    input.addEventListener("keydown", function (e) { if (e.key === "Enter") saveName(); });
+
+    document.getElementById("onb-times-save").addEventListener("click", function () {
+      var vals = {};
+      PRAYER_ORDER.forEach(function (n) { vals[n] = timeInputs[n].value; });
+      var bad = validatePrayerInputs(vals);
+      if (bad) { timesMsg.textContent = bad; return; }
+      if (!saveManualTimes(vals)) { timesMsg.textContent = "Couldn't save on this device. Please try again."; return; }
+      finish();
     });
+    document.getElementById("onb-times-skip").addEventListener("click", finish);
+
+    // Profile -> Change name (never re-runs onboarding)
+    window.nuraEditName = function () {
+      mode = "editName";
+      input.value = AppData.get("preferredName") || "";
+      skipBtn.textContent = "Cancel";
+      show("name");
+    };
   }
 
   // ---------- DUNIYA (everyday self-improvement hub) ----------

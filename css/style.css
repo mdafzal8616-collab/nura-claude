@@ -1059,3 +1059,4 @@ html, body {
 .progress-groups { margin: 12px 0 10px; }
 .progress-group-row { display: flex; justify-content: space-between; padding: 7px 0; border-top: 1px solid var(--border); font-size: 14px; }
 .progress-group-count { font-weight: 700; color: var(--mint); font-variant-numeric: tabular-nums; }
+.modal-sheet { max-height: 92vh; overflow-y: auto; }
