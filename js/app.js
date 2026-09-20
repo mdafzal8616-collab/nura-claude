@@ -47,23 +47,205 @@
     return prefix + "-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
   }
 
-  // ---------- CHANGE JOURNEY DAY ----------
-  // Calendar days since the user's first day, +1. Never a streak: never
-  // reset by a missed day, never dependent on habit completion.
+  // ---------- APP DATA: PERSISTENT USER MEMORY ----------
+  // The permanent part of NURA's memory: who the user is and when their journey
+  // began. Three kinds of data, kept apart on purpose:
+  //   PERMANENT  -> this layer (nc_app_meta + nc_profile_photo): name, photo,
+  //                 journeyStartDate, onboarding flag, preferences.
+  //   DAILY      -> one record per local date (ProgressStore days, nc_plan_*_<date>...).
+  //   HISTORY    -> the older daily records, never deleted at midnight.
+  // Startup rules: load what exists; create a default ONLY for a field that is
+  // missing; never overwrite a saved value; never recreate journeyStartDate.
+  // Adding a feature later never touches this data: new features either add
+  // fields here (missing ones get defaults) or write their own nc_* keys, and
+  // nothing at startup clears nc_* keys. Layout changes go through MIGRATIONS
+  // keyed by schemaVersion.
+  //
+  // RESILIENCE: some phones/browsers drop a site's saved data (storage eviction,
+  // "clear on exit", low storage). So all nc_* data is also copied to a backup:
+  // in the NURA Android app a private file (survives reboots and WebView resets),
+  // in a browser IndexedDB. If saved data ever comes back empty, it is restored
+  // from that backup at the next launch. Purely local: this cannot survive an
+  // uninstall; that would need account backup, which NURA does not have.
 
-  function ensureJourneyStarted() {
-    if (!localStorage.getItem("nc_journey_start")) {
-      localStorage.setItem("nc_journey_start", todayKey());
+  var AppData = (function () {
+    var META = "nc_app_meta", PHOTO = "nc_profile_photo", SCHEMA = 1;
+    var MIGRATIONS = {};
+    var wasFresh = false, restoredFrom = null, persistGranted = null, lastBackupAt = null, lastSnap = "";
+
+    function native() { return window.NuraNative && window.NuraNative.saveBackup ? window.NuraNative : null; }
+    function ncKeys() {
+      var keys = [];
+      for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf("nc_") === 0) keys.push(k); }
+      return keys;
     }
-  }
+    function snapData() {
+      var o = {};
+      ncKeys().forEach(function (k) { o[k] = localStorage.getItem(k); });
+      return o;
+    }
+    function restoreInto(json, forceMeta) {
+      var parsed = JSON.parse(json);
+      var data = parsed && parsed.data;
+      if (!data || typeof data !== "object") return 0;
+      var n = 0;
+      Object.keys(data).forEach(function (k) {
+        if (k.indexOf("nc_") !== 0) return;
+        if (localStorage.getItem(k) === null || (forceMeta && k === META)) { localStorage.setItem(k, data[k]); n++; }
+      });
+      return n;
+    }
 
-  function getJourneyDay() {
-    var startKey = localStorage.getItem("nc_journey_start") || todayKey();
-    var start = new Date(startKey + "T00:00:00");
-    var now = new Date(todayKey() + "T00:00:00");
-    var diffDays = Math.round((now - start) / 86400000);
-    return Math.max(1, diffDays + 1);
-  }
+    // Runs before anything else reads storage. Empty storage + a backup = restore, never overwrite.
+    try {
+      wasFresh = !localStorage.getItem(META) && ncKeys().length === 0;
+      if (wasFresh && native()) {
+        var b = native().loadBackup();
+        if (b && restoreInto(b, true) > 0) restoredFrom = "app backup";
+      }
+    } catch (e) { /* storage unavailable: nothing to restore into */ }
+
+    function meta() {
+      var m = readJSON(META, null);
+      return m && typeof m === "object" && !Array.isArray(m) ? m : {};
+    }
+    function saveMeta(m) { writeJSON(META, m); mirrorLegacy(m); }
+    function mirrorLegacy(m) {
+      try {
+        if (m.preferredName) localStorage.setItem("nc_user_name", m.preferredName); else localStorage.removeItem("nc_user_name");
+        if (m.journeyStartDate) localStorage.setItem("nc_journey_start", m.journeyStartDate);
+      } catch (e) {}
+    }
+
+    function boot() {
+      var m = meta(), now = new Date().toISOString();
+      if (!m.schemaVersion) m.schemaVersion = SCHEMA;
+      while (m.schemaVersion < SCHEMA && MIGRATIONS[m.schemaVersion]) m = MIGRATIONS[m.schemaVersion](m);
+      if (!m.installId) m.installId = uid("inst");
+      if (!m.firstLaunchAt) m.firstLaunchAt = now;
+      // one-time carry-over of what older versions saved under separate keys
+      if (m.preferredName === undefined) { var ln = localStorage.getItem("nc_user_name"); if (ln) m.preferredName = ln; }
+      if (!m.journeyStartDate) m.journeyStartDate = localStorage.getItem("nc_journey_start") || todayKey();
+      if (m.onboardingCompleted === undefined) m.onboardingCompleted = !!m.preferredName;
+      m.launchCount = (m.launchCount || 0) + 1;
+      m.lastLaunchAt = now;
+      saveMeta(m);
+      startBackup();
+      requestPersistence();
+    }
+
+    function get(k) { return meta()[k]; }
+    function set(k, v) { var m = meta(); m[k] = v; saveMeta(m); }
+    function journeyDay() {
+      var start = get("journeyStartDate") || todayKey();
+      var diff = Math.round((new Date(todayKey() + "T12:00:00") - new Date(start + "T12:00:00")) / 86400000);
+      return Math.max(1, diff + 1);
+    }
+    // Only ever called from an explicit "Restart my journey" confirmation.
+    function resetJourney() { set("journeyStartDate", todayKey()); }
+    function getPhoto() { try { return localStorage.getItem(PHOTO) || null; } catch (e) { return null; } }
+    function setPhoto(dataUrl) { localStorage.setItem(PHOTO, dataUrl); set("photoSavedAt", new Date().toISOString()); }
+    function removePhoto() { localStorage.removeItem(PHOTO); set("photoSavedAt", null); }
+
+    // ---- backup ----
+    function idb(cb) {
+      try {
+        var req = indexedDB.open("nura_backup", 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore("snap"); };
+        req.onsuccess = function () { cb(req.result); };
+        req.onerror = function () { cb(null); };
+      } catch (e) { cb(null); }
+    }
+    function keyCount(json) { try { return Object.keys(JSON.parse(json).data).length; } catch (e) { return 0; } }
+    // Backups wait until a possible restore has been checked, and a richer older
+    // copy is kept as "prev", so an emptier state can never wipe out the good one.
+    var backupsAllowed = !wasFresh || !!restoredFrom || !!native();
+    function backupTick() {
+      if (!backupsAllowed) return;
+      try {
+        var body = JSON.stringify(snapData());
+        if (body === lastSnap) return;
+        lastSnap = body;
+        var json = JSON.stringify({ v: 1, savedAt: new Date().toISOString(), data: JSON.parse(body) });
+        if (native()) native().saveBackup(json);
+        idb(function (db) {
+          if (!db) return;
+          try {
+            var store = db.transaction("snap", "readwrite").objectStore("snap");
+            var g = store.get("latest");
+            g.onsuccess = function () {
+              if (g.result && keyCount(g.result) > keyCount(json) + 2) store.put(g.result, "prev");
+              store.put(json, "latest");
+            };
+          } catch (e) {}
+        });
+        lastBackupAt = new Date().toISOString();
+      } catch (e) {}
+    }
+    function startBackup() {
+      backupTick();
+      setInterval(backupTick, 4000);
+      document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") backupTick(); });
+      window.addEventListener("pagehide", backupTick);
+    }
+    // Browser case: storage came back empty but the IndexedDB copy survived.
+    function restoreFromBrowserBackup() {
+      if (!wasFresh || restoredFrom || native()) return;
+      function done() { backupsAllowed = true; }
+      idb(function (db) {
+        if (!db) { done(); return; }
+        try {
+          var store = db.transaction("snap", "readonly").objectStore("snap");
+          var a = store.get("latest"), best = null, pending = 2;
+          function pick(res) {
+            if (res && (!best || keyCount(res) > keyCount(best))) best = res;
+            if (--pending > 0) return;
+            if (!best) { done(); return; }
+            var n = 0;
+            try { n = restoreInto(best, true); } catch (e) { done(); return; }
+            if (n > 0 && !sessionStorage.getItem("nc_restore_once")) {
+              sessionStorage.setItem("nc_restore_once", "1");
+              location.reload();
+            } else done();
+          }
+          a.onsuccess = function () { pick(a.result); };
+          a.onerror = function () { pick(null); };
+          var p = store.get("prev");
+          p.onsuccess = function () { pick(p.result); };
+          p.onerror = function () { pick(null); };
+        } catch (e) { done(); }
+      });
+    }
+    function requestPersistence() {
+      try {
+        if (navigator.storage && navigator.storage.persist) {
+          navigator.storage.persist().then(function (ok) { persistGranted = ok; }, function () { persistGranted = false; });
+        }
+      } catch (e) {}
+    }
+    function status() {
+      var m = meta();
+      return {
+        firstLaunchAt: m.firstLaunchAt || null, launchCount: m.launchCount || 0, journeyStartDate: m.journeyStartDate || null,
+        persistGranted: persistGranted, backup: native() ? "app" : "browser", lastBackupAt: lastBackupAt, restoredFrom: restoredFrom
+      };
+    }
+
+    return {
+      schemaVersion: SCHEMA, boot: boot, get: get, set: set, journeyDay: journeyDay, resetJourney: resetJourney,
+      getPhoto: getPhoto, setPhoto: setPhoto, removePhoto: removePhoto, status: status,
+      restoreFromBrowserBackup: restoreFromBrowserBackup
+    };
+  })();
+  window.NuraData = AppData;
+
+  // ---------- JOURNEY DAY ----------
+  // Calendar days since journeyStartDate, +1. It is written once (first launch)
+  // and never recreated by startup; it is never a streak.
+
+  function ensureJourneyStarted() { if (!AppData.get("journeyStartDate")) AppData.set("journeyStartDate", todayKey()); }
+
+  function getJourneyDay() { return AppData.journeyDay(); }
 
   function getLastNDateKeys(n) {
     var out = [];
@@ -504,23 +686,7 @@
   }
 
   // ---------- MOTIVATIONAL LINE ----------
-  // One line, stable for the whole day (picked deterministically from the
-  // date), not re-randomized on every render.
-
-  var MOTIVATION_LINES = [
-    "Today's small step still counts.",
-    "Progress starts with what you do next.",
-    "One focused action can change your day.",
-    "Improve a little. Repeat it tomorrow.",
-    "You don't need a perfect day, just one honest step."
-  ];
-
-  function getTodaysMotivationLine() {
-    var key = todayKey();
-    var seed = 0;
-    for (var i = 0; i < key.length; i++) seed += key.charCodeAt(i);
-    return MOTIVATION_LINES[seed % MOTIVATION_LINES.length];
-  }
+  var HOME_MOTIVATION = "Success isn't built in one night. It's built every day.";
 
   // ---------- PRAYER TIMES ----------
   // Powers the Salah Consistency priority. Times come from Aladhan
@@ -1263,13 +1429,13 @@
 
   function renderProgressGraph() {
     var container = document.getElementById("progress-graph-container");
-    var anyData = ProgressStore.hasAny() || readJSON("nc_priority_log", []).length > 0 || !!getCurrentPriority();
+    var anyData = ProgressStore.hasAny();
     container.innerHTML = "";
 
     if (!anyData) {
       var empty = document.createElement("p");
       empty.className = "progress-graph-empty";
-      empty.textContent = "Complete your first action to start your progress graph.";
+      empty.textContent = "Your progress will appear here as you use NURA.";
       container.appendChild(empty);
       return;
     }
@@ -1780,11 +1946,11 @@
   function renderHome() {
     ensureJourneyStarted();
     document.getElementById("home-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-    var name = localStorage.getItem("nc_user_name");
+    var name = AppData.get("preferredName");
     document.getElementById("home-greeting").textContent = name ? ("Assalamu Alaikum, " + name) : "Assalamu Alaikum";
-    document.getElementById("avatar-initial").textContent = name ? name.charAt(0).toUpperCase() : "N";
-    document.getElementById("home-motivation").textContent = getTodaysMotivationLine();
-    document.getElementById("journey-badge-text").textContent = "DAY " + getJourneyDay() + " OF YOUR CHANGE JOURNEY";
+    renderAvatars();
+    document.getElementById("home-motivation").textContent = HOME_MOTIVATION;
+    document.getElementById("journey-badge-text").textContent = "DAY " + getJourneyDay() + " OF YOUR JOURNEY";
 
     renderTodaysPriority();
     renderProgressGraph();
@@ -3969,15 +4135,137 @@
   }
 
   function renderMore() {
-    var name = localStorage.getItem("nc_user_name");
+    var name = AppData.get("preferredName");
     document.getElementById("more-name-display").textContent = name ? name : "No name set yet.";
     document.getElementById("coins-count").textContent = getCoins();
+    renderAvatars();
+    var st = AppData.status();
+    var bits = ["Saved on this device"];
+    if (st.firstLaunchAt) bits.push("first opened " + gwFmtDate(st.firstLaunchAt.slice(0, 10)));
+    bits.push("opened " + st.launchCount + " time" + (st.launchCount === 1 ? "" : "s"));
+    bits.push("journey began " + (st.journeyStartDate ? gwFmtDate(st.journeyStartDate) : "today"));
+    var storageLine = document.getElementById("storage-status");
+    if (storageLine) {
+      storageLine.textContent = bits.join(" · ") + ". Backup copy: " + (st.backup === "app" ? "in the app" : "in this browser") + (st.persistGranted === false ? ". This browser may clear saved data on its own." : ".");
+    }
+    var photoBtn = document.getElementById("photo-remove-btn");
+    if (photoBtn) photoBtn.classList.toggle("hidden", !AppData.getPhoto());
     renderFeatureStatus();
+  }
+
+  // ---------- PROFILE PHOTO (stays on this device, never uploaded) ----------
+
+  function renderAvatars() {
+    var name = AppData.get("preferredName");
+    var photo = AppData.getPhoto();
+    var initial = name ? name.charAt(0).toUpperCase() : "N";
+    [["avatar-initial", "home-avatar-img"], ["more-avatar-initial", "more-avatar-img"]].forEach(function (ids) {
+      var ini = document.getElementById(ids[0]), img = document.getElementById(ids[1]);
+      if (!ini || !img) return;
+      ini.textContent = initial;
+      if (photo) { img.src = photo; img.classList.remove("hidden"); ini.classList.add("hidden"); }
+      else { img.removeAttribute("src"); img.classList.add("hidden"); ini.classList.remove("hidden"); }
+    });
+  }
+
+  var photoCrop = { img: null, zoom: 1, x: 0, y: 0 };
+
+  function drawPhotoCrop(canvas) {
+    var c = canvas.getContext("2d"), size = canvas.width;
+    c.fillStyle = "#ffffff";
+    c.fillRect(0, 0, size, size);
+    var img = photoCrop.img;
+    if (!img) return;
+    var base = size / Math.min(img.width, img.height);
+    var scale = base * photoCrop.zoom;
+    var w = img.width * scale, h = img.height * scale;
+    var dx = (size - w) / 2 + photoCrop.x * Math.max(0, (w - size) / 2);
+    var dy = (size - h) / 2 + photoCrop.y * Math.max(0, (h - size) / 2);
+    c.drawImage(img, dx, dy, w, h);
+  }
+
+  function openPhotoCrop(dataUrl) {
+    var img = new Image();
+    img.onload = function () {
+      photoCrop = { img: img, zoom: 1, x: 0, y: 0 };
+      document.getElementById("crop-zoom").value = 1;
+      document.getElementById("crop-x").value = 0;
+      document.getElementById("crop-y").value = 0;
+      document.getElementById("modal-photo").classList.add("hidden");
+      document.getElementById("modal-crop").classList.remove("hidden");
+      drawPhotoCrop(document.getElementById("crop-canvas"));
+    };
+    img.onerror = function () { showToast("That file couldn't be used as a photo"); };
+    img.src = dataUrl;
+  }
+
+  function initProfilePhoto() {
+    var sheet = document.getElementById("modal-photo");
+    document.getElementById("more-avatar-btn").addEventListener("click", function () {
+      document.getElementById("photo-remove-btn").classList.toggle("hidden", !AppData.getPhoto());
+      sheet.classList.remove("hidden");
+    });
+    document.getElementById("photo-cancel-btn").addEventListener("click", function () { sheet.classList.add("hidden"); });
+    document.getElementById("photo-camera-btn").addEventListener("click", function () { document.getElementById("photo-input-camera").click(); });
+    document.getElementById("photo-gallery-btn").addEventListener("click", function () { document.getElementById("photo-input-gallery").click(); });
+    document.getElementById("photo-remove-btn").addEventListener("click", function () {
+      AppData.removePhoto();
+      sheet.classList.add("hidden");
+      renderAvatars();
+      renderMore();
+      showToast("Photo removed");
+    });
+    ["photo-input-camera", "photo-input-gallery"].forEach(function (id) {
+      var input = document.getElementById(id);
+      input.addEventListener("change", function () {
+        var file = input.files && input.files[0];
+        input.value = "";
+        if (!file) return;
+        if (file.type && file.type.indexOf("image/") !== 0) { showToast("Please choose an image"); return; }
+        var reader = new FileReader();
+        reader.onload = function () { openPhotoCrop(reader.result); };
+        reader.onerror = function () { showToast("Couldn't read that photo"); };
+        reader.readAsDataURL(file);
+      });
+    });
+    var canvas = document.getElementById("crop-canvas");
+    [["crop-zoom", "zoom"], ["crop-x", "x"], ["crop-y", "y"]].forEach(function (p) {
+      document.getElementById(p[0]).addEventListener("input", function (e) { photoCrop[p[1]] = Number(e.target.value); drawPhotoCrop(canvas); });
+    });
+    document.getElementById("crop-cancel-btn").addEventListener("click", function () { document.getElementById("modal-crop").classList.add("hidden"); });
+    document.getElementById("crop-save-btn").addEventListener("click", function () {
+      var out = document.createElement("canvas");
+      out.width = 256; out.height = 256;
+      var oc = out.getContext("2d");
+      var preview = canvas.width;
+      // redraw the same crop at the stored size
+      var ratio = 256 / preview;
+      var img = photoCrop.img;
+      var base = preview / Math.min(img.width, img.height);
+      var scale = base * photoCrop.zoom * ratio;
+      var w = img.width * scale, h = img.height * scale;
+      oc.fillStyle = "#ffffff"; oc.fillRect(0, 0, 256, 256);
+      oc.drawImage(img, (256 - w) / 2 + photoCrop.x * Math.max(0, (w - 256) / 2), (256 - h) / 2 + photoCrop.y * Math.max(0, (h - 256) / 2), w, h);
+      try {
+        AppData.setPhoto(out.toDataURL("image/jpeg", 0.85));
+      } catch (e) { showToast("Couldn't save the photo"); return; }
+      document.getElementById("modal-crop").classList.add("hidden");
+      renderAvatars();
+      renderMore();
+      showToast("Profile photo saved");
+    });
   }
 
   function initMore() {
     document.getElementById("edit-name-btn").addEventListener("click", function () {
+      document.getElementById("name-input").value = AppData.get("preferredName") || "";
       document.getElementById("modal-name").classList.remove("hidden");
+    });
+    document.getElementById("reset-journey-btn").addEventListener("click", function () {
+      if (!window.confirm("Restart your journey from Day 1? Your saved progress and history stay; only the day counter restarts.")) return;
+      AppData.resetJourney();
+      renderMore();
+      showToast("Journey restarted at Day 1");
     });
 
     document.getElementById("open-hamdard-btn").addEventListener("click", function () {
@@ -4062,26 +4350,31 @@
   // ---------- NAME MODAL ----------
 
   function initNameModal() {
-    var existing = localStorage.getItem("nc_user_name");
+    // Asked once, ever. Shown again only for a genuinely new user (nothing saved)
+    // or when the user chooses "Change name" in Profile.
     var modal = document.getElementById("modal-name");
-    if (existing) {
-      modal.classList.add("hidden");
-    } else {
-      modal.classList.remove("hidden");
-    }
     var input = document.getElementById("name-input");
     var saveBtn = document.getElementById("name-save");
+    var skipBtn = document.getElementById("name-skip");
+    var isNewUser = !AppData.get("onboardingCompleted") && !AppData.get("preferredName");
+    if (isNewUser) modal.classList.remove("hidden"); else modal.classList.add("hidden");
 
     function save() {
       var val = input.value.trim();
-      if (val) {
-        localStorage.setItem("nc_user_name", val);
-      }
+      if (!val) { showToast("Enter your name to continue"); return; }
+      AppData.set("preferredName", val);
+      AppData.set("onboardingCompleted", true);
       modal.classList.add("hidden");
       renderHome();
       renderMore();
     }
 
+    skipBtn.addEventListener("click", function () {
+      AppData.set("onboardingCompleted", true);
+      modal.classList.add("hidden");
+      renderHome();
+      renderMore();
+    });
     saveBtn.addEventListener("click", save);
     input.addEventListener("keydown", function (e) {
       if (e.key === "Enter") save();
@@ -9053,7 +9346,7 @@
     if (prof && prof.currentFocus) goals.push({ type: "personalGrowth", name: gwTrack(prof.currentFocus) ? gwTrack(prof.currentFocus).label : prof.currentFocus });
     var meta = memMeta();
     var profile = {
-      identity: { preferredName: localStorage.getItem("nc_user_name") || null, preferredLanguage: "English", communicationStyle: null },
+      identity: { preferredName: AppData.get("preferredName") || null, preferredLanguage: "English", communicationStyle: null },
       routinePatterns: { commitments: routine, wake: ws.wake ? { time: memHHMM(ws.wake.min), confidence: ws.wake.confidence } : null, sleep: ws.sleep ? { time: memHHMM(ws.sleep.min), confidence: ws.sleep.confidence } : null },
       goals: goals,
       personalGrowth: prof ? { currentFocus: prof.currentFocus || null, completedChallenges: prof.completedChallenges || 0, challengeLevel: prof.trackLevels && prof.currentFocus ? prof.trackLevels[prof.currentFocus] : null } : null,
@@ -10298,8 +10591,11 @@
   // ---------- INIT ----------
 
   document.addEventListener("DOMContentLoaded", function () {
+    AppData.boot();
     ProgressStore.importLegacy();
     ProgressStore.onChange(progressRefreshHome);
+    AppData.restoreFromBrowserBackup();
+    initProfilePhoto();
     initNav();
     initNameModal();
     initPriorityUI();

@@ -20,6 +20,30 @@ class NativeBridge(private val activity: MainActivity) {
     @JavascriptInterface
     fun version(): String = "1"
 
+    // A private copy of NURA's saved data, so a WebView storage reset can't lose it.
+    private val backupFile get() = java.io.File(activity.filesDir, "nura_backup.json")
+
+    private val prevFile get() = java.io.File(activity.filesDir, "nura_backup_prev.json")
+
+    @JavascriptInterface
+    fun saveBackup(json: String): Boolean {
+        if (json.length > 5_000_000) return false
+        return try {
+            // keep the richer older copy as a spare, so a near-empty state can't erase good data
+            if (backupFile.exists() && backupFile.length() > json.length * 1.5) backupFile.copyTo(prevFile, overwrite = true)
+            val tmp = java.io.File(activity.filesDir, "nura_backup.json.tmp")
+            tmp.writeText(json)
+            tmp.renameTo(backupFile)
+        } catch (e: Exception) { false }
+    }
+
+    @JavascriptInterface
+    fun loadBackup(): String = try {
+        val a = if (backupFile.exists()) backupFile.readText() else ""
+        val b = if (prevFile.exists()) prevFile.readText() else ""
+        if (b.length > a.length) b else a
+    } catch (e: Exception) { "" }
+
     @JavascriptInterface
     fun getStatus(): String {
         val cfg = Store.getConfig(activity)

@@ -15,6 +15,9 @@
     <!-- Lets the app list launchable apps for the picker without QUERY_ALL_PACKAGES. -->
     <queries>
         <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
@@ -49,6 +52,16 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Detects when an app the user selected comes to the front, to show a pause screen the user chose to enable (digital wellbeing)." />
         </service>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <receiver android:name=".BootReceiver" android:exported="false">
             <intent-filter>

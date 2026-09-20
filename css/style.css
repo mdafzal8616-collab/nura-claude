@@ -949,3 +949,13 @@ html, body {
   z-index: 200;
   box-shadow: 0 4px 14px rgba(27, 94, 63, 0.25);
 }
+
+/* PROFILE PHOTO */
+.avatar-btn { position: relative; overflow: hidden; padding: 0; }
+.avatar-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.profile-row { display: flex; align-items: center; gap: 14px; margin: 6px 0 12px; }
+.profile-avatar { position: relative; width: 68px; height: 68px; border-radius: 50%; overflow: hidden; background: var(--surface-2); border: 2px solid var(--mint); color: var(--mint); font-weight: 700; font-size: 26px; cursor: pointer; flex-shrink: 0; padding: 0; }
+.crop-wrap { display: flex; justify-content: center; margin: 10px 0; }
+.crop-wrap canvas { width: 240px; height: 240px; border-radius: 50%; border: 2px solid var(--mint); background: #fff; touch-action: none; }
+.crop-label { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); margin: 6px 0; }
+.crop-label input[type=range] { flex: 1; }

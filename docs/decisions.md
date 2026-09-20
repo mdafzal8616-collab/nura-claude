@@ -2,6 +2,23 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-20 — Persistent memory: name asked once, real journey day, profile photo, storage backup
+
+**Audit**: startup had no reset logic. `journeyStartDate` was only written when missing and the name prompt only appeared when no name was saved. The symptoms ("Day 1 again", name asked again) match the browser/WebView losing the site's saved data between launches, so besides tidying the layer I added protection against that and a visible status.
+
+**AppData layer** (`window.NuraData`, `nc_app_meta`, `nc_profile_photo`): versioned (`schemaVersion` + `MIGRATIONS`) permanent data — preferredName, journeyStartDate, onboardingCompleted, photo timestamp, install id, first launch, launch count. `boot()` only creates a default for a field that is missing, and carries over the old `nc_user_name` / `nc_journey_start` once. `journeyStartDate` is written once and only changed by the explicit, confirmed "Restart my journey…" button. Journey day = calendar days since journeyStartDate + 1 (shown as "DAY N OF YOUR JOURNEY"). Daily data stays per local date (ProgressStore and the nc_*_<date> stores) and history is never deleted at midnight; nothing at startup clears nc_* keys, so new features can add fields/keys without touching old data.
+
+**Name**: asked once (a name is required; "Skip for now" marks onboarding done so it is never re-asked). Change name only via Profile, prefilled.
+
+**Photo**: Profile avatar → Take Photo / Choose from Gallery / Remove; a simple crop (zoom + left/right + up/down) saved as a 256px JPEG in local storage, shown on Home and Profile, initials as fallback, never uploaded. The Android app got a `WebChromeClient` file chooser (camera via `FileProvider`, gallery via the system picker), needed because plain WebViews ignore `<input type=file>`.
+
+**Home**: fixed line "Success isn't built in one night. It's built every day." under the greeting. The graph draws only from real ProgressStore records; with none it says "Your progress will appear here as you use NURA." (no fake bars).
+
+**Storage protection**: asks the browser for persistent storage; keeps a backup copy of all nc_* data (app: private file `nura_backup.json` in the Android app, which survives reboots and WebView resets; browser: IndexedDB). If storage comes back empty, it is restored before/at launch and never overwrites existing values. Found and fixed a race during testing (a fresh empty state overwrote the good backup): backups now wait for the restore check, and the richer older copy is kept as a spare. Profile shows "Saved on this device · first opened … · opened N times · journey began … · backup in the app/browser" and warns if the browser did not grant persistent storage.
+
+**Tested**: fresh start (name prompt once, empty name rejected) → photo through the real file input + crop → Akhlaq activities (Home 100%) → reload: no name prompt, name, photo, journey start and records intact → next day simulated (Day 2 automatically, start date not recreated, yesterday kept, today a new empty record, weekly report shows both days) → wipe of all browser data with the backup surviving (name, photo, journey start and activities restored, no prompt) → older-version data migrated (Day 10 kept) → Change name and confirmed journey restart → all other screens, no console errors.
+
+**Limits**: local data cannot survive an uninstall/reinstall (that needs account backup, which NURA doesn't have); the Android photo picker and file backup are compiled but were only exercised through the website, not on a phone; the browser backup can't help if the browser clears IndexedDB together with localStorage; "phone restart" was simulated by reloading and wiping storage, not an actual reboot.
 ## 2026-09-20 — One central Progress Store (Home, daily history and weekly report now share it)
 
 **Root cause found**: Home's ring, the 7-day graph and the details view were calculated only from *Today's Priority*. Sunnah, Akhlaq, habits, Salah, money, Personal Growth etc. each wrote to their own separate storage that nothing read, so completing them left Home at 0% and out of the weekly view.
