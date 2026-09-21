@@ -409,6 +409,7 @@
     var REG = "nc_progress_registry";
     var LEGACY_FLAG = "nc_progress_imported_v1";
     var listeners = [];
+    var recSinks = [], remSinks = [];
     var UPSERT_METRICS = ["boolean", "percentage", "rating"];
 
     // Display defaults only (order + titles). Not logic: unknown categories work too.
@@ -515,6 +516,7 @@
       if (input.sectionTitle) setReg("sections", rec.categoryId + "|" + rec.sectionId, { title: input.sectionTitle }, false);
       setReg("actions", itemKey(rec), { title: rec.title, metricType: metric, unit: rec.unit, target: input.target }, false);
       notify();
+      recSinks.forEach(function (fn) { try { fn(rec); } catch (e) {} });
       return rec;
     }
 
@@ -528,10 +530,12 @@
         return !(r.categoryId === spec.categoryId && r.sectionId === spec.sectionId && r.actionId === spec.actionId);
       });
       var removed = day.length - kept.length;
+      var goneIds = day.filter(function (r) { return kept.indexOf(r) === -1; }).map(function (r) { return r.id; });
       if (removed) {
         if (kept.length) d.days[date] = kept; else delete d.days[date];
         save(d);
         notify();
+        remSinks.forEach(function (fn) { try { fn(goneIds); } catch (e) {} });
       }
       return removed;
     }
@@ -548,6 +552,7 @@
     }
     function getDay(date) { var day = load().days[date]; return Array.isArray(day) ? day.slice() : []; }
     function hasAny() { var d = load(); return Object.keys(d.days).length > 0; }
+    function allRecords() { var d = load(), out = []; Object.keys(d.days).forEach(function (k) { (d.days[k] || []).forEach(function (r) { out.push(r); }); }); return out; }
 
     // ---- reading: everything below is derived from raw records ----
     function aggregate(records) {
@@ -694,7 +699,7 @@
     }
 
     return {
-      schemaVersion: SCHEMA, record: record, remove: remove, toggle: toggle, has: has, getDay: getDay, hasAny: hasAny,
+      schemaVersion: SCHEMA, allRecords: allRecords, onRecord: function (fn) { recSinks.push(fn); }, onRemove: function (fn) { remSinks.push(fn); }, record: record, remove: remove, toggle: toggle, has: has, getDay: getDay, hasAny: hasAny,
       dayScore: dayScore, summarizeRange: summarizeRange, onChange: onChange, importLegacy: importLegacy,
       registerCategory: registerCategory, registerSection: registerSection, registerAction: registerAction,
       categoryTitle: function (id) { return categoryTitle(id); }
@@ -834,6 +839,7 @@
     ProgressStore.dayScore(d, []).items.forEach(function (x) {
       if (x.regular || covered[x.key] || seen[x.key]) return;
       if (x.key === "deen|quran|quran_reading" && anyQuran) return;
+      if (x.key.indexOf("wellbeing|mood|") === 0) return; // a mood check-in is context, not an action completed
       add(x.key, x.title, progGroupOf(x.key), x.score >= 1);
     });
     return items;
@@ -1680,7 +1686,10 @@
     try { renderProgressRing(getCurrentPriority()); renderDayFlow(); } catch (e) {}
   }
 
-  function openProgressDetails() {
+  // The weekly report is now the Progress screen (Today / Week / Patterns).
+  function openProgressDetails() { setActiveView("progress"); }
+
+  function renderProgressBody() {
     var todayEl = document.getElementById("progress-details-today");
     todayEl.innerHTML = "";
     var weekEl = document.getElementById("progress-details-week");
@@ -1771,7 +1780,6 @@
       }
     }
 
-    document.getElementById("modal-progress-details").classList.remove("hidden");
   }
 
   function renderProgressLine(p) {
@@ -2226,6 +2234,7 @@
     var d = todayKey();
     journeyPatch(d, { sleep: { start: new Date().toISOString() } });
     memLog("sleep_started", "sleep", { min: new Date().getHours() * 60 + new Date().getMinutes() });
+    NuraEvents.log("SLEEP_STARTED", { source: "sleep" });
     renderDayFlow();
   }
   function wakeUpNow() {
@@ -2236,6 +2245,7 @@
     journeyPatch(s.date, { sleep: { start: s.start, wake: wake.toISOString(), hours: hours } });
     ProgressStore.record({ date: s.date, categoryId: "sleep", categoryTitle: "Sleep", sectionId: "sleep_log", sectionTitle: "Sleep log", actionId: "sleep_duration", title: "Sleep", metricType: "duration", unit: "h", mode: "upsert", value: hours, source: "sleep" });
     memLog("wake_recorded", "sleep", { min: wake.getHours() * 60 + wake.getMinutes() });
+    NuraEvents.log("WAKE_UP", { source: "sleep", value: hours, metadata: { sleepDate: s.date } });
     renderDayFlow();
   }
 
@@ -2855,7 +2865,7 @@
 
     if (calDateKey(now) !== todayKey()) el.appendChild(dfEl("p", "day-note", "Still tonight's journey — your new day begins at Fajr (" + dfClock(t.nextFajr) + ")."));
     if (note) el.appendChild(dfEl("p", "day-note day-note-warn", note));
-    var change = dfEl("button", "btn btn-outline day-set-times", getManualTimes() ? "Edit prayer times" : "Set Prayer Times");
+    var change = dfEl("button", "flow-link day-change", getManualTimes() ? "Edit prayer times" : "Set Prayer Times");
     change.type = "button";
     change.addEventListener("click", function () { dayView.setup = true; renderDayFlow(); });
     el.appendChild(change);
@@ -3002,6 +3012,7 @@
       flowEl.appendChild(wrap);
     });
     startDayTimer();
+    renderTodayPriorities();
     renderProgressRing();
   }
 
@@ -3055,6 +3066,572 @@
     }, 1000);
   }
 
+  // =====================================================================
+  // EVENTS — the raw input of the Personal Pattern Engine (Phase 3)
+  // One typed, timestamped fact per meaningful thing the user did. Two ways in:
+  //  1. automatic: every ProgressStore record/remove is mirrored here (so Salah, Qur'an,
+  //     Hadith, study, workout, habits, money, plan tasks and every other tracked action
+  //     get an event without each feature doing anything);
+  //  2. direct: things that are not "completions" (sleep start, wake up, urge, recovery).
+  // Today's progress and the weekly report still read the stores; the pattern engine will
+  // read these events. Stored locally only (nc_events), never sent anywhere.
+  // APP_USAGE_SUMMARY is reserved for Phase 4 (Android usage access) and is not emitted yet.
+  // =====================================================================
+  var EVENT_TYPES = ["SALAH_COMPLETED", "QURAN_READ", "HADITH_READ", "STUDY_STARTED", "STUDY_COMPLETED", "SLEEP_STARTED", "WAKE_UP",
+    "WORKOUT_COMPLETED", "HABIT_COMPLETED", "URGE_LOGGED", "RECOVERY_SUCCESS", "SMOKING_LOGGED", "MONEY_SAVED", "APP_USAGE_SUMMARY",
+    "PLAN_TASK_COMPLETED", "MOOD_LOGGED", "ACTION_COMPLETED"];
+
+  var NuraEvents = (function () {
+    var KEY = "nc_events", VERSION = 1, MAX = 30000;
+    function load() {
+      var d = readJSON(KEY, null);
+      if (!d || !Array.isArray(d.events)) d = { version: VERSION, events: [] };
+      return d;
+    }
+    function save(d) {
+      if (d.events.length > MAX) d.events = d.events.slice(d.events.length - MAX);
+      writeJSON(KEY, d);
+    }
+    // { id, type, timestamp, date, metadata, source, duration?, value?, recordId? }
+    function log(type, o) {
+      o = o || {};
+      var d = load();
+      var e = { id: uid("ev"), type: type, timestamp: o.timestamp || new Date().toISOString(), date: o.date || todayKey(), metadata: o.metadata || {}, source: o.source || "app" };
+      if (o.duration !== undefined) e.duration = o.duration;
+      if (o.value !== undefined) e.value = o.value;
+      if (o.recordId) {
+        e.recordId = o.recordId;
+        d.events = d.events.filter(function (x) { return x.recordId !== o.recordId; });
+      }
+      d.events.push(e);
+      save(d);
+      return e;
+    }
+    function removeByRecord(ids) {
+      if (!ids || !ids.length) return;
+      var d = load(), before = d.events.length;
+      d.events = d.events.filter(function (x) { return !x.recordId || ids.indexOf(x.recordId) === -1; });
+      if (d.events.length !== before) save(d);
+    }
+    function query(f) {
+      f = f || {};
+      return load().events.filter(function (e) {
+        if (f.type && e.type !== f.type) return false;
+        if (f.from && e.date < f.from) return false;
+        if (f.to && e.date > f.to) return false;
+        return true;
+      });
+    }
+    function clear() { try { localStorage.removeItem(KEY); } catch (e) {} }
+    function summary() {
+      var ev = load().events, days = {}, types = {};
+      ev.forEach(function (e) { days[e.date] = true; types[e.type] = (types[e.type] || 0) + 1; });
+      return { count: ev.length, days: Object.keys(days).length, types: types };
+    }
+    return { log: log, removeByRecord: removeByRecord, query: query, clear: clear, summary: summary, types: EVENT_TYPES };
+  })();
+  window.NuraEvents = NuraEvents;
+
+  function eventSpecFor(rec) {
+    var c = rec.categoryId, s = rec.sectionId, spec = { type: "ACTION_COMPLETED", metadata: { category: c, section: s, action: rec.actionId, title: rec.title } };
+    if (c === "sleep") return null; // SLEEP_STARTED / WAKE_UP are logged directly
+    if (c === "deen" && s === "salah") { spec.type = "SALAH_COMPLETED"; spec.metadata = { prayer: rec.actionId.replace("prayer_", "") }; }
+    else if (c === "deen" && s === "quran") { spec.type = "QURAN_READ"; if (rec.unit === "ayahs") spec.value = rec.value; }
+    else if (c === "deen" && s === "hadith") spec.type = "HADITH_READ";
+    else if (c === "study_focus") { spec.type = "STUDY_COMPLETED"; if (rec.unit === "min") spec.duration = rec.value; }
+    else if (c === "fitness") { spec.type = "WORKOUT_COMPLETED"; if (rec.unit === "min") spec.duration = rec.value; }
+    else if (c === "habits") spec.type = "HABIT_COMPLETED";
+    else if (c === "money") { spec.type = "MONEY_SAVED"; spec.value = rec.value; }
+    else if (c === "productivity" && s === "plan_my_day") spec.type = "PLAN_TASK_COMPLETED";
+    else if (c === "wellbeing" && s === "mood") { spec.type = "MOOD_LOGGED"; spec.value = rec.value; }
+    return spec;
+  }
+  ProgressStore.onRecord(function (rec) {
+    var spec = eventSpecFor(rec);
+    if (!spec) return;
+    NuraEvents.log(spec.type, { recordId: rec.id, timestamp: rec.completedAt, date: rec.date, value: spec.value, duration: spec.duration, metadata: spec.metadata, source: rec.source || "app" });
+  });
+  ProgressStore.onRemove(function (ids) { NuraEvents.removeByRecord(ids); });
+  // One-time: turn what the stores already hold into events so history is not lost.
+  function backfillEvents() {
+    if (localStorage.getItem("nc_events_backfilled_v1")) return;
+    try {
+      ProgressStore.allRecords().forEach(function (rec) {
+        var spec = eventSpecFor(rec);
+        if (!spec) return;
+        NuraEvents.log(spec.type, { recordId: rec.id, timestamp: rec.completedAt, date: rec.date, value: spec.value, duration: spec.duration, metadata: spec.metadata, source: "import" });
+      });
+      localStorage.setItem("nc_events_backfilled_v1", "1");
+    } catch (e) { /* best effort; live events still work */ }
+  }
+
+  // =====================================================================
+  // PRIORITIES (asked once at onboarding, editable in Profile)
+  // =====================================================================
+  var DEEN_PRIORITIES = [
+    { id: "salah", label: "Improve Salah" },
+    { id: "quran", label: "Read Qur'an daily" },
+    { id: "learn", label: "Learn Hadith & Islam" },
+    { id: "sunnah", label: "Build daily Sunnah & adhkar" }
+  ];
+  var DUNYA_PRIORITIES = [
+    { id: "study", label: "Study consistently" },
+    { id: "sleep", label: "Sleep better" },
+    { id: "fitness", label: "Get fitter" },
+    { id: "discipline", label: "Build discipline" },
+    { id: "money", label: "Save money" },
+    { id: "career", label: "Grow my skills" }
+  ];
+  function getPriorityChoice(kind) {
+    var p = AppData.get(kind === "deen" ? "deenPriority" : "dunyaPriority");
+    return p && p.id ? p : null;
+  }
+
+  // =====================================================================
+  // TODAY: TOP PRIORITIES (one Deen, one Dunya, one optional personal action)
+  // Chosen only from the user's real data; nothing is invented.
+  // =====================================================================
+  function todayHasSunnah() { var l = getDaySunnahLog(todayKey()); return Object.keys(l).some(function (k) { return l[k]; }); }
+  function todayHasHadith() { return ProgressStore.getDay(todayKey()).some(function (r) { return r.categoryId === "deen" && r.sectionId === "hadith"; }); }
+  function todayHasQuran() { return quranAyahsToday() > 0 || ProgressStore.has(todayKey(), "deen", "quran", "quran_manual"); }
+
+  function todayPriorities() {
+    var rows = [], now = new Date(), comps = getSalahCompletions();
+    var t = dayView.timings ? dayTimes(dayView.timings) : null;
+
+    // DEEN
+    var deen = null;
+    if (t) {
+      for (var i = 0; i < PRAYER_ORDER.length; i++) {
+        var n = PRAYER_ORDER[i];
+        if (!comps[n] && t[n.toLowerCase()] <= now) { deen = { text: "Pray " + n, sub: "Time was " + dfClock(t[n.toLowerCase()]), btn: "Mark done", fn: (function (nm) { return function () { setSalahComplete(nm); }; })(n) }; break; }
+      }
+    }
+    if (!deen) {
+      var dp = getPriorityChoice("deen");
+      if (dp && dp.id === "quran" && !todayHasQuran()) deen = { text: "Read a little Qur'an", sub: "Your Deen priority", btn: "Open", fn: function () { openQuranFromHome(null, true); } };
+      else if (dp && dp.id === "learn" && !todayHasHadith()) deen = { text: "Learn one hadith", sub: "Your Deen priority", btn: "Open", fn: function () { openFromHome("hadith"); } };
+      else if (dp && dp.id === "sunnah" && !todayHasSunnah()) deen = { text: "Do today's Sunnah", sub: "Your Deen priority", btn: "Open", fn: function () { openFromHome("routine"); } };
+    }
+    if (!deen && t) {
+      var nx = nextSalahInfo(t, now);
+      if (nx) deen = { text: "Next: " + nx.name, sub: dfClock(nx.time), btn: null };
+    }
+    if (deen) rows.push({ group: "DEEN", text: deen.text, sub: deen.sub, btn: deen.btn, fn: deen.fn });
+
+    // DUNYA
+    var dunya = null;
+    var p = getCurrentPriority();
+    if (p && p.date === todayKey() && p.status === "pending" && p.kind !== "salah") {
+      dunya = { text: p.title, sub: "Today's focus", btn: "Open", fn: function () { var c = document.getElementById("priority-card-el"); if (c) c.scrollIntoView({ behavior: "smooth", block: "center" }); } };
+    }
+    if (!dunya) {
+      var tasks = getPlanActivities().filter(function (a) { return a.status !== "done" && a.status !== "skipped"; });
+      tasks.sort(function (a, b) { return (a.startTime || "99:99") < (b.startTime || "99:99") ? -1 : 1; });
+      if (tasks[0]) dunya = { text: tasks[0].name, sub: tasks[0].startTime ? "at " + dfClock(dayAt(tasks[0].startTime)) : "Your task", btn: "Done", fn: (function (id) { return function () { setPlanActivityStatus(id, "done"); }; })(tasks[0].id) };
+    }
+    if (!dunya) {
+      var dq = getPriorityChoice("dunya");
+      if (dq) {
+        var go = { study: ["Start a study session", function () { startDuniyaQuickAction("study-prep"); }], sleep: ["Plan tonight's sleep", function () { startDuniyaQuickAction("sleep-bedtime"); }],
+          fitness: ["Do a short workout", function () { startDuniyaQuickAction("fitness-bodypart"); }], discipline: ["Check in on your habits", function () { setActiveView("duniya-habits"); }],
+          money: ["Add to your savings", function () { setActiveView("duniya-money"); }], career: ["One skill action", function () { setActiveView("duniya-career"); }] }[dq.id];
+        if (go) dunya = { text: go[0], sub: "Your Dunya priority", btn: "Start", fn: go[1] };
+      }
+    }
+    if (!dunya) dunya = { text: "Choose one thing to improve today", sub: "Study, health, discipline or skills", btn: "Open", fn: function () { setActiveView("duniya"); } };
+    rows.push({ group: "DUNYA", text: dunya.text, sub: dunya.sub, btn: dunya.btn, fn: dunya.fn });
+
+    // PERSONAL (optional): the first habit you set yourself that is still open
+    var hl = getHabitLogToday();
+    var open = getHabits().filter(function (h) { return hl[h.id] !== "done"; })[0];
+    if (open) rows.push({ group: "PERSONAL", text: open.name, sub: "Your habit", btn: "Done", fn: function () { setHabitStatus(open.id, "done"); } });
+    return rows;
+  }
+
+  function renderTodayPriorities() {
+    var el = document.getElementById("today-priorities");
+    if (!el) return;
+    el.innerHTML = "";
+    todayPriorities().forEach(function (r) {
+      var row = dfEl("div", "prio-row");
+      var lb = dfEl("div", "prio-text");
+      lb.appendChild(dfEl("span", "prio-group", r.group));
+      lb.appendChild(dfEl("span", "prio-main", r.text));
+      if (r.sub) lb.appendChild(dfEl("span", "prio-sub", r.sub));
+      row.appendChild(lb);
+      if (r.btn) {
+        var b = dfEl("button", "btn btn-outline prio-btn", r.btn);
+        b.type = "button";
+        b.addEventListener("click", function () { r.fn(); renderTodayPriorities(); });
+        row.appendChild(b);
+      }
+      el.appendChild(row);
+    });
+    var q = dfEl("button", "btn btn-primary btn-full prio-quick", "+ Quick log");
+    q.type = "button";
+    q.addEventListener("click", function () { openQuickCapture(); });
+    el.appendChild(q);
+  }
+
+  // =====================================================================
+  // QUICK CAPTURE (a few taps, real stores only)
+  // =====================================================================
+  var capState = { view: "root" };
+  function capClose() { var m = document.getElementById("modal-capture"); if (m) m.classList.add("hidden"); }
+  function capDone(msg) { capClose(); showToast(msg); renderHome(); }
+  function capRecord(rec, msg) { ProgressStore.record(rec); capDone(msg); }
+
+  function openQuickCapture() {
+    var m = document.getElementById("modal-capture");
+    if (!m) {
+      m = dfEl("div", "modal-overlay");
+      m.id = "modal-capture";
+      m.appendChild(dfEl("div", "modal-sheet"));
+      m.addEventListener("click", function (e) { if (e.target === m) capClose(); });
+      document.body.appendChild(m);
+    }
+    capState.view = "root";
+    renderCapture();
+    m.classList.remove("hidden");
+  }
+
+  function renderCapture() {
+    var sheet = document.getElementById("modal-capture").firstChild;
+    sheet.innerHTML = "";
+    var head = dfEl("div", "modal-header-row");
+    head.appendChild(dfEl("h2", "", capState.view === "root" ? "Quick log" : capState.title || "Quick log"));
+    var x = dfEl("button", "icon-btn", "✕"); x.type = "button"; x.setAttribute("aria-label", "Close");
+    x.addEventListener("click", capClose);
+    head.appendChild(x);
+    sheet.appendChild(head);
+    function chips(list, onPick) {
+      var g = dfEl("div", "preset-plan-grid");
+      list.forEach(function (it) {
+        var b = dfEl("button", "preset-plan-chip", it.label); b.type = "button";
+        b.addEventListener("click", function () { onPick(it); });
+        g.appendChild(b);
+      });
+      sheet.appendChild(g);
+    }
+    function sub(title, note) { capState.view = "sub"; capState.title = title; renderCapture(); if (note) { var n = dfEl("p", "muted-line", note); sheet.insertBefore(n, sheet.children[1]); } }
+
+    if (capState.view === "root") {
+      chips([
+        { k: "salah", label: "Salah done" }, { k: "quran", label: "Qur'an read" }, { k: "hadith", label: "Hadith read" },
+        { k: "study", label: "Study session" }, { k: "workout", label: "Workout" }, { k: "sleep", label: "Sleep / wake" },
+        { k: "money", label: "Money saved" }, { k: "urge", label: "Urge or craving" }, { k: "mood", label: "Mood" }, { k: "habit", label: "Habit done" }
+      ], function (it) {
+        capState.pick = it.k;
+        if (it.k === "quran") { capRecord({ categoryId: "deen", sectionId: "quran", sectionTitle: "Qur'an", actionId: "quran_manual", title: "Qur'an read", metricType: "boolean", source: "quick" }, "Qur'an logged"); return; }
+        if (it.k === "hadith") { capRecord({ categoryId: "deen", sectionId: "hadith", sectionTitle: "Hadith", actionId: "hadith_read_manual", title: "Hadith read", metricType: "boolean", source: "quick" }, "Hadith logged"); return; }
+        if (it.k === "money") { capClose(); setActiveView("duniya-money"); return; }
+        if (it.k === "urge") { capClose(); setActiveView("duniya-recovery"); return; }
+        capState.title = it.label; capState.view = "sub"; renderCapture();
+      });
+      return;
+    }
+    var pick = capState.pick;
+    if (pick === "salah") {
+      var comps = getSalahCompletions();
+      var tt = dayView.timings ? dayTimes(dayView.timings) : null, nowC = new Date();
+      var left = PRAYER_ORDER.filter(function (n) { return !comps[n] && (!tt || tt[n.toLowerCase()] <= nowC); });
+      if (!left.length) sheet.appendChild(dfEl("p", "muted-line", "Nothing to mark yet: every prayer whose time has come is already done."));
+      else chips(left.map(function (n) { return { label: n, n: n }; }), function (it) { setSalahComplete(it.n); capDone(it.n + " marked done"); });
+    } else if (pick === "study") {
+      chips([15, 25, 45, 60, 90].map(function (m) { return { label: m + " min", m: m }; }), function (it) {
+        capRecord({ categoryId: "study_focus", categoryTitle: "Study & Focus", sectionId: "quick_log", sectionTitle: "Study sessions", actionId: "study_session", title: "Study session", metricType: "duration", unit: "min", value: it.m, source: "quick" }, "Study logged: " + it.m + " min");
+      });
+    } else if (pick === "workout") {
+      chips([10, 20, 30, 45, 60].map(function (m) { return { label: m + " min", m: m }; }), function (it) {
+        capRecord({ categoryId: "fitness", categoryTitle: "Fitness", sectionId: "quick_log", sectionTitle: "Workouts", actionId: "workout", title: "Workout", metricType: "duration", unit: "min", value: it.m, source: "quick" }, "Workout logged: " + it.m + " min");
+      });
+    } else if (pick === "mood") {
+      sheet.appendChild(dfEl("p", "muted-line", "How are you feeling right now?"));
+      chips([[1, "1 · Low"], [2, "2"], [3, "3 · Okay"], [4, "4"], [5, "5 · Good"]].map(function (a) { return { label: a[1], v: a[0] }; }), function (it) {
+        capRecord({ categoryId: "wellbeing", categoryTitle: "Mental Wellbeing", sectionId: "mood", sectionTitle: "Mood", actionId: "mood_checkin", title: "Mood", metricType: "rating", value: it.v, mode: "event", source: "quick" }, "Mood logged");
+      });
+    } else if (pick === "habit") {
+      var log = getHabitLogToday();
+      var hs = getHabits().filter(function (h) { return log[h.id] !== "done"; });
+      if (!hs.length) sheet.appendChild(dfEl("p", "muted-line", getHabits().length ? "All your habits are done today." : "No habits yet. Add one under Dunya → Discipline & Mind."));
+      else chips(hs.map(function (h) { return { label: h.name, id: h.id }; }), function (it) { setHabitStatus(it.id, "done"); capDone("Habit done"); });
+    } else if (pick === "sleep") {
+      var open = openSleep();
+      var b = dfEl("button", "btn btn-primary btn-full", open ? "I'm awake" : "Going to sleep");
+      b.type = "button";
+      b.addEventListener("click", function () { if (open) wakeUpNow(); else startSleepNow(); capDone(open ? "Good morning" : "Sleep started"); });
+      sheet.appendChild(b);
+      if (open) sheet.appendChild(dfEl("p", "muted-line", "Sleeping since " + dfClock(new Date(open.start)) + "."));
+    }
+    var back = dfEl("button", "flow-link", "‹ Back"); back.type = "button";
+    back.addEventListener("click", function () { capState.view = "root"; renderCapture(); });
+    sheet.appendChild(back);
+  }
+
+  // =====================================================================
+  // DEEN: SALAH panel, Sunnah Today
+  // =====================================================================
+  function renderSalahPanel() {
+    var box = document.getElementById("salah-panel-content");
+    if (!box) return;
+    box.innerHTML = "";
+    var T = cachedTimingsForToday();
+    var comps = getSalahCompletions();
+    var card = dfEl("section", "card");
+    if (!T) {
+      card.appendChild(dfEl("h2", "", "Set your prayer times"));
+      card.appendChild(dfEl("p", "muted-line", "Your own times (your mosque's are fine) drive the countdown and your day."));
+      var s = dfEl("button", "btn btn-primary btn-full", "Set Prayer Times"); s.type = "button";
+      s.addEventListener("click", function () { dayView.setup = true; setActiveView("home"); });
+      card.appendChild(s);
+      box.appendChild(card);
+    } else {
+      var t = dayTimes(T), now = new Date(), nx = nextSalahInfo(t, now);
+      card.appendChild(dfEl("p", "day-next-label", "NEXT SALAH"));
+      if (nx) {
+        var r = dfEl("div", "day-next-row");
+        r.appendChild(dfEl("span", "day-next-name", nx.name + (nx.newDay ? " (new day)" : "")));
+        r.appendChild(dfEl("span", "day-next-time", dfClock(nx.time)));
+        card.appendChild(r);
+        card.appendChild(dfEl("p", "day-next-remaining", "in " + dfRemain(nx.time - now)));
+      }
+      box.appendChild(card);
+
+      var list = dfEl("section", "card");
+      list.appendChild(dfEl("h2", "", "Today"));
+      PRAYER_ORDER.forEach(function (n) {
+        var start = t[n.toLowerCase()], done = !!comps[n], future = start > now;
+        var row = dfEl("div", "flow-item" + (done ? " is-done" : "") + (future ? " is-locked" : ""));
+        var b = dfEl("button", "flow-check" + (done ? " done" : ""), done ? "✓" : ""); b.type = "button";
+        b.setAttribute("aria-label", (done ? "Undo " : "Mark done: ") + n);
+        if (future) b.disabled = true;
+        else b.addEventListener("click", function () { if (done) setSalahIncomplete(n); else setSalahComplete(n); renderSalahPanel(); });
+        row.appendChild(b);
+        var lb = dfEl("div", "flow-label-box");
+        lb.appendChild(dfEl("span", "flow-label", n));
+        lb.appendChild(dfEl("span", "flow-sub", future ? "at " + dfClock(start) : dfClock(start)));
+        row.appendChild(lb);
+        list.appendChild(row);
+      });
+      var edit = dfEl("button", "flow-link", "Edit prayer times"); edit.type = "button";
+      edit.addEventListener("click", function () { dayView.setup = true; setActiveView("home"); });
+      list.appendChild(edit);
+      list.appendChild(dfEl("p", "muted-line", "Sunnah, tasbihat and Qur'an after each prayer are on Today."));
+      box.appendChild(list);
+    }
+
+    // this week, from the real saved completions
+    var week = dfEl("section", "card");
+    week.appendChild(dfEl("h2", "", "This week"));
+    var all = readJSON("nc_salah_completions", {}), total = 0, days = 0;
+    getLastNDateKeys(7).slice().reverse().forEach(function (k) {
+      var c = all[k] ? PRAYER_ORDER.filter(function (n) { return all[k][n]; }).length : 0;
+      var has = !!all[k];
+      if (has) days++;
+      total += c;
+      var row = dfEl("div", "progress-group-row");
+      row.appendChild(dfEl("span", "", new Date(k + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", day: "numeric" })));
+      row.appendChild(dfEl("span", "progress-group-count", has ? c + " / 5" : "–"));
+      week.appendChild(row);
+    });
+    week.appendChild(dfEl("p", "muted-line", days < 2 ? "Not enough data yet." : total + " prayers marked across " + days + " days."));
+    box.appendChild(week);
+  }
+
+  // One realistic Sunnah/Akhlaq action per day, chosen from what is already in NURA (each has its source).
+  function sunnahTodayPick() {
+    var cands = [];
+    var friday = new Date().getDay() === 5;
+    ROUTINE_SECTIONS.forEach(function (sec) {
+      if (sec.id === "jumuah" && !friday) return;
+      if (["tahajjud", "witr", "ishraq-duha"].indexOf(sec.id) !== -1) return;
+      sec.actions.forEach(function (a) { cands.push(a); });
+    });
+    AKHLAQ_ITEMS.forEach(function (a) { cands.push(a); });
+    if (!cands.length) return null;
+    var n = Math.floor(new Date(todayKey() + "T12:00:00").getTime() / 86400000);
+    return cands[n % cands.length];
+  }
+  function renderSunnahToday() {
+    var box = document.getElementById("sunnah-today-card");
+    if (!box) return;
+    box.innerHTML = "";
+    var a = sunnahTodayPick();
+    if (!a) return;
+    var done = !!getDaySunnahLog(todayKey())[a.id];
+    var card = dfEl("section", "card");
+    card.appendChild(dfEl("p", "day-next-label", "SUNNAH TODAY"));
+    card.appendChild(dfEl("p", "prio-main", a.name));
+    if (a.items && a.items[0] && a.items[0].source) card.appendChild(dfEl("p", "flow-sub", "Source: " + a.items[0].source.split(" — ")[0]));
+    var b = dfEl("button", "btn " + (done ? "btn-outline" : "btn-primary") + " btn-full", done ? "✓ Done today" : "I'll do this today · Mark done");
+    b.type = "button";
+    b.addEventListener("click", function () { toggleSunnahAction(a.id); renderSunnahToday(); renderRoutine(); renderAkhlaq(); });
+    card.appendChild(b);
+    box.appendChild(card);
+  }
+
+  // =====================================================================
+  // DUNYA: four groups, tools inside them
+  // =====================================================================
+  var DUNYA_GROUPS = [
+    { id: "focus", icon: "📚", title: "Focus & Study", sub: "Study sessions, Plan My Day, tasks", tools: [
+      { title: "Study & Focus", sub: "Pick a subject and a length, then start.", route: "picker", step: "study-prep" },
+      { title: "Plan My Day", sub: "Fit study, meals, breaks and Salah around your commitments.", route: "view", view: "duniya-plan" },
+      { title: "Productivity", sub: "Top 3 tasks, one at a time.", route: "view", view: "duniya-productivity" }] },
+    { id: "health", icon: "🌿", title: "Health & Energy", sub: "Sleep, fitness, routine", tools: [
+      { title: "Sleep", sub: "Set a bedtime, track when you wake.", route: "picker", step: "sleep-bedtime" },
+      { title: "Fitness", sub: "Pick a body area and get moving.", route: "picker", step: "fitness-bodypart" }] },
+    { id: "mind", icon: "🧭", title: "Discipline & Mind", sub: "Phone, habits, recovery, wellbeing", tools: [
+      { title: "Phone Control", sub: "Name the distraction, take a break from it.", route: "picker", step: "phone-distraction" },
+      { title: "Habits & Discipline", sub: "Build habits without streak pressure.", route: "view", view: "duniya-habits" },
+      { title: "Recovery", sub: "Private support for a habit you want to leave.", route: "recovery" },
+      { title: "Mental Wellbeing", sub: "A grounding step when things feel heavy.", route: "view", view: "duniya-wellbeing" }] },
+    { id: "future", icon: "🎯", title: "Future & Skills", sub: "Career, money, personal growth", tools: [
+      { title: "Career & Skills", sub: "One small goal, one daily action, communication.", route: "view", view: "duniya-career" },
+      { title: "Money Habits", sub: "Savings goal, money saved, avoided spending.", route: "view", view: "duniya-money" },
+      { title: "Personal Growth", sub: "One practical exercise at a time.", route: "view", view: "duniya-growth" }] }
+  ];
+  var dunyaState = { group: null };
+
+  function dunyaGroupStat(id) {
+    if (id === "focus") { var n = getPlanActivities().filter(function (a) { return a.status !== "done" && a.status !== "skipped"; }).length; return n ? n + " task" + (n === 1 ? "" : "s") + " open today" : ""; }
+    if (id === "health") { var j = journeyGet(); return j && j.sleep && j.sleep.hours ? "Slept " + j.sleep.hours + " h last night" : ""; }
+    if (id === "mind") { var hs = getHabits(), l = getHabitLogToday(); return hs.length ? hs.filter(function (h) { return l[h.id] === "done"; }).length + " of " + hs.length + " habits done" : ""; }
+    return "";
+  }
+
+  function renderDuniya() {
+    var root = document.getElementById("dunya-root");
+    if (!root) return;
+    root.innerHTML = "";
+    var g = DUNYA_GROUPS.filter(function (x) { return x.id === dunyaState.group; })[0];
+    document.getElementById("dunya-sub").textContent = g ? g.sub : "Improve one part of your life at a time.";
+    if (!g) {
+      DUNYA_GROUPS.forEach(function (grp) {
+        var btn = dfEl("button", "duniya-area-card dunya-group-card"); btn.type = "button";
+        btn.appendChild(dfEl("span", "duniya-area-icon", grp.icon));
+        btn.appendChild(dfEl("span", "duniya-area-title", grp.title));
+        btn.appendChild(dfEl("span", "duniya-area-sub", grp.sub));
+        var st = dunyaGroupStat(grp.id);
+        if (st) btn.appendChild(dfEl("span", "dunya-group-stat", st));
+        btn.addEventListener("click", function () { dunyaState.group = grp.id; renderDuniya(); });
+        root.appendChild(btn);
+      });
+      return;
+    }
+    var back = dfEl("button", "flow-link", "‹ All of Dunya"); back.type = "button";
+    back.addEventListener("click", function () { dunyaState.group = null; renderDuniya(); });
+    root.appendChild(back);
+    root.appendChild(dfEl("h2", "dunya-group-title", g.icon + " " + g.title));
+    g.tools.forEach(function (tl) {
+      var btn = dfEl("button", "duniya-area-card dunya-tool-card"); btn.type = "button";
+      btn.appendChild(dfEl("span", "duniya-area-title", tl.title));
+      btn.appendChild(dfEl("span", "duniya-area-sub", tl.sub));
+      btn.addEventListener("click", function () {
+        if (tl.route === "picker") startDuniyaQuickAction(tl.step);
+        else if (tl.route === "recovery") { rcView = { screen: "main" }; setActiveView("duniya-recovery"); }
+        else setActiveView(tl.view);
+      });
+      root.appendChild(btn);
+    });
+  }
+
+  // =====================================================================
+  // PROGRESS (Today · Week · Patterns) — one place, real data only
+  // =====================================================================
+  var progressTab = "today";
+  function renderProgressView() {
+    renderProgressBody();
+    renderProgressPatterns();
+    document.querySelectorAll("#progress-tabs .subtab").forEach(function (b) { b.classList.toggle("active", b.dataset.ptab === progressTab); });
+    ["today", "week", "patterns"].forEach(function (k) { document.getElementById("ptab-" + k).classList.toggle("hidden", k !== progressTab); });
+  }
+  function renderProgressPatterns() {
+    var el = document.getElementById("progress-patterns");
+    el.innerHTML = "";
+    var s = NuraEvents.summary();
+    var head = dfEl("h2", "", "Patterns");
+    el.appendChild(head);
+    if (s.days < 14) {
+      el.appendChild(dfEl("p", "muted-line", "Not enough data yet."));
+      el.appendChild(dfEl("p", "muted-line", "NURA looks for patterns (your strong hours, what helps you recover, how sleep affects your day) only after about two weeks of real activity, and it will never claim a pattern from one or two events. So far: " + s.days + " day" + (s.days === 1 ? "" : "s") + " with activity, " + s.count + " recorded actions."));
+    } else {
+      var names = { SALAH_COMPLETED: "Salah", QURAN_READ: "Qur'an reading", HADITH_READ: "Hadith", STUDY_COMPLETED: "Study sessions", WORKOUT_COMPLETED: "Workouts", HABIT_COMPLETED: "Habits", MONEY_SAVED: "Savings", PLAN_TASK_COMPLETED: "Plan tasks", WAKE_UP: "Sleep logs", URGE_LOGGED: "Urges logged", RECOVERY_SUCCESS: "Urges you got through" };
+      el.appendChild(dfEl("p", "muted-line", "Your last " + s.days + " active days. Pattern detection itself is the next phase; these are the real counts it will use."));
+      Object.keys(names).forEach(function (k) {
+        if (!s.types[k]) return;
+        var row = dfEl("div", "progress-group-row");
+        row.appendChild(dfEl("span", "", names[k]));
+        row.appendChild(dfEl("span", "progress-group-count", String(s.types[k])));
+        el.appendChild(row);
+      });
+    }
+    el.appendChild(dfEl("p", "muted-line", "Patterns are built and kept on this device. See Profile → How NURA Understands Me."));
+  }
+
+  // ---- How NURA Understands Me: what is used, permissions, controls ----
+  function renderUnderstandControls() {
+    var el = document.getElementById("understand-controls");
+    if (!el) return;
+    el.innerHTML = "";
+    function block(title, lines) {
+      el.appendChild(dfEl("h2", "", title));
+      lines.forEach(function (l) { el.appendChild(dfEl("p", "muted-line", l)); });
+    }
+    block("Data NURA uses", [
+      "What you enter or tick: Salah, Sunnah, Qur'an and Hadith activity, study and workouts, sleep and wake times, habits, money, Plan My Day tasks, mood and urge logs, and your prayer times.",
+      "It is used to show your progress and, later, to notice patterns such as your strong hours. It stays on this device."
+    ]);
+    block("What NURA does not use", ["Your messages, passwords, screen contents, photos, microphone, camera or browsing. No spyware, ever."]);
+    var perm = "Phone usage access: only in the Android app, and only if you turn on Phone Control and allow it.";
+    try {
+      if (window.NuraNative && window.NuraNative.getStatus) perm = "Phone usage access: " + (JSON.parse(window.NuraNative.getStatus()).usageAccess ? "allowed" : "not allowed") + ". You control it in Dunya → Discipline & Mind → Phone Control.";
+    } catch (e) {}
+    block("Permissions", [perm]);
+
+    el.appendChild(dfEl("h2", "", "How much guidance"));
+    el.appendChild(dfEl("p", "muted-line", "Sets how often NURA may suggest something once suggestions arrive. Nothing is sent to you yet."));
+    var g = dfEl("div", "preset-plan-grid");
+    var cur = AppData.getPref("guidanceLevel", "balanced");
+    [["low", "Low"], ["balanced", "Balanced"], ["high", "High"]].forEach(function (o) {
+      var b = dfEl("button", "preset-plan-chip" + (cur === o[0] ? " selected" : ""), o[1]); b.type = "button";
+      b.addEventListener("click", function () { AppData.setPref("guidanceLevel", o[0]); renderUnderstandControls(); });
+      g.appendChild(b);
+    });
+    el.appendChild(g);
+
+    var s = NuraEvents.summary();
+    el.appendChild(dfEl("h2", "", "Patterns detected"));
+    el.appendChild(dfEl("p", "muted-line", s.days < 14 ? "None yet. NURA needs about two weeks of real activity first (" + s.days + " day" + (s.days === 1 ? "" : "s") + " so far)." : "See Progress → Patterns."));
+    var del = dfEl("button", "btn btn-outline btn-full btn-danger", "Delete what NURA learned about me"); del.type = "button";
+    del.addEventListener("click", function () {
+      if (!window.confirm("Delete the recorded events and learned patterns on this device? Your progress history, habits and settings stay.")) return;
+      NuraEvents.clear();
+      ["nc_mem_events", "nc_mem_patterns", "nc_mem_exceptions"].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      showToast("Deleted");
+      renderMemory();
+      renderUnderstandControls();
+    });
+    el.appendChild(del);
+  }
+
+  // ---- header avatars on every main screen; Profile lives behind them ----
+  var lastMainView = "home";
+  var MAIN_VIEWS = ["home", "sunnah", "duniya", "progress", "chat"];
+  function initHeaderAvatars() {
+    ["sunnah", "duniya", "progress", "chat"].forEach(function (v) {
+      var hdr = document.querySelector('#view-' + v + ' .top-header');
+      if (!hdr || hdr.querySelector(".js-avatar-btn")) return;
+      var b = dfEl("button", "avatar-btn js-avatar-btn"); b.type = "button"; b.setAttribute("aria-label", "Profile and settings");
+      var ini = dfEl("span", "js-avatar-initial", "N");
+      var img = dfEl("img", "avatar-img hidden js-avatar-img"); img.alt = "";
+      b.appendChild(ini); b.appendChild(img);
+      b.addEventListener("click", function () { setActiveView("more"); });
+      hdr.appendChild(b);
+    });
+  }
+
   function renderHome() {
     ensureJourneyStarted();
     document.getElementById("home-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -3066,6 +3643,7 @@
 
     renderTodaysPriority();
     renderDayFlow();
+    renderTodayPriorities();
   }
 
   function initPriorityUI() {
@@ -3093,9 +3671,6 @@
     document.getElementById("open-weekly-report").addEventListener("click", openProgressDetails);
     document.getElementById("open-progress-details").addEventListener("click", openProgressDetails);
     document.getElementById("today-progress-card").querySelector(".progress-ring-row").addEventListener("click", openProgressDetails);
-    document.getElementById("progress-details-close").addEventListener("click", function () {
-      document.getElementById("modal-progress-details").classList.add("hidden");
-    });
 
   }
 
@@ -3193,6 +3768,7 @@
     focusState.linkedPriorityId = p.id;
     focusState.adhocLabel = null;
     if (p.planKey === "study") memLog("study_started", "study", { minutes: p.minutes });
+    if (p.planKey === "study") NuraEvents.log("STUDY_STARTED", { source: "priority", duration: p.minutes || undefined });
     beginFocusInterval();
     var clock = document.getElementById("focus-clock");
     if (clock) clock.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -3909,20 +4485,32 @@
     });
   }
 
+  // Deen has four areas (Salah, Qur'an, Practice, Learn). The older inner panels keep their ids:
+  // routine/akhlaq/duas live under Practice, hadith under Learn.
+  var DEEN_GROUP = { salah: "salah", quran: "quran", routine: "routine", akhlaq: "routine", duas: "routine", hadith: "hadith" };
   function switchSunnahSubtab(subtabId) {
     var buttons = document.querySelectorAll("#sunnah-subtabs .subtab");
     var targetPanel = document.getElementById("sunnah-panel-" + subtabId);
     if (!targetPanel) return;
+    var group = DEEN_GROUP[subtabId] || subtabId;
     buttons.forEach(function (b) {
-      b.classList.toggle("active", b.dataset.subtab === subtabId);
+      b.classList.toggle("active", b.dataset.subtab === group);
     });
+    var chips = document.getElementById("practice-chips");
+    if (chips) {
+      chips.classList.toggle("hidden", group !== "routine");
+      chips.querySelectorAll(".chip-toggle").forEach(function (c) { c.setAttribute("aria-pressed", c.dataset.subtab === subtabId ? "true" : "false"); });
+    }
     document.querySelectorAll(".sunnah-panel").forEach(function (p) { p.classList.add("hidden"); });
     targetPanel.classList.remove("hidden");
+    if (subtabId === "salah") renderSalahPanel();
+    if (subtabId === "routine") renderSunnahToday();
     targetPanel.scrollIntoView({ block: "start" });
   }
 
   function initSunnahSubtabs() {
     document.getElementById("sunnah-return-btn").addEventListener("click", function () { setActiveView("home"); });
+    document.querySelectorAll("#practice-chips .chip-toggle").forEach(function (c) { c.addEventListener("click", function () { switchSunnahSubtab(c.dataset.subtab); }); });
     var buttons = document.querySelectorAll("#sunnah-subtabs .subtab");
     buttons.forEach(function (btn) {
       btn.addEventListener("click", function () {
@@ -4972,6 +5560,52 @@
     return HADITH_LIST.find(function (h) { return h.id === hadithState.currentId; });
   }
 
+  // Hadith learning: Read -> Save -> Learn (quiz) -> Apply today. "Apply today" is the user's own words.
+  function hadithSavedIds() { return readJSON("nc_hadith_saved", []); }
+  function toggleHadithSaved(id) {
+    var l = hadithSavedIds(), i = l.indexOf(id);
+    if (i === -1) l.push(id); else l.splice(i, 1);
+    writeJSON("nc_hadith_saved", l);
+  }
+  function renderHadithExtras(h, container) {
+    var box = document.createElement("div");
+    box.className = "hadith-extras";
+    var saved = hadithSavedIds().indexOf(h.id) !== -1;
+    var sv = document.createElement("button");
+    sv.type = "button"; sv.className = "btn btn-outline btn-full";
+    sv.textContent = saved ? "★ Saved" : "☆ Save this hadith";
+    sv.addEventListener("click", function () { toggleHadithSaved(h.id); renderHadithDetail(); });
+    box.appendChild(sv);
+    var p = getHadithProgress()[h.id] || {};
+    var lb = document.createElement("p");
+    lb.className = "muted-line"; lb.style.margin = "12px 0 6px";
+    lb.textContent = "How will I apply this today?";
+    box.appendChild(lb);
+    var inp = document.createElement("input");
+    inp.type = "text"; inp.className = "text-input"; inp.maxLength = 120; inp.placeholder = "One small thing, in your own words";
+    inp.value = p.apply && p.apply.text ? p.apply.text : "";
+    inp.setAttribute("aria-label", "How I will apply this hadith today");
+    var save = document.createElement("button");
+    save.type = "button"; save.className = "btn btn-primary btn-full"; save.style.marginTop = "8px";
+    save.textContent = p.apply && p.apply.text ? "Update" : "Save";
+    save.addEventListener("click", function () {
+      var v = inp.value.trim();
+      if (!v) return;
+      var all = getHadithProgress();
+      all[h.id] = all[h.id] || {};
+      all[h.id].apply = { text: v, date: todayKey() };
+      saveHadithProgress(all);
+      showToast("Saved");
+      renderHadithDetail();
+    });
+    box.appendChild(inp); box.appendChild(save);
+    container.appendChild(box);
+  }
+  function hadithLearningSummary() {
+    var pr = getHadithProgress(), done = HADITH_LIST.filter(function (h) { return pr[h.id] && pr[h.id].answered; }).length;
+    return done + " of " + HADITH_LIST.length + " lessons completed · " + hadithSavedIds().length + " saved";
+  }
+
   function buildHadithListItem(h) {
     var progress = getHadithProgress();
     var done = progress[h.id] && progress[h.id].answered;
@@ -4987,10 +5621,11 @@
     textWrap.appendChild(title);
     textWrap.appendChild(srcLine);
     item.appendChild(textWrap);
-    if (done) {
+    var isSaved = hadithSavedIds().indexOf(h.id) !== -1;
+    if (done || isSaved) {
       var check = document.createElement("span");
       check.className = "dua-list-fav";
-      check.textContent = "✓";
+      check.textContent = (isSaved ? "★" : "") + (done ? "✓" : "");
       item.appendChild(check);
     }
     item.addEventListener("click", function () {
@@ -5005,6 +5640,9 @@
   function renderHadithList() {
     var list = document.getElementById("hadith-list");
     list.innerHTML = "";
+    var sum = document.getElementById("hadith-summary");
+    if (!sum) { sum = document.createElement("p"); sum.id = "hadith-summary"; sum.className = "muted-line"; sum.style.margin = "0 0 10px"; list.parentNode.insertBefore(sum, list); }
+    sum.textContent = hadithLearningSummary();
     HADITH_LIST.forEach(function (h) {
       list.appendChild(buildHadithListItem(h));
     });
@@ -5074,6 +5712,7 @@
       nextBtn.style.marginTop = "12px";
       quizArea.appendChild(nextBtn);
     }
+    renderHadithExtras(h, quizArea);
   }
 
   function answerQuiz(idx) {
@@ -5311,7 +5950,9 @@
     if (ptEl) ptEl.textContent = pt ? PRAYER_ORDER.map(function (n) { return n + " " + String(pt[n]).replace(/^(\d):/, "0$1:"); }).join(" · ") : "Prayer times not set yet.";
     var etb = document.getElementById("edit-times-btn");
     if (etb) etb.textContent = pt ? "Edit prayer times" : "Set prayer times";
-    document.getElementById("coins-count").textContent = getCoins();
+    var pr = ["deen", "dunya"].map(function (k) { var c = getPriorityChoice(k); return (k === "deen" ? "Deen: " : "Dunya: ") + (c ? c.label : "not set"); });
+    var prEl = document.getElementById("more-priorities-display");
+    if (prEl) prEl.textContent = pr.join(" · ");
     renderAvatars();
     var st = AppData.status();
     var bits = ["Saved on this device"];
@@ -5336,6 +5977,12 @@
     [["avatar-initial", "home-avatar-img"], ["more-avatar-initial", "more-avatar-img"]].forEach(function (ids) {
       var ini = document.getElementById(ids[0]), img = document.getElementById(ids[1]);
       if (!ini || !img) return;
+      ini.textContent = initial;
+      if (photo) { img.src = photo; img.classList.remove("hidden"); ini.classList.add("hidden"); }
+      else { img.removeAttribute("src"); img.classList.add("hidden"); ini.classList.remove("hidden"); }
+    });
+    document.querySelectorAll(".js-avatar-btn").forEach(function (b) {
+      var ini = b.querySelector(".js-avatar-initial"), img = b.querySelector(".js-avatar-img");
       ini.textContent = initial;
       if (photo) { img.src = photo; img.classList.remove("hidden"); ini.classList.add("hidden"); }
       else { img.removeAttribute("src"); img.classList.add("hidden"); ini.classList.remove("hidden"); }
@@ -5432,6 +6079,7 @@
 
   function initMore() {
     document.getElementById("edit-name-btn").addEventListener("click", function () { window.nuraEditName(); });
+    document.getElementById("edit-priorities-btn").addEventListener("click", function () { window.nuraEditPriorities(); });
     document.getElementById("edit-times-btn").addEventListener("click", function () {
       dayView.setup = true;
       setActiveView("home");
@@ -5488,17 +6136,19 @@
     document.querySelectorAll(".view").forEach(function (v) {
       v.classList.toggle("hidden", v.dataset.view !== name);
     });
-    var navHighlight = name.indexOf("duniya") === 0 ? "duniya" : name === "memory" ? "more" : name;
+    var navHighlight = name.indexOf("duniya") === 0 ? "duniya" : name === "sunnah" ? "deen" : (name === "chat" || name === "vault") ? "hamdard" : (name === "more" || name === "memory") ? "" : name;
+    if (MAIN_VIEWS.indexOf(name) !== -1) lastMainView = name;
     document.querySelectorAll(".nav-btn[data-nav]").forEach(function (btn) {
       btn.classList.toggle("active", btn.dataset.nav === navHighlight);
     });
     if (name === "home") { mountPriorityCard("priority-card-home-slot"); renderHome(); }
     if (name === "duniya-tool") { mountPriorityCard("priority-card-duniya-slot"); renderTodaysPriority(); }
-    if (name === "sunnah") { renderRoutine(); renderAkhlaq(); renderVerseOfDay(); renderHadithList(); renderDuaCategories(); }
+    if (name === "sunnah") { renderSalahPanel(); renderSunnahToday(); renderRoutine(); renderAkhlaq(); renderVerseOfDay(); renderHadithList(); renderDuaCategories(); updateSunnahReturn(); }
+    if (name === "progress") renderProgressView();
     if (name === "chat") renderChatOptions();
     if (name === "vault") renderVaultRoot();
     if (name === "more") renderMore();
-    if (name === "memory") renderMemory();
+    if (name === "memory") { renderMemory(); renderUnderstandControls(); }
     if (name === "duniya") renderDuniya();
     if (name === "duniya-habits") renderDuniyaHabits();
     if (name === "duniya-productivity") renderDuniyaProductivity();
@@ -5515,14 +6165,24 @@
   }
 
   function initNav() {
+    var NAV_TARGET = { deen: "sunnah", hamdard: "chat" };
     document.querySelectorAll(".nav-btn[data-nav]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        setActiveView(btn.dataset.nav);
+        var v = NAV_TARGET[btn.dataset.nav] || btn.dataset.nav;
+        if (v === "duniya") dunyaState.group = null;
+        if (v === "progress") progressTab = "today";
+        setActiveView(v);
       });
     });
     document.getElementById("open-more-from-home").addEventListener("click", function () {
       setActiveView("more");
     });
+    document.getElementById("profile-back").addEventListener("click", function () { setActiveView(lastMainView || "home"); });
+    document.getElementById("vault-back").addEventListener("click", function () { setActiveView("chat"); });
+    document.querySelectorAll("#progress-tabs .subtab").forEach(function (b) {
+      b.addEventListener("click", function () { progressTab = b.dataset.ptab; renderProgressView(); });
+    });
+    initHeaderAvatars();
   }
 
   // ---------- NAME MODAL ----------
@@ -5533,14 +6193,13 @@
   // "Change name" in Profile reuses step 1 on its own and never touches onboarding.
   function initNameModal() {
     var modal = document.getElementById("modal-name");
-    var stepName = document.getElementById("onb-step-name");
-    var stepTimes = document.getElementById("onb-step-times");
+    var STEPS = { name: "onb-step-name", deen: "onb-step-deen", dunya: "onb-step-dunya", times: "onb-step-times" };
     var input = document.getElementById("name-input");
     var saveBtn = document.getElementById("name-save");
     var skipBtn = document.getElementById("name-skip");
     var timesBox = document.getElementById("onb-times-inputs");
     var timesMsg = document.getElementById("onb-times-msg");
-    var mode = "onboarding";
+    var mode = "onboarding"; // "onboarding" | "editName" | "editPriorities"
     var timeInputs = {};
 
     PRAYER_ORDER.forEach(function (n) {
@@ -5556,26 +6215,50 @@
 
     function show(step) {
       modal.classList.remove("hidden");
-      stepName.classList.toggle("hidden", step !== "name");
-      stepTimes.classList.toggle("hidden", step !== "times");
+      Object.keys(STEPS).forEach(function (k) { document.getElementById(STEPS[k]).classList.toggle("hidden", k !== step); });
+      if (mode === "onboarding") AppData.set("onboardingStep", step);
       if (step === "times") {
         var saved = AppData.getPrayerTimes();
         PRAYER_ORDER.forEach(function (n) { timeInputs[n].value = saved ? String(saved[n]).replace(/^(\d):/, "0$1:") : ""; });
         timesMsg.textContent = "";
       }
+      if (step === "deen") buildChips("deen");
+      if (step === "dunya") buildChips("dunya");
     }
     function finish() {
       if (!AppData.set("onboardingCompleted", true)) { showToast("Couldn't save on this device. Please try again."); return false; }
+      AppData.set("onboardingStep", "done");
       modal.classList.add("hidden");
       renderHome();
       renderMore();
       return true;
     }
+    function afterPriority(kind) {
+      if (kind === "deen") { show("dunya"); return; }
+      if (mode === "editPriorities") { modal.classList.add("hidden"); renderHome(); renderMore(); return; }
+      show("times");
+    }
+    function buildChips(kind) {
+      var box = document.getElementById(kind === "deen" ? "onb-deen-chips" : "onb-dunya-chips");
+      var cur = getPriorityChoice(kind);
+      box.innerHTML = "";
+      (kind === "deen" ? DEEN_PRIORITIES : DUNYA_PRIORITIES).forEach(function (p) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "preset-plan-chip" + (cur && cur.id === p.id ? " selected" : "");
+        b.textContent = p.label;
+        b.addEventListener("click", function () {
+          if (!AppData.set(kind === "deen" ? "deenPriority" : "dunyaPriority", { id: p.id, label: p.label })) { showToast("Couldn't save on this device. Please try again."); return; }
+          afterPriority(kind);
+        });
+        box.appendChild(b);
+      });
+    }
 
-    // decide once at startup, from what is saved
+    // decide once at startup, from what is saved (resumes at the step still missing)
     if (!AppData.get("onboardingCompleted")) {
-      if (AppData.getPrayerTimes()) finish();
-      else show(AppData.get("preferredName") ? "times" : "name");
+      if (AppData.getPrayerTimes() && AppData.get("onboardingStep") === undefined) finish();
+      else show(AppData.get("onboardingStep") && AppData.get("onboardingStep") !== "done" ? AppData.get("onboardingStep") : (AppData.get("preferredName") ? "deen" : "name"));
     } else modal.classList.add("hidden");
 
     function saveName() {
@@ -5584,14 +6267,23 @@
       if (!AppData.set("preferredName", val)) { showToast("Couldn't save on this device. Please try again."); return; }
       if (mode === "editName") { modal.classList.add("hidden"); renderHome(); renderMore(); return; }
       renderAvatars();
-      show("times");
+      show("deen");
     }
     skipBtn.addEventListener("click", function () {
       if (mode === "editName") { modal.classList.add("hidden"); return; }
-      show("times");
+      show("deen");
     });
     saveBtn.addEventListener("click", saveName);
     input.addEventListener("keydown", function (e) { if (e.key === "Enter") saveName(); });
+
+    document.getElementById("onb-deen-skip").addEventListener("click", function () {
+      if (mode === "onboarding" && AppData.get("deenPriority") === undefined) AppData.set("deenPriority", null);
+      afterPriority("deen");
+    });
+    document.getElementById("onb-dunya-skip").addEventListener("click", function () {
+      if (mode === "onboarding" && AppData.get("dunyaPriority") === undefined) AppData.set("dunyaPriority", null);
+      afterPriority("dunya");
+    });
 
     document.getElementById("onb-times-save").addEventListener("click", function () {
       var vals = {};
@@ -5603,13 +6295,14 @@
     });
     document.getElementById("onb-times-skip").addEventListener("click", finish);
 
-    // Profile -> Change name (never re-runs onboarding)
+    // Profile -> Change name / Change my priorities (never re-run onboarding)
     window.nuraEditName = function () {
       mode = "editName";
       input.value = AppData.get("preferredName") || "";
       skipBtn.textContent = "Cancel";
       show("name");
     };
+    window.nuraEditPriorities = function () { mode = "editPriorities"; show("deen"); };
   }
 
   // ---------- DUNIYA (everyday self-improvement hub) ----------
@@ -5619,19 +6312,6 @@
   // the two-worlds distinction in the brief. Study/Phone/Sleep/Fitness
   // reuse the exact same picker flow already built into Home rather
   // than duplicating that logic — Duniya just routes into it.
-
-  var DUNIYA_AREAS = [
-    { id: "study", icon: "📚", title: "Study & Focus", sub: "Pick a subject, start a timer.", route: "picker", step: "study-prep" },
-    { id: "phone", icon: "📵", title: "Phone Control", sub: "Name the distraction, take a break from it.", route: "picker", step: "phone-distraction" },
-    { id: "sleep", icon: "🌙", title: "Sleep", sub: "Set a bedtime, track when you wake.", route: "picker", step: "sleep-bedtime" },
-    { id: "fitness", icon: "🏋️", title: "Fitness", sub: "Pick a body part and get moving.", route: "picker", step: "fitness-bodypart" },
-    { id: "habits", icon: "✅", title: "Habits & Discipline", sub: "Build habits without streak pressure.", route: "view", view: "duniya-habits" },
-    { id: "productivity", icon: "📋", title: "Productivity", sub: "Top 3 tasks, one at a time.", route: "view", view: "duniya-productivity" },
-    { id: "wellbeing", icon: "🧘", title: "Mental Wellbeing", sub: "A grounding step when things feel heavy.", route: "view", view: "duniya-wellbeing" },
-    { id: "career", icon: "🎯", title: "Career & Skills", sub: "One small goal, one daily action.", route: "view", view: "duniya-career" },
-    { id: "money", icon: "💰", title: "Money Habits", sub: "A little daily awareness.", route: "view", view: "duniya-money" },
-    { id: "growth", icon: "🌱", title: "Personal Growth", sub: "One practical exercise, not advice.", route: "view", view: "duniya-growth" }
-  ];
 
   function mountPriorityCard(slotId) {
     var card = document.getElementById("priority-card-el");
@@ -5655,93 +6335,6 @@
     }
     pickerStep = { view: stepView, bodyPart: null };
     setActiveView("duniya-tool");
-  }
-
-  function renderDuniyaToday() {
-    var content = document.getElementById("duniya-today-content");
-    var p = getCurrentPriority();
-    content.innerHTML = "";
-    if (!p) {
-      var q = document.createElement("p");
-      q.className = "muted-line";
-      q.textContent = "What do you want to improve today?";
-      content.appendChild(q);
-      return;
-    }
-    var focusLabel = document.createElement("p");
-    focusLabel.className = "salah-next-label";
-    focusLabel.textContent = "Today's focus";
-    content.appendChild(focusLabel);
-    var title = document.createElement("p");
-    title.className = "priority-title";
-    title.style.margin = "0 0 8px";
-    title.textContent = p.title;
-    content.appendChild(title);
-    var pct = computeProgressPercent(p);
-    var progress = document.createElement("p");
-    progress.className = "muted-line";
-    progress.textContent = pct + "% today.";
-    content.appendChild(progress);
-    var contBtn = document.createElement("button");
-    contBtn.className = "btn btn-primary btn-full";
-    contBtn.textContent = "CONTINUE";
-    contBtn.addEventListener("click", function () { setActiveView("home"); });
-    content.appendChild(contBtn);
-  }
-
-  function renderDuniyaQuickActions() {
-    var grid = document.getElementById("duniya-quick-actions");
-    grid.innerHTML = "";
-    var actions = [
-      { label: "Focus Now", step: "study-prep" },
-      { label: "Phone-Free Session", step: "phone-distraction" },
-      { label: "Quick Workout", step: "fitness-bodypart" },
-      { label: "Better Sleep", step: "sleep-bedtime" }
-    ];
-    actions.forEach(function (a) {
-      var btn = document.createElement("button");
-      btn.className = "preset-plan-chip";
-      btn.textContent = a.label;
-      btn.addEventListener("click", function () { startDuniyaQuickAction(a.step); });
-      grid.appendChild(btn);
-    });
-    var planBtn = document.createElement("button");
-    planBtn.className = "preset-plan-chip";
-    planBtn.textContent = "Plan My Day";
-    planBtn.addEventListener("click", function () { setActiveView("duniya-plan"); });
-    grid.appendChild(planBtn);
-    var resetBtn = document.createElement("button");
-    resetBtn.className = "preset-plan-chip";
-    resetBtn.textContent = "Reset My Day";
-    resetBtn.addEventListener("click", function () {
-      showToast("A missed morning doesn't cancel the rest of today — pick one small thing below.");
-      setActiveView("duniya");
-    });
-    grid.appendChild(resetBtn);
-  }
-
-  function renderDuniyaAreaGrid() {
-    var grid = document.getElementById("duniya-area-grid");
-    grid.innerHTML = "";
-    DUNIYA_AREAS.forEach(function (area) {
-      var btn = document.createElement("button");
-      btn.className = "duniya-area-card";
-      btn.innerHTML =
-        '<span class="duniya-area-icon">' + area.icon + '</span>' +
-        '<span class="duniya-area-title">' + area.title + '</span>' +
-        '<span class="duniya-area-sub">' + area.sub + '</span>';
-      btn.addEventListener("click", function () {
-        if (area.route === "picker") startDuniyaQuickAction(area.step);
-        else setActiveView(area.view);
-      });
-      grid.appendChild(btn);
-    });
-  }
-
-  function renderDuniya() {
-    renderDuniyaToday();
-    renderDuniyaQuickActions();
-    renderDuniyaAreaGrid();
   }
 
   // ---- Habits & Discipline ----
@@ -8199,7 +8792,7 @@
       if (name === "duniya-growth" && gwView.screen !== "home") { gwView = { screen: "home" }; renderDuniyaGrowth(); return true; }
       if (name === "duniya-recovery" && rcView.screen !== "main") { rcStopTimer(); rcView = { screen: "main" }; renderRecovery(); return true; }
       if (name === "home") return false;
-      setActiveView(name === "duniya-phone-guard" ? "duniya" : name === "duniya-recovery" ? "duniya-habits" : "home");
+      setActiveView((name.indexOf("duniya-") === 0 ? "duniya" : name === "vault" ? "chat" : "home"));
       return true;
     };
   }
@@ -8736,6 +9329,7 @@
     var rec = { id: uid("urge"), journeyId: journeyId, date: todayKey(), at: new Date().toISOString(), passed: false };
     list.push(rec);
     writeJSON("nc_recovery_urges", list);
+    NuraEvents.log("URGE_LOGGED", { source: "recovery", metadata: { urgeId: rec.id } });
     rcGo("urge", { journeyId: journeyId, urgeId: rec.id, done: {}, timerEnd: null });
   }
 
@@ -8820,6 +9414,7 @@
       var list2 = rcUrges();
       list2.forEach(function (u) { if (u.id === rcView.urgeId) u.passed = true; });
       writeJSON("nc_recovery_urges", list2);
+      NuraEvents.log("RECOVERY_SUCCESS", { source: "recovery", metadata: { urgeId: rcView.urgeId } });
       showToast("Well done for pausing");
       rcGo(rcView.journeyId ? "dash" : "main", rcView.journeyId ? { id: rcView.journeyId } : {});
     });
@@ -8828,8 +9423,7 @@
   }
 
   function initRecovery() {
-    document.getElementById("open-recovery-btn").addEventListener("click", function () { rcView = { screen: "main" }; setActiveView("duniya-recovery"); });
-    document.getElementById("duniya-recovery-back").addEventListener("click", function () { rcStopTimer(); rcView = { screen: "main" }; setActiveView("duniya-habits"); });
+    document.getElementById("duniya-recovery-back").addEventListener("click", function () { rcStopTimer(); rcView = { screen: "main" }; setActiveView("duniya"); });
   }
 
   // Neutral totals only (no habit names) for the Home-adjacent Progress Details.
@@ -11823,7 +12417,7 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     AppData.boot();
-    ProgressStore.importLegacy();
+    ProgressStore.importLegacy(); backfillEvents();
     ProgressStore.onChange(progressRefreshHome);
     ProgressStore.onChange(function () { saveDaySnapshot(); });
     AppData.restoreFromBrowserBackup();
