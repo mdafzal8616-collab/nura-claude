@@ -1081,3 +1081,12 @@ html, body {
 .js-avatar-btn { flex: none; }
 .hadith-extras { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
 .chip-row { display: flex; gap: 8px; margin: 0 0 12px; }
+
+/* ---------- Next Step Engine card ---------- */
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.nextstep-card { display: flex; flex-direction: column; }
+.nextstep-text { font-size: 19px; font-weight: 700; margin-top: 2px; }
+.nextstep-sub { font-size: 13.5px; margin-top: 3px; }
+.nextstep-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+.nextstep-actions .btn { width: auto; flex: 1 1 auto; min-height: 44px; }
+.nextstep-notnow { align-self: flex-start; margin-top: 8px; color: var(--muted); }
