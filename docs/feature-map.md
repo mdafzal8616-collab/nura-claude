@@ -1,5 +1,7 @@
 # NURA feature map (Clean V1 restructure, 2026-09-21)
 
+> **Superseded 2026-09-22**: navigation is now 3 tabs — **Life · Library · Hamdard**. Today→Life (same `home` view). Deen, Dunya and Progress below are no longer tabs; every screen they name is unchanged and still reachable, now through **Library** (search + Pray/Read/Learn/Focus/Sleep/Recover/Save groups) instead. See `docs/decisions.md`, 2026-09-22 entry, for the current structure and the Companion Engine additions (Day Rescue, energy check-in, learned session length). This file is kept for the reasoning behind the Deen/Dunya grouping choices below, which still hold — only the top-level nav around them changed.
+
 Five tabs: **Today · Deen · Dunya · Progress · Hamdard**. Profile and settings sit behind the avatar in every header. Nothing below was deleted with user data; only entry points moved.
 
 | Old feature / screen | New home | Action | Reason |

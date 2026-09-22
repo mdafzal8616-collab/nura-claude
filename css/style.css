@@ -1102,3 +1102,16 @@ html, body {
 /* ---------- Next Step feedback (Later / Not useful) ---------- */
 .nextstep-dismiss { display: flex; gap: 16px; margin-top: 8px; }
 .nextstep-notnow, .nextstep-notuseful { margin: 0; padding: 4px 0; }
+
+/* ---------- Energy check-in (Home) ---------- */
+.energy-label { font-size: 12.5px; color: var(--muted); margin: 14px 0 6px; border-top: 1px solid var(--border); padding-top: 12px; }
+.energy-row { display: flex; gap: 8px; }
+.energy-chip { flex: 1; text-align: center; }
+
+/* ---------- Library ---------- */
+#library-search { margin: 4px 0 16px; }
+.library-group { margin-bottom: 18px; }
+.library-group-title { margin: 0 0 8px; font-size: 13px; font-weight: 800; letter-spacing: 0.06em; color: var(--mint); text-transform: uppercase; }
+.library-group-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.library-item { }
+#library-empty { display: none; text-align: center; color: var(--muted); padding: 24px 0; }

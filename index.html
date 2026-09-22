@@ -32,6 +32,7 @@
     <section class="card prio-card" id="today-priorities-card">
       <h2 class="visually-hidden">Right now</h2>
       <div id="today-priorities"></div>
+      <div id="energy-checkin"></div>
     </section>
 
     <section class="card day-status-card" id="day-status" aria-live="polite"></section>
@@ -125,6 +126,19 @@
       <button class="btn btn-outline btn-full" id="open-progress-details" type="button">View details</button>
       <button class="flow-link" id="open-weekly-report" type="button">See weekly report</button>
     </section>
+  </main>
+
+  <!-- LIBRARY: everything NURA can do, organized by life need, not by Deen/Dunya. Secondary
+       to the Life screen — a front door into the same screens Life already draws from. -->
+  <main class="view hidden" id="view-library" data-view="library">
+    <header class="top-header">
+      <div>
+        <p class="eyebrow">Everything NURA can help with</p>
+        <h1>Library</h1>
+      </div>
+    </header>
+    <input type="text" class="text-input" id="library-search" placeholder="What do you need? (e.g. sleep, savings, workout)">
+    <div id="library-groups"></div>
   </main>
 
   <!-- PROGRESS -->
@@ -614,23 +628,18 @@
     <section class="card" id="memory-content"></section>
   </main>
 
-  <!-- BOTTOM NAV: Today · Deen · Dunya · Progress · Hamdard -->
+  <!-- BOTTOM NAV: the smallest structure that keeps NURA one companion, not a features menu.
+       Life = the day itself (one recommendation + the Fajr-to-Isha flow). Library = every
+       tool NURA has, organized by life need — Deen and Dunya are not separate destinations.
+       Hamdard = conversation. Profile/settings live behind the avatar, not in the bar. -->
   <nav class="bottom-nav">
-    <button class="nav-btn active" data-nav="home" aria-label="Today">
+    <button class="nav-btn active" data-nav="home" aria-label="Life">
       <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>
-      <span>Today</span>
+      <span>Life</span>
     </button>
-    <button class="nav-btn" data-nav="deen" aria-label="Deen">
-      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5 4h14v16l-7-4-7 4z"/></svg>
-      <span>Deen</span>
-    </button>
-    <button class="nav-btn" data-nav="duniya" aria-label="Dunya">
-      <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a13 13 0 0 1 0 18a13 13 0 0 1 0-18z"/></svg>
-      <span>Dunya</span>
-    </button>
-    <button class="nav-btn" data-nav="progress" aria-label="Progress">
-      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
-      <span>Progress</span>
+    <button class="nav-btn" data-nav="library" aria-label="Library">
+      <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <span>Library</span>
     </button>
     <button class="nav-btn" data-nav="hamdard" aria-label="Hamdard">
       <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 4h16v12H7l-3 3z"/></svg>

@@ -3285,32 +3285,40 @@
   }
 
   // =====================================================================
-  // NEXT STEP ENGINE — deterministic, rule-based (no LLM). One primary
-  // recommendation, built fresh each render from real saved data: prayer
-  // times, Salah completions, the user's Deen/Dunya priorities, today's
-  // Priority card, Plan My Day, habits and today's real progress. Nothing
-  // here is invented or randomised, and nothing is asked twice — it only
-  // reads what onboarding and everyday use already saved.
+  // NEXT STEP ENGINE (NuraCompanionEngine) — deterministic, rule-based, no LLM.
+  // One primary recommendation, built fresh each render from real saved data:
+  // prayer times, Salah completions, the user's Deen/Dunya priorities, today's
+  // Priority card, Plan My Day, habits, sleep, an optional energy check-in,
+  // and today's real progress. Nothing here is invented or randomised, and
+  // nothing is asked twice — it only reads what onboarding and everyday use
+  // already saved. `nextStepContext()` is the context snapshot the ladder
+  // below reads from; ranking is just "first real match wins" rather than a
+  // scored model, which is honest about how little history NURA has so far.
   //
   // PRIORITY LADDER (first match wins, unless snoozed — see below):
-  //   1. a focus session already running                  ("in progress")
-  //   2. a Salah whose time has arrived and isn't marked   ("now")
-  //   3. a Salah due very soon (<= PREP_BUFFER minutes)    ("coming up", info only)
-  //   4. a fixed Plan My Day commitment just starting      ("coming up", info only)
-  //   5. today's chosen Priority card (Study/Fitness/Phone), sized to the
-  //      real time left before the next Salah or commitment
-  //   6. recovery: a fixed plan commitment whose window already passed
-  //      and was never marked, or the Dunya priority (Study) with time
-  //      already used today and more room left
-  //   7. the Dunya priority when nothing above applies (a fresh session)
-  //   8. the Deen priority (Qur'an / Hadith / Sunnah) if not done today
-  //   9. an open personal habit
-  //  10. nothing urgent: a short "on track" line, or — once Isha is done
-  //      and the day is winding down — a one-line real reflection
+  //   1. a focus session already running                    ("in progress")
+  //   2. a Salah whose time has arrived and isn't marked     ("now")
+  //   3. a Salah due very soon (<= PREP_BUFFER minutes)      ("coming up", info only)
+  //   4. a fixed Plan My Day commitment just starting        ("coming up", info only)
+  //   5. once Isha is done and the day is winding down, a real one-line reflection
+  //      instead of any suggestion below                     ("today")
+  //   6. today clearly went off plan (evening, most planned items undone):
+  //      one small rescue action, not the rest of the list   ("rescue")
+  //   7. a genuinely bad night, late in the day: wind down, don't push a session
+  //   8. today's chosen Priority card (Study/Fitness/Phone), sized to the real
+  //      time left AND to energy/learned session length (never just the clock)
+  //   9. recovery: a fixed plan commitment whose window already passed and was
+  //      never marked
+  //  10. the Dunya priority (mainly Study) when nothing above applies, same
+  //      energy/learned sizing
+  //  11. the Deen priority (Qur'an / Hadith / Sunnah) if not done today
+  //  12. an open personal habit
+  //  13. nothing urgent: a short "on track" line
   //
-  // "Not now" only hides THAT suggestion for a while (see NEXTSTEP_SNOOZE_MIN);
-  // a real change in the day (a Salah becoming due, a session finishing)
-  // is never held back by a snooze.
+  // "Later"/"Not useful" only hide THAT suggestion for a while (NEXTSTEP_SNOOZE_MIN)
+  // and record feedback per suggestion *kind* for nsLearnedSessionCap (see above) —
+  // a real change in the day (a Salah becoming due, a session finishing) is never
+  // held back by a snooze.
   // =====================================================================
   var PREP_BUFFER_MIN = 10;   // minutes NURA reserves before a Salah to wrap up and get ready
   var MIN_SESSION_MIN = 10;   // shortest session worth suggesting
@@ -3389,8 +3397,62 @@
     all[kind] = row;
     writeJSON(NEXTSTEP_FEEDBACK_KEY, all);
   }
+  // The one real, narrow adaptation this phase makes from that signal: after 3+ Later/Not
+  // useful responses to a given kind of session suggestion, NURA offers a shorter one instead
+  // of assuming the same length is still right — "if 30-minute recommendations are repeatedly
+  // rejected, try 10 minutes." No other inference is drawn from this (no time-of-day learning,
+  // no claims about why) — that needs more real history than exists yet (Phase 3+).
+  function nsLearnedSessionCap(kind) {
+    var row = readJSON(NEXTSTEP_FEEDBACK_KEY, {})[kind];
+    if (!row) return null;
+    return (row.notUseful || 0) + (row.later || 0) >= 3 ? 15 : null;
+  }
 
-  function mk(o) { return o; } // documents the shape: { key, tag, text, sub, primary?:{label,fn}, secondary?:{label,fn}, dismissible?, isStatus? }
+  // ---- energy check-in: a small, optional, honest input — not inferred, just asked ----
+  var ENERGY_KEY = "nc_energy_log";
+  function todayEnergy() { return readJSON(ENERGY_KEY, {})[todayKey()] || null; }
+  function setTodayEnergy(level) {
+    var all = readJSON(ENERGY_KEY, {});
+    all[todayKey()] = level;
+    writeJSON(ENERGY_KEY, all);
+    NuraEvents.log("MOOD_LOGGED", { source: "energy", value: level, metadata: { kind: "energy" } });
+  }
+  // Low energy behaves like a soft session cap, same mechanism as the learned-rejection cap.
+  function nsEnergyCap() { return todayEnergy() === "low" ? 15 : null; }
+  // The smallest of whatever caps currently apply to a given suggestion kind (energy, and what
+  // was learned from repeated dismissals) — a session is only ever shortened, never lengthened.
+  function sessionCapFor(kind) {
+    var caps = [nsEnergyCap(), nsLearnedSessionCap(kind)].filter(function (c) { return c !== null; });
+    return caps.length ? Math.min.apply(null, caps) : null;
+  }
+  function renderEnergyCheckin() {
+    var el = document.getElementById("energy-checkin");
+    if (!el) return;
+    el.innerHTML = "";
+    var cur = todayEnergy();
+    el.appendChild(dfEl("p", "energy-label", "How's your energy?"));
+    var row = dfEl("div", "energy-row");
+    [["low", "Low"], ["okay", "Okay"], ["good", "Good"]].forEach(function (o) {
+      var b = dfEl("button", "preset-plan-chip energy-chip" + (cur === o[0] ? " selected" : ""), o[1]);
+      b.type = "button";
+      b.setAttribute("aria-pressed", cur === o[0] ? "true" : "false");
+      b.addEventListener("click", function () { setTodayEnergy(o[0]); renderEnergyCheckin(); renderNextStep(); });
+      row.appendChild(b);
+    });
+    el.appendChild(row);
+  }
+
+  // ---- sleep-awareness: don't push productivity onto a bad night ----
+  function lastNightSleepHours() {
+    var journeys = journeysAll();
+    var y = getLastNDateKeys(2)[1]; // yesterday's NURA day, where last night's sleep is normally filed
+    var j = journeys[y];
+    if (j && j.sleep && j.sleep.hours) return j.sleep.hours;
+    j = journeys[todayKey()]; // an unusually early night logged under today
+    return (j && j.sleep && j.sleep.hours) ? j.sleep.hours : null;
+  }
+
+  function mk(o) { return o; } // documents the shape: { key, tag, text, sub, primary?:{label,fn}, secondary?:{label,fn}, alreadyDone?:{label,fn}, isStatus? }
 
   // ---- 1. a focus session already running ----
   function nsRunningFocus() {
@@ -3431,6 +3493,49 @@
       sub: found.endTime ? "until " + dfClock(dayAt(found.endTime)) : "on your plan", isStatus: true });
   }
 
+  // ---- a bad night, late in the day: don't push productivity onto poor sleep ----
+  // Real sleep data only — no guessing at "usual" the way the morning line does, because a
+  // single bad night is enough reason to say this, not a pattern that needs history first.
+  function nsPoorSleepWindDown(ctx) {
+    var lateStages = ["evening", "maghrib", "isha", "night", "tahajjud"];
+    if (lateStages.indexOf(dayView.currentId) === -1) return null;
+    if (ctx.now.getHours() < 21) return null; // only once it's genuinely late, not mid-afternoon
+    var hrs = lastNightSleepHours();
+    if (hrs === null || hrs >= 6) return null;
+    if (openSleep()) return null; // already asleep — nothing to suggest
+    return mk({ key: "poor-sleep-" + todayKey(), tag: "LOW ON SLEEP", text: "You slept about " + (Math.round(hrs * 10) / 10) + "h last night.",
+      sub: "Don't chase productivity tonight — prepare for tomorrow and sleep.",
+      primary: { label: "Prepare for sleep", fn: function () { startSleepNow(); } } });
+  }
+
+  // ---- when today has clearly gone off plan: stop tracking the full list, rescue what's left ----
+  // Triggers only in the evening, before Isha (after Isha the calm real reflection takes over
+  // instead), only when there were enough real planned items to call it "off plan" (4+), and
+  // only once most of them (65%+) are still undone — never from a light or half-finished day.
+  function nsDayRescueTarget(ctx) {
+    var p = getCurrentPriority();
+    if (p && p.date === todayKey() && p.status === "pending" && ["study", "fitness", "phone"].indexOf(p.kind) !== -1) {
+      var fit = Math.min(fitSessionMinutes(ctx.availMin) || MIN_SESSION_MIN, 15);
+      return { label: p.title, btn: "Start " + fit + " min", fn: function () { startAdhocFocus(p.title, fit); } };
+    }
+    var task = getPlanActivities().filter(function (a) { return a.status === "pending"; })[0];
+    if (task) return { label: task.name, btn: "Mark done", fn: function () { setPlanActivityStatus(task.id, "done"); } };
+    var dp = getPriorityChoice("deen");
+    if (dp && dp.id === "quran" && !todayHasQuran()) return { label: "read a little Qur'an", btn: "Open", fn: function () { openQuranFromHome(null, true); } };
+    return null;
+  }
+  function nsDayRescue(ctx) {
+    if (["evening", "maghrib"].indexOf(dayView.currentId) === -1) return null;
+    var ds = progressToday();
+    if (!ds.total || ds.total < 4 || (ds.done / ds.total) >= 0.35) return null;
+    var target = nsDayRescueTarget(ctx);
+    if (!target) return null;
+    return mk({ key: "rescue-" + todayKey(), kind: "day-rescue", tag: "TODAY DIDN'T GO AS PLANNED",
+      text: "Forget the full list. " + (ctx.ev ? "Before " + ctx.ev.label + ": " : "Just this: ") + target.label + ".",
+      sub: "That's enough for today.",
+      primary: { label: target.btn, fn: target.fn } });
+  }
+
   // ---- 5 & 6a. today's chosen Priority card (Study / Fitness / Phone) ----
   function nsPendingPriorityCard(ctx) {
     var p = getCurrentPriority();
@@ -3438,17 +3543,20 @@
     if (["study", "fitness", "phone"].indexOf(p.kind) === -1) return null;
     if (focusState.linkedPriorityId === p.id) return null; // already running is covered by nsRunningFocus; paused shows in the Priority card itself
     var need = p.minutes || getFocusDurationMinutes();
-    if (ctx.availMin === null || need + PREP_BUFFER_MIN <= ctx.availMin) {
+    var cap = sessionCapFor("priority-card");
+    var alreadyDone = { label: "Already done", fn: function () { markPriorityStatusToday("completed"); } };
+    if ((ctx.availMin === null || need + PREP_BUFFER_MIN <= ctx.availMin) && (!cap || need <= cap)) {
       return mk({ key: "priority-" + p.id, kind: "priority-card", tag: "NEXT", text: p.title,
         sub: ctx.ev ? "You have time before " + ctx.ev.label : "Today's focus",
-        primary: { label: "Start", fn: function () { startFocusForPriority(); } } });
+        primary: { label: "Start", fn: function () { startFocusForPriority(); } }, alreadyDone: alreadyDone });
     }
-    var fit = fitSessionMinutes(ctx.availMin, need);
+    var fit = fitSessionMinutes(ctx.availMin, cap ? Math.min(need, cap) : need);
     if (!fit) return null;
-    return mk({ key: "priority-chunk-" + p.id + "-" + fit, kind: "priority-card", tag: "TIGHT ON TIME",
-      text: "Only " + ctx.availMin + " min before " + ctx.ev.label + " — not quite enough for the full " + need + " min.",
-      sub: "Want to do " + fit + " minutes now and pick up the rest later?",
-      primary: { label: "Start " + fit + " min", fn: function () { startAdhocFocus(p.title, fit); } } });
+    var timeLimited = ctx.availMin !== null && need + PREP_BUFFER_MIN > ctx.availMin;
+    return mk({ key: "priority-chunk-" + p.id + "-" + fit, kind: "priority-card", tag: timeLimited ? "TIGHT ON TIME" : "KEEPING IT SHORT",
+      text: timeLimited ? ("Only " + ctx.availMin + " min before " + ctx.ev.label + " — not quite enough for the full " + need + " min.") : p.title,
+      sub: timeLimited ? "Want to do " + fit + " minutes now and pick up the rest later?" : (cap === nsEnergyCap() ? "Your energy's a bit low — let's keep this to " + fit + " minutes." : "Let's try a shorter " + fit + "-minute session today."),
+      primary: { label: "Start " + fit + " min", fn: function () { startAdhocFocus(p.title, fit); } }, alreadyDone: alreadyDone });
   }
 
   // ---- 6b. recovery: a fixed commitment whose window already passed, never marked ----
@@ -3471,14 +3579,15 @@
     var p = getCurrentPriority();
     if (p && p.date === todayKey() && p.status === "pending" && p.kind === "study") return null; // covered above
     var done = todayStudyMinutes();
-    var fit = fitSessionMinutes(ctx.availMin);
+    var fit = fitSessionMinutes(ctx.availMin, sessionCapFor("study-session"));
     if (!fit) return null;
     var text = done > 0
       ? "You've studied " + done + " min today. Want another " + fit + " min?"
       : "You can fit a " + fit + "-minute focused study session" + (ctx.ev ? " before " + ctx.ev.label + "." : ".");
     return mk({ key: "study-dunya-" + todayKey() + "-" + fit + "-" + done, kind: "study-session", tag: done > 0 ? "KEEP GOING" : "NEXT", text: text,
       sub: ctx.ev ? "in " + ctx.availMin + " min" : "",
-      primary: { label: "Start " + fit + " min", fn: function () { startAdhocFocus("Study", fit); } } });
+      primary: { label: "Start " + fit + " min", fn: function () { startAdhocFocus("Study", fit); } },
+      alreadyDone: { label: "Already done", fn: function () { ProgressStore.record({ categoryId: "study_focus", categoryTitle: "Study & Focus", sectionId: "focus_sessions", actionId: "adhoc_focus", title: "Study", metricType: "duration", unit: "min", value: fit, source: "focus" }); } } });
   }
 
   // ---- 8. the Deen priority (Qur'an / Hadith / Sunnah) if not done today ----
@@ -3534,7 +3643,7 @@
     var running = nsRunningFocus();
     if (running) return running;
     var ctx = nextStepContext();
-    var chain = [nsSalahDue, nsSalahSoon, nsCommitmentStarting, nsNightReflection, nsPendingPriorityCard, nsRecoverMissedTask, nsDunyaPriority, nsDeenPriority, nsOpenHabit, nsFallback];
+    var chain = [nsSalahDue, nsSalahSoon, nsCommitmentStarting, nsNightReflection, nsDayRescue, nsPoorSleepWindDown, nsPendingPriorityCard, nsRecoverMissedTask, nsDunyaPriority, nsDeenPriority, nsOpenHabit, nsFallback];
     for (var i = 0; i < chain.length; i++) {
       var s = chain[i](ctx);
       if (s && !nsSnoozed(s.key)) return s;
@@ -3551,13 +3660,19 @@
     card.appendChild(dfEl("span", "day-next-label", s.tag));
     card.appendChild(dfEl("p", "prio-main nextstep-text", s.text));
     if (s.sub) card.appendChild(dfEl("p", "prio-sub nextstep-sub", s.sub));
-    if (s.primary || s.secondary) {
+    if (s.primary || s.secondary || s.alreadyDone) {
       var row = dfEl("div", "nextstep-actions");
       if (s.primary) {
         var pb = dfEl("button", "btn btn-primary nextstep-primary", s.primary.label);
         pb.type = "button";
         pb.addEventListener("click", function () { s.primary.fn(); renderNextStep(); });
         row.appendChild(pb);
+      }
+      if (s.alreadyDone) {
+        var ad = dfEl("button", "btn btn-outline nextstep-secondary", s.alreadyDone.label);
+        ad.type = "button";
+        ad.addEventListener("click", function () { s.alreadyDone.fn(); showToast("Marked done"); renderNextStep(); });
+        row.appendChild(ad);
       }
       if (s.secondary) {
         var sb = dfEl("button", "btn btn-outline nextstep-secondary", s.secondary.label);
@@ -3851,6 +3966,76 @@
   }
 
   // =====================================================================
+  // LIBRARY — the front door into everything NURA can do, organized by real
+  // life need (Pray, Read, Focus, Recover, Plan, Sleep, Move, Save, Learn),
+  // not by a Deen/Dunya split the user never asked for. Every item here
+  // routes into a screen that already exists and already keeps its own data
+  // — Library adds no new storage, it's just a better way in. Secondary to
+  // Life: nothing here is duplicated on Home, Home just uses these same
+  // screens' data to decide what to surface on its own.
+  // =====================================================================
+  var LIBRARY_GROUPS = [
+    { title: "Pray", items: [
+      { label: "Salah", keywords: "salah prayer namaz fajr dhuhr asr maghrib isha", fn: function () { setActiveView("sunnah"); switchSunnahSubtab("salah"); } },
+      { label: "Sunnah & Duas", keywords: "sunnah dua duas akhlaq adhkar dhikr routine practice character", fn: function () { setActiveView("sunnah"); switchSunnahSubtab("routine"); } }
+    ] },
+    { title: "Read & Learn", items: [
+      { label: "Qur'an", keywords: "quran qur'an read surah ayah arabic", fn: function () { setActiveView("sunnah"); switchSunnahSubtab("quran"); } },
+      { label: "Hadith", keywords: "hadith learn lesson quiz islam islamic", fn: function () { setActiveView("sunnah"); switchSunnahSubtab("hadith"); } }
+    ] },
+    { title: "Focus & Plan", items: [
+      { label: "Study & Focus", keywords: "study focus timer session concentrate", fn: function () { startDuniyaQuickAction("study-prep"); } },
+      { label: "Plan My Day", keywords: "plan my day schedule commitments college work tuition", fn: function () { setActiveView("duniya-plan"); } },
+      { label: "Productivity", keywords: "productivity top 3 tasks todo", fn: function () { setActiveView("duniya-productivity"); } },
+      { label: "Phone Control", keywords: "phone control distraction screen time social media", fn: function () { startDuniyaQuickAction("phone-distraction"); } }
+    ] },
+    { title: "Sleep & Move", items: [
+      { label: "Sleep", keywords: "sleep bedtime wake rest tired", fn: function () { startDuniyaQuickAction("sleep-bedtime"); } },
+      { label: "Fitness", keywords: "fitness workout gym exercise stretch move", fn: function () { startDuniyaQuickAction("fitness-bodypart"); } }
+    ] },
+    { title: "Recover & Reflect", items: [
+      { label: "Recovery", keywords: "recovery urge streak quit habit slip smoking porn", fn: function () { rcView = { screen: "main" }; setActiveView("duniya-recovery"); } },
+      { label: "Habits & Discipline", keywords: "habits discipline routine consistency", fn: function () { setActiveView("duniya-habits"); } },
+      { label: "Mental Wellbeing", keywords: "wellbeing mental stress grounding calm anxious", fn: function () { setActiveView("duniya-wellbeing"); } }
+    ] },
+    { title: "Save & Grow", items: [
+      { label: "Money Habits", keywords: "money savings save goal spending avoided", fn: function () { setActiveView("duniya-money"); } },
+      { label: "Career & Skills", keywords: "career skills communication work job", fn: function () { setActiveView("duniya-career"); } },
+      { label: "Personal Growth", keywords: "personal growth confidence reflection", fn: function () { setActiveView("duniya-growth"); } }
+    ] },
+    { title: "Your Progress", items: [
+      { label: "Progress", keywords: "progress weekly report stats week today patterns", fn: function () { progressTab = "today"; setActiveView("progress"); } }
+    ] }
+  ];
+
+  function renderLibrary(filterText) {
+    var root = document.getElementById("library-groups");
+    var empty = document.getElementById("library-empty");
+    if (!root) return;
+    if (!empty) { empty = dfEl("p", "", "Nothing matches that yet."); empty.id = "library-empty"; root.parentNode.insertBefore(empty, root.nextSibling); }
+    root.innerHTML = "";
+    var q = (filterText || "").trim().toLowerCase();
+    var anyShown = false;
+    LIBRARY_GROUPS.forEach(function (grp) {
+      var items = q ? grp.items.filter(function (it) { return (it.label + " " + it.keywords).toLowerCase().indexOf(q) !== -1; }) : grp.items;
+      if (!items.length) return;
+      anyShown = true;
+      var wrap = dfEl("div", "library-group");
+      wrap.appendChild(dfEl("h2", "library-group-title", grp.title));
+      var grid = dfEl("div", "library-group-grid");
+      items.forEach(function (it) {
+        var b = dfEl("button", "preset-plan-chip library-item", it.label);
+        b.type = "button";
+        b.addEventListener("click", it.fn);
+        grid.appendChild(b);
+      });
+      wrap.appendChild(grid);
+      root.appendChild(wrap);
+    });
+    empty.style.display = anyShown ? "none" : "block";
+  }
+
+  // =====================================================================
   // PROGRESS (Today · Week · Patterns) — one place, real data only
   // =====================================================================
   var progressTab = "today";
@@ -3931,9 +4116,9 @@
 
   // ---- header avatars on every main screen; Profile lives behind them ----
   var lastMainView = "home";
-  var MAIN_VIEWS = ["home", "sunnah", "duniya", "progress", "chat"];
+  var MAIN_VIEWS = ["home", "library", "sunnah", "duniya", "progress", "chat"];
   function initHeaderAvatars() {
-    ["sunnah", "duniya", "progress", "chat"].forEach(function (v) {
+    ["library", "sunnah", "duniya", "progress", "chat"].forEach(function (v) {
       var hdr = document.querySelector('#view-' + v + ' .top-header');
       if (!hdr || hdr.querySelector(".js-avatar-btn")) return;
       var b = dfEl("button", "avatar-btn js-avatar-btn"); b.type = "button"; b.setAttribute("aria-label", "Profile and settings");
@@ -3957,6 +4142,7 @@
     renderDayFlow(); // sets dayView.currentId — read below, so the morning line matches today's real stage
     document.getElementById("home-motivation").textContent = morningSleepInsight() || HOME_MOTIVATION;
     renderNextStep();
+    renderEnergyCheckin();
   }
 
   // A morning line built from real sleep history, never a guess. Only speaks up when last
@@ -6079,15 +6265,29 @@
 
   var CHAT_OPTIONS = [
     {
+      // Uses the same real context the Life screen does (today's actual completed/pending
+      // items, Plan My Day, today's Priority) instead of a generic line — Hamdard should
+      // know what's actually happened today, not just say something comforting.
       id: "wasted-day",
       label: "I wasted my day",
       respond: function () {
-        return [
-          "That happens — the day isn't over yet. What still matters today, even something small?",
-          "Pick one small thing and start now. When the timer ends I'll ask if it's actually done — not just if the timer finished."
-        ];
+        var ds = progressToday();
+        var ctx = nextStepContext();
+        var lines = [];
+        lines.push(ds.total && ds.done > 0
+          ? "You've still done " + ds.done + " of " + ds.total + " things today — it's not a blank day."
+          : "That happens — the day isn't over yet.");
+        var target = nsDayRescueTarget(ctx);
+        if (target) lines.push("Forget the rest of the list. " + (ctx.ev ? "Before " + ctx.ev.label + ": " : "Just this: ") + target.label + ". That's enough.");
+        else lines.push("Pick one small thing and start now. When the timer ends I'll ask if it's actually done — not just if the timer finished.");
+        return lines;
       },
-      actionSuggestion: { label: "Start a 15-minute session", title: "Do the one thing that matters today (15 minutes)", minutes: 15 }
+      actionSuggestion: function () {
+        var ctx = nextStepContext();
+        var target = nsDayRescueTarget(ctx);
+        if (target) return { label: target.btn + ": " + target.label, fn: target.fn };
+        return { label: "Start a 15-minute session", title: "Do the one thing that matters today (15 minutes)", minutes: 15 };
+      }
     },
     {
       id: "want-smoke",
@@ -6168,12 +6368,15 @@
       shieldBtn.addEventListener("click", openShield);
       area.appendChild(shieldBtn);
     }
-    if (opt.actionSuggestion) {
+    // actionSuggestion may be a plain object or, where it should reflect the real day
+    // (Companion Engine context, not a fixed line), a function returning one.
+    var as = typeof opt.actionSuggestion === "function" ? opt.actionSuggestion() : opt.actionSuggestion;
+    if (as) {
       var actionBtn = document.createElement("button");
       actionBtn.className = "chat-action-btn";
-      actionBtn.textContent = opt.actionSuggestion.label;
+      actionBtn.textContent = as.label;
       actionBtn.addEventListener("click", function () {
-        quickStartFocusFromChat(opt.actionSuggestion.title, opt.actionSuggestion.minutes);
+        if (as.fn) { as.fn(); setActiveView("home"); } else quickStartFocusFromChat(as.title, as.minutes);
       });
       area.appendChild(actionBtn);
     }
@@ -6469,13 +6672,18 @@
     document.querySelectorAll(".view").forEach(function (v) {
       v.classList.toggle("hidden", v.dataset.view !== name);
     });
-    var navHighlight = name.indexOf("duniya") === 0 ? "duniya" : name === "sunnah" ? "deen" : (name === "chat" || name === "vault") ? "hamdard" : (name === "more" || name === "memory") ? "" : name;
+    // Deen/Dunya/Progress are all reached through Library now, not separate nav destinations —
+    // they highlight the Library tab, the same as Library itself.
+    var navHighlight = name === "library" || name.indexOf("duniya") === 0 || name === "sunnah" || name === "progress" ? "library"
+      : (name === "chat" || name === "vault") ? "hamdard"
+      : (name === "more" || name === "memory") ? "" : name;
     if (MAIN_VIEWS.indexOf(name) !== -1) lastMainView = name;
     document.querySelectorAll(".nav-btn[data-nav]").forEach(function (btn) {
       btn.classList.toggle("active", btn.dataset.nav === navHighlight);
     });
     if (name === "home") { mountPriorityCard("priority-card-home-slot"); renderHome(); }
     if (name === "duniya-tool") { mountPriorityCard("priority-card-duniya-slot"); renderTodaysPriority(); }
+    if (name === "library") { var search = document.getElementById("library-search"); if (search) search.value = ""; renderLibrary(""); }
     if (name === "sunnah") { renderSalahPanel(); renderSunnahToday(); renderRoutine(); renderAkhlaq(); renderVerseOfDay(); renderHadithList(); renderDuaCategories(); updateSunnahReturn(); }
     if (name === "progress") renderProgressView();
     if (name === "chat") renderChatOptions();
@@ -6498,15 +6706,14 @@
   }
 
   function initNav() {
-    var NAV_TARGET = { deen: "sunnah", hamdard: "chat" };
+    var NAV_TARGET = { hamdard: "chat" };
     document.querySelectorAll(".nav-btn[data-nav]").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var v = NAV_TARGET[btn.dataset.nav] || btn.dataset.nav;
-        if (v === "duniya") dunyaState.group = null;
-        if (v === "progress") progressTab = "today";
-        setActiveView(v);
+        setActiveView(NAV_TARGET[btn.dataset.nav] || btn.dataset.nav);
       });
     });
+    var librarySearch = document.getElementById("library-search");
+    if (librarySearch) librarySearch.addEventListener("input", function () { renderLibrary(librarySearch.value); });
     document.getElementById("open-more-from-home").addEventListener("click", function () {
       setActiveView("more");
     });
