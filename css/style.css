@@ -1090,3 +1090,15 @@ html, body {
 .nextstep-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
 .nextstep-actions .btn { width: auto; flex: 1 1 auto; min-height: 44px; }
 .nextstep-notnow { align-self: flex-start; margin-top: 8px; color: var(--muted); }
+
+/* ---------- Weekly "This week" summary (real counts, not a score) ---------- */
+.week-summary-title { margin: 4px 0 8px; font-size: 13px; font-weight: 800; letter-spacing: 0.06em; color: var(--mint); text-transform: uppercase; }
+.week-summary-row { display: flex; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--border); font-size: 15px; }
+.week-summary-row:first-child { border-top: 0; }
+.week-summary-label { color: var(--muted); }
+.week-summary-value { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+#progress-day-by-day { margin-top: 4px; }
+
+/* ---------- Next Step feedback (Later / Not useful) ---------- */
+.nextstep-dismiss { display: flex; gap: 16px; margin-top: 8px; }
+.nextstep-notnow, .nextstep-notuseful { margin: 0; padding: 4px 0; }

@@ -1689,11 +1689,102 @@
   // The weekly report is now the Progress screen (Today / Week / Patterns).
   function openProgressDetails() { setActiveView("progress"); }
 
+  // A week is a person's life, not one score. Real counts and averages, compared to the
+  // week before where that comparison is meaningful (study sessions, sleep average) and
+  // a plain real total where it isn't (Salah logged, money saved) — never a percentage
+  // standing in for the whole week, and never a line for something with no real data.
+  function weeklySum(dates, categoryId) {
+    var sum = 0, count = 0;
+    dates.forEach(function (d) {
+      ProgressStore.getDay(d).forEach(function (r) { if (r.categoryId === categoryId) { sum += Number(r.value) || 0; count++; } });
+    });
+    return { sum: sum, count: count };
+  }
+  function weeklySleepAvg(dates) {
+    var journeys = journeysAll(), total = 0, nights = 0;
+    dates.forEach(function (d) { var j = journeys[d]; if (j && j.sleep && j.sleep.hours) { total += j.sleep.hours; nights++; } });
+    return nights ? { avg: total / nights, nights: nights } : null;
+  }
+  function weeklySalahLogged(dates) {
+    var comps = readJSON("nc_salah_completions", {}), done = 0;
+    dates.forEach(function (d) { var c = comps[d]; if (c) PRAYER_ORDER.forEach(function (n) { if (c[n]) done++; }); });
+    return done;
+  }
+  function fmtHM(hours) { var h = Math.floor(hours), m = Math.round((hours - h) * 60); return h + "h " + m + "m"; }
+  function renderWeekSummary(container) {
+    var thisWeek = getLastNDateKeys(7), prevWeek = getLastNDateKeys(14).slice(7);
+    var rows = [];
+
+    var studyT = weeklySum(thisWeek, "study_focus"), studyP = weeklySum(prevWeek, "study_focus");
+    if (studyT.count) {
+      var sd = studyT.count - studyP.count;
+      rows.push({ label: "Study", value: studyT.count + " session" + (studyT.count === 1 ? "" : "s") + (sd !== 0 ? (sd > 0 ? " ↑" : " ↓") : "") });
+    }
+
+    var sleepT = weeklySleepAvg(thisWeek), sleepP = weeklySleepAvg(prevWeek);
+    if (sleepT) {
+      var line = "Average " + fmtHM(sleepT.avg);
+      if (sleepP) {
+        var diffMin = Math.round((sleepT.avg - sleepP.avg) * 60);
+        if (Math.abs(diffMin) >= 5) line += " " + (diffMin < 0 ? "↓ " : "↑ ") + Math.abs(diffMin) + "m";
+      }
+      rows.push({ label: "Sleep", value: line });
+    }
+
+    var salahN = weeklySalahLogged(thisWeek);
+    if (salahN) rows.push({ label: "Salah", value: salahN + "/35 logged" });
+
+    var moneyT = weeklySum(thisWeek, "money");
+    if (moneyT.sum) rows.push({ label: "Savings", value: fmtRupee(moneyT.sum) + " added" });
+
+    if (pgNative()) {
+      var pgWeek = pgSummarize(pgStats(), thisWeek), pgPrev = pgSummarize(pgStats(), prevWeek);
+      if (pgWeek.hasData) {
+        var line2 = pgFmtDur(pgWeek.ms) + "/day avg";
+        if (pgPrev.hasData) {
+          var diff = pgWeek.ms - pgPrev.ms;
+          if (diff !== 0) line2 = (diff < 0 ? "↓ " : "↑ ") + pgFmtDur(Math.abs(diff)) + "/day";
+        }
+        rows.push({ label: "Phone use", value: line2 });
+      }
+    }
+
+    var head = document.createElement("h3");
+    head.className = "week-summary-title";
+    head.textContent = "This week";
+    container.appendChild(head);
+    if (!rows.length) {
+      var e = document.createElement("p");
+      e.className = "muted-line";
+      e.textContent = "Not enough data yet.";
+      container.appendChild(e);
+      return;
+    }
+    rows.forEach(function (r) {
+      var row = document.createElement("div");
+      row.className = "week-summary-row";
+      row.innerHTML = "";
+      var l = document.createElement("span"); l.className = "week-summary-label"; l.textContent = r.label;
+      var v = document.createElement("span"); v.className = "week-summary-value"; v.textContent = r.value;
+      row.appendChild(l); row.appendChild(v);
+      container.appendChild(row);
+    });
+  }
+
   function renderProgressBody() {
     var todayEl = document.getElementById("progress-details-today");
     todayEl.innerHTML = "";
-    var weekEl = document.getElementById("progress-details-week");
-    weekEl.innerHTML = "";
+    var weekTop = document.getElementById("progress-details-week");
+    weekTop.innerHTML = "";
+    renderWeekSummary(weekTop);
+    var dbdHead = document.createElement("h3");
+    dbdHead.className = "week-summary-title";
+    dbdHead.textContent = "Day by day";
+    weekTop.appendChild(dbdHead);
+    // detail rows below (day-by-day + category rollups) go into this block, under the real summary above
+    var weekEl = document.createElement("div");
+    weekEl.id = "progress-day-by-day";
+    weekTop.appendChild(weekEl);
 
     function progRow(container, label, value, strong) {
       var row = document.createElement("div");
@@ -3270,11 +3361,34 @@
     return { now: now, t: t, comps: comps, ev: ev, availMin: availMin };
   }
 
+  // A map of key -> until, so dismissing one suggestion never clears an earlier dismissal
+  // still in effect. Expired entries are dropped on write to keep this from growing forever.
   function nsSnoozed(key) {
-    var s = readJSON(NEXTSTEP_SNOOZE_KEY, null);
-    return !!(s && s.key === key && new Date(s.until) > new Date());
+    var m = readJSON(NEXTSTEP_SNOOZE_KEY, {});
+    return !!(m[key] && new Date(m[key]) > new Date());
   }
-  function nsSnooze(key) { writeJSON(NEXTSTEP_SNOOZE_KEY, { key: key, until: new Date(Date.now() + NEXTSTEP_SNOOZE_MIN * 60000).toISOString() }); }
+  function nsSnooze(key) {
+    var m = readJSON(NEXTSTEP_SNOOZE_KEY, {});
+    var now = new Date();
+    Object.keys(m).forEach(function (k) { if (new Date(m[k]) <= now) delete m[k]; });
+    m[key] = new Date(Date.now() + NEXTSTEP_SNOOZE_MIN * 60000).toISOString();
+    writeJSON(NEXTSTEP_SNOOZE_KEY, m);
+  }
+
+  // A light, local signal for the future Personal Pattern Engine (Phase 3+): per suggestion
+  // *kind* (not the one-off key), how many times the user picked "Not useful" vs actually
+  // did it. Nothing reads or acts on this yet — completing a suggestion is already a real,
+  // positive signal via the normal event log; this only captures the negative one, honestly
+  // unused until a pattern engine exists to consume it.
+  var NEXTSTEP_FEEDBACK_KEY = "nc_nextstep_feedback";
+  function nsFeedback(kind, verdict) {
+    if (!kind) return;
+    var all = readJSON(NEXTSTEP_FEEDBACK_KEY, {});
+    var row = all[kind] || { notUseful: 0, later: 0 };
+    row[verdict] = (row[verdict] || 0) + 1;
+    all[kind] = row;
+    writeJSON(NEXTSTEP_FEEDBACK_KEY, all);
+  }
 
   function mk(o) { return o; } // documents the shape: { key, tag, text, sub, primary?:{label,fn}, secondary?:{label,fn}, dismissible?, isStatus? }
 
@@ -3292,7 +3406,7 @@
     for (var i = 0; i < PRAYER_ORDER.length; i++) {
       var n = PRAYER_ORDER[i];
       if (!ctx.comps[n] && ctx.t[n.toLowerCase()] <= ctx.now) {
-        return mk({ key: "salah-" + n + "-" + todayKey(), tag: "NOW", text: "Pray " + n, sub: "Time was " + dfClock(ctx.t[n.toLowerCase()]),
+        return mk({ key: "salah-" + n + "-" + todayKey(), kind: "salah", tag: "NOW", text: "Pray " + n, sub: "Time was " + dfClock(ctx.t[n.toLowerCase()]),
           primary: { label: "Mark " + n + " done", fn: (function (nm) { return function () { setSalahComplete(nm); }; })(n) } });
       }
     }
@@ -3325,13 +3439,13 @@
     if (focusState.linkedPriorityId === p.id) return null; // already running is covered by nsRunningFocus; paused shows in the Priority card itself
     var need = p.minutes || getFocusDurationMinutes();
     if (ctx.availMin === null || need + PREP_BUFFER_MIN <= ctx.availMin) {
-      return mk({ key: "priority-" + p.id, tag: "NEXT", text: p.title,
+      return mk({ key: "priority-" + p.id, kind: "priority-card", tag: "NEXT", text: p.title,
         sub: ctx.ev ? "You have time before " + ctx.ev.label : "Today's focus",
         primary: { label: "Start", fn: function () { startFocusForPriority(); } } });
     }
     var fit = fitSessionMinutes(ctx.availMin, need);
     if (!fit) return null;
-    return mk({ key: "priority-chunk-" + p.id + "-" + fit, tag: "TIGHT ON TIME",
+    return mk({ key: "priority-chunk-" + p.id + "-" + fit, kind: "priority-card", tag: "TIGHT ON TIME",
       text: "Only " + ctx.availMin + " min before " + ctx.ev.label + " — not quite enough for the full " + need + " min.",
       sub: "Want to do " + fit + " minutes now and pick up the rest later?",
       primary: { label: "Start " + fit + " min", fn: function () { startAdhocFocus(p.title, fit); } } });
@@ -3344,7 +3458,7 @@
     })[0];
     if (!missed) return null;
     var fit = fitSessionMinutes(ctx.availMin) || MIN_SESSION_MIN;
-    return mk({ key: "recover-" + missed.id, tag: "RECOVER", text: missed.name + " didn't happen as planned.",
+    return mk({ key: "recover-" + missed.id, kind: "recover", tag: "RECOVER", text: missed.name + " didn't happen as planned.",
       sub: (ctx.ev ? "There's still time before " + ctx.ev.label : "There's still time today") + " — want to do a shorter version now?",
       primary: { label: "Do " + fit + " min now", fn: function () { startAdhocFocus(missed.name, fit); } },
       secondary: { label: "Mark it done", fn: function () { setPlanActivityStatus(missed.id, "done"); } } });
@@ -3362,7 +3476,7 @@
     var text = done > 0
       ? "You've studied " + done + " min today. Want another " + fit + " min?"
       : "You can fit a " + fit + "-minute focused study session" + (ctx.ev ? " before " + ctx.ev.label + "." : ".");
-    return mk({ key: "study-dunya-" + todayKey() + "-" + fit + "-" + done, tag: done > 0 ? "KEEP GOING" : "NEXT", text: text,
+    return mk({ key: "study-dunya-" + todayKey() + "-" + fit + "-" + done, kind: "study-session", tag: done > 0 ? "KEEP GOING" : "NEXT", text: text,
       sub: ctx.ev ? "in " + ctx.availMin + " min" : "",
       primary: { label: "Start " + fit + " min", fn: function () { startAdhocFocus("Study", fit); } } });
   }
@@ -3371,9 +3485,9 @@
   function nsDeenPriority() {
     var dp = getPriorityChoice("deen");
     if (!dp) return null;
-    if (dp.id === "quran" && !todayHasQuran()) return mk({ key: "deen-quran-" + todayKey(), tag: "NEXT", text: "Read a little Qur'an", sub: "Your Deen priority", primary: { label: "Open", fn: function () { openQuranFromHome(null, true); } } });
-    if (dp.id === "learn" && !todayHasHadith()) return mk({ key: "deen-learn-" + todayKey(), tag: "NEXT", text: "Learn one hadith", sub: "Your Deen priority", primary: { label: "Open", fn: function () { openFromHome("hadith"); } } });
-    if (dp.id === "sunnah" && !todayHasSunnah()) return mk({ key: "deen-sunnah-" + todayKey(), tag: "NEXT", text: "Do today's Sunnah", sub: "Your Deen priority", primary: { label: "Open", fn: function () { openFromHome("routine"); } } });
+    if (dp.id === "quran" && !todayHasQuran()) return mk({ key: "deen-quran-" + todayKey(), kind: "deen-priority", tag: "NEXT", text: "Read a little Qur'an", sub: "Your Deen priority", primary: { label: "Open", fn: function () { openQuranFromHome(null, true); } } });
+    if (dp.id === "learn" && !todayHasHadith()) return mk({ key: "deen-learn-" + todayKey(), kind: "deen-priority", tag: "NEXT", text: "Learn one hadith", sub: "Your Deen priority", primary: { label: "Open", fn: function () { openFromHome("hadith"); } } });
+    if (dp.id === "sunnah" && !todayHasSunnah()) return mk({ key: "deen-sunnah-" + todayKey(), kind: "deen-priority", tag: "NEXT", text: "Do today's Sunnah", sub: "Your Deen priority", primary: { label: "Open", fn: function () { openFromHome("routine"); } } });
     return null;
   }
 
@@ -3382,7 +3496,7 @@
     var log = getHabitLogToday();
     var open = getHabits().filter(function (h) { return log[h.id] !== "done"; })[0];
     if (!open) return null;
-    return mk({ key: "habit-" + open.id + "-" + todayKey(), tag: "SMALL WIN", text: open.name, sub: "Your habit",
+    return mk({ key: "habit-" + open.id + "-" + todayKey(), kind: "habit", tag: "SMALL WIN", text: open.name, sub: "Your habit",
       primary: { label: "Done", fn: function () { setHabitStatus(open.id, "done"); } } });
   }
 
@@ -3454,10 +3568,16 @@
       card.appendChild(row);
     }
     if (!s.isStatus) {
-      var not = dfEl("button", "flow-link nextstep-notnow", "Not now");
+      var dismiss = dfEl("div", "nextstep-dismiss");
+      var not = dfEl("button", "flow-link nextstep-notnow", "Later");
       not.type = "button";
-      not.addEventListener("click", function () { nsSnooze(s.key); renderNextStep(); });
-      card.appendChild(not);
+      not.addEventListener("click", function () { nsSnooze(s.key); if (s.kind) nsFeedback(s.kind, "later"); renderNextStep(); });
+      dismiss.appendChild(not);
+      var nu = dfEl("button", "flow-link nextstep-notuseful", "Not useful");
+      nu.type = "button";
+      nu.addEventListener("click", function () { nsSnooze(s.key); if (s.kind) nsFeedback(s.kind, "notUseful"); renderNextStep(); });
+      dismiss.appendChild(nu);
+      card.appendChild(dismiss);
     }
     el.appendChild(card);
     var q = dfEl("button", "btn btn-outline btn-full prio-quick", "+ Quick log");
@@ -3831,12 +3951,32 @@
     var name = AppData.get("preferredName");
     document.getElementById("home-greeting").textContent = name ? ("Assalamu Alaikum, " + name) : "Assalamu Alaikum";
     renderAvatars();
-    document.getElementById("home-motivation").textContent = HOME_MOTIVATION;
     document.getElementById("journey-badge-text").textContent = "DAY " + getJourneyDay() + " OF YOUR JOURNEY";
 
     renderTodaysPriority();
-    renderDayFlow();
+    renderDayFlow(); // sets dayView.currentId — read below, so the morning line matches today's real stage
+    document.getElementById("home-motivation").textContent = morningSleepInsight() || HOME_MOTIVATION;
     renderNextStep();
+  }
+
+  // A morning line built from real sleep history, never a guess. Only speaks up when last
+  // night's bedtime was clearly later/earlier (>=45 min) than the recent norm, and only once
+  // there is enough real history (4+ recorded nights) to call anything "usual" — otherwise
+  // this says nothing and Home keeps the plain, honest default line.
+  function morningSleepInsight() {
+    if (dayView.currentId !== "fajr" && dayView.currentId !== "morning") return null;
+    var journeys = journeysAll();
+    var nights = getLastNDateKeys(9).slice(1)
+      .map(function (d) { var j = journeys[d]; return (j && j.sleep && j.sleep.start) ? j.sleep : null; })
+      .filter(Boolean);
+    if (nights.length < 4) return null;
+    function startMinutes(iso) { var d = new Date(iso); var m = d.getHours() * 60 + d.getMinutes(); return m < 12 * 60 ? m + 24 * 60 : m; } // keeps ~10pm-1am bedtimes on one sane scale
+    var last = nights[0], history = nights.slice(1, 6);
+    if (history.length < 3) return null;
+    var avg = history.reduce(function (s, n) { return s + startMinutes(n.start); }, 0) / history.length;
+    var diff = startMinutes(last.start) - avg;
+    if (Math.abs(diff) < 45) return null;
+    return diff > 0 ? "You went to sleep later than usual last night — keep this morning simple." : "You went to sleep earlier than usual last night.";
   }
 
   function initPriorityUI() {

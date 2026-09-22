@@ -2,6 +2,23 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-22 — Companion audit + Phase 1 increment: real weekly summary, suggestion feedback, morning sleep line
+
+Full audit and Phase 1-5 design mapping given to the owner in chat, not duplicated here in full. Summary of what shipped, on top of the Next Step Engine already built (2026-09-22, earlier commit):
+
+**Audit finding.** Five-tab nav (Today/Deen/Dunya/Progress/Hamdard), the Next Step Engine (one recommendation, not a feature grid) and the event log (`NuraEvents`) already move Home away from "tracker" territory. What still read as dashboard-y: the static motivational line never changing with context, the Week tab leading with seven daily percentages instead of real comparative numbers, and suggestions having only a silent "Not now" with no way to say a suggestion isn't useful (so nothing could ever get better).
+
+**"This week" real summary** (`renderWeekSummary`, Progress → Week, above the existing day-by-day list which stays for anyone who wants the detail): Study (session count, ↑/↓ vs the previous 7 days), Sleep (real average from `nc_daily_journeys`, ↑/↓ vs previous week in minutes), Salah (`N/35 logged`, no arrow — a straight count, not a score), Savings (₹ actually added), Phone use (only on the Android build, already had a vs-previous-week comparison — reused as-is). A metric line only appears when real data exists for it; with nothing recorded at all it says "Not enough data yet." instead of an empty block. No metric is ever a single made-up percentage standing in for the week.
+
+**Suggestion feedback** (Do it / Later / Not useful, section 16 of the brief): each actionable Next Step suggestion now carries a stable `kind` (`salah`, `priority-card`, `recover`, `study-session`, `deen-priority`, `habit`) separate from its one-off dismissal `key`. "Later" and "Not useful" both snooze that one suggestion for 15 minutes and fall through to the next real one in the ladder; "Not useful" additionally counts against its `kind` in `nc_nextstep_feedback`. "Do it" is already a real positive signal via the normal completion event — nothing new needed there. **Fixed a real bug found while testing this**: the old snooze store held only one `{key, until}` at a time, so dismissing a second suggestion silently un-dismissed the first. It's now a `{key: until}` map (expired entries dropped on write) so multiple dismissals hold independently — verified by dismissing two different suggestions and confirming a third, different one appeared next.
+
+**Morning sleep line** (`morningSleepInsight`): only shown in the Fajr/Morning stage, and only once at least 4 real nights are on file (last night + 3+ for a baseline). Compares last night's bedtime clock-time to the average of the prior 3-5 nights; a swing of 45+ minutes says so ("You went to sleep later than usual last night — keep this morning simple." / earlier variant); anything smaller, or too little history, changes nothing and Home keeps the existing calm default line. No invented pattern, no claim made from one or two nights.
+
+**Deliberately not built now** (Phase 2-5, needs either more real history than exists yet, Android permissions, or an actual pattern/AI layer): pattern detection beyond this one sleep check, proactive/interrupting notifications, phone-usage-based suggestions, Hamdard reading NURA's context, cross-domain correlation claims ("your best study days were also..."). The Progress → Patterns tab already says "Not enough data yet" honestly until 14 active days exist, unchanged.
+
+**Tested** (real stored data, cleared localStorage + IndexedDB backup to avoid the app's own resilience-restore masking a fresh state): weekly summary against two real seeded weeks (correct counts, arrows and a currency total); empty-state "Not enough data yet"; Later and Not useful each falling through correctly and both persisting together (the bug above, caught and fixed); the morning line appearing only in Fajr/Morning, only with 4+ nights, only on a 45+ minute swing, and staying silent for a small swing or in the afternoon. Not tested on a phone.
+
+
 ## 2026-09-22 — Next Step Engine: Home becomes one recommendation, not a dashboard
 
 Replaced the three-row "Today's priorities" list with a single primary-recommendation card (`computeNextStep()` / `renderNextStep()`, `js/app.js`), moved above the Next Salah card so Home reads greeting → primary next action → upcoming event → today's flow → quick access. Deterministic and rule-based on purpose — no LLM, no randomness; every suggestion is built fresh from real saved data (prayer times, Salah completions, the Deen/Dunya priorities chosen at onboarding, today's Priority card, Plan My Day, habits, ProgressStore) and nothing is invented.
