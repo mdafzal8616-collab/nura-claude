@@ -1116,15 +1116,56 @@ html, body {
 .library-item { }
 #library-empty { display: none; text-align: center; color: var(--muted); padding: 24px 0; }
 
-/* ---------- Home decluttering: collapsible priority card, progress teaser, explore row ---------- */
+/* ---------- Home decluttering: collapsible priority card ---------- */
 .priority-card-head { margin: -2px -2px 0; }
 .flow-dot.done { background: var(--mint); border-color: var(--mint); }
 .priority-card .card-row { display: none; } /* legacy heading row, unused now the header button carries the title */
 #priority-card-body { padding-top: 4px; }
-.progress-teaser { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin: 0 0 12px; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; text-align: left; }
-.home-explore-row { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
-.home-explore-link { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; font: inherit; cursor: pointer; text-align: left; }
+
+.home-explore-link { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; margin: 0 0 16px; font: inherit; cursor: pointer; text-align: left; }
 .home-explore-title { font-size: 13.5px; color: var(--muted); }
+
+/* ---------- Home richness pass (2026-09-24): day context line, quick actions, day rail,
+   Today's Priorities list, richer Today Progress, Hamdard insight, Library context ---------- */
+.home-daycontext { font-size: 13px; color: rgba(255, 255, 255, 0.82); margin: 4px 0 0; }
+
+.quick-actions-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0 0 14px; }
+.quick-action-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 10px 4px; font: inherit; cursor: pointer; }
+.quick-action-btn:active { background: var(--surface-2); }
+.quick-action-icon { font-size: 18px; line-height: 1; }
+.quick-action-label { font-size: 10.5px; font-weight: 600; color: var(--text); text-align: center; line-height: 1.2; }
+
+.day-rail { display: flex; overflow-x: auto; gap: 4px; margin: 0 0 12px; padding: 2px 2px 6px; scrollbar-width: none; }
+.day-rail::-webkit-scrollbar { display: none; }
+.day-rail-item { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 0 0 auto; width: 52px; }
+.day-rail-dot { width: 20px; height: 20px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--surface); color: var(--muted); font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.day-rail-item.is-past .day-rail-dot { background: var(--mint); border-color: var(--mint); color: #fff; }
+.day-rail-item.is-current .day-rail-dot { border-color: var(--gold); background: var(--gold-soft); box-shadow: 0 0 0 3px rgba(201, 162, 39, 0.18); }
+.day-rail-item.is-future .day-rail-dot { opacity: 0.6; }
+.day-rail-label { font-size: 9.5px; color: var(--muted); text-align: center; line-height: 1.15; }
+.day-rail-item.is-current .day-rail-label { color: var(--text); font-weight: 700; }
+
+.tp-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+.tp-row:first-child { border-top: 0; }
+.tp-icon { font-size: 17px; width: 24px; text-align: center; flex-shrink: 0; }
+.tp-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tp-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.tp-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.tp-btn { flex-shrink: 0; background: none; border: 1px solid var(--mint); color: var(--mint); border-radius: 10px; padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.tp-btn:disabled { opacity: 0.55; border-color: var(--muted); color: var(--muted); }
+
+.today-progress-card { text-align: left; }
+.tprog-head { display: flex; align-items: baseline; gap: 8px; margin: 8px 0 10px; }
+.tprog-percent { font-size: 26px; font-weight: 800; color: var(--mint); }
+.tprog-count { font-size: 12.5px; color: var(--muted); }
+.tprog-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-bottom: 4px; }
+.tprog-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 4px 0; border-top: 1px solid var(--border); }
+.tprog-row-label { color: var(--muted); }
+.tprog-row-count { font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+
+.hamdard-insight-head { margin-bottom: 6px; }
+.hamdard-insight-badge { display: inline-block; background: var(--surface-2); color: var(--mint); font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; border-radius: 20px; padding: 3px 10px; }
+.hamdard-insight-text { font-size: 13.5px; color: var(--text); margin: 0 0 8px; line-height: 1.4; }
 
 /* ---------- Study & Focus: highlight the last-used duration ---------- */
 .duration-chip.suggested { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }

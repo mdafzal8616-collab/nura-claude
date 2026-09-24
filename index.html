@@ -25,11 +25,14 @@
       </div>
 
       <p class="home-motivation" id="home-motivation">Today's small step still counts.</p>
+      <p class="home-daycontext" id="home-daycontext"></p>
 
       <div class="journey-badge">
         <span class="journey-badge-text" id="journey-badge-text">DAY 1 OF YOUR CHANGE JOURNEY</span>
       </div>
     </header>
+
+    <div class="quick-actions-row" id="quick-actions-row"></div>
 
     <section class="card prio-card" id="today-priorities-card">
       <h2 class="visually-hidden">Right now</h2>
@@ -39,7 +42,14 @@
 
     <section class="card day-status-card" id="day-status" aria-live="polite"></section>
 
+    <div class="day-rail" id="day-rail"></div>
+
     <div class="day-flow" id="day-flow"></div>
+
+    <section class="card hidden" id="todays-priorities-card">
+      <h2>Today's Priorities</h2>
+      <div id="todays-priorities-list"></div>
+    </section>
 
     <div id="priority-card-home-slot"></div>
 
@@ -111,21 +121,31 @@
       </div>
     </section>
 
-    <button class="progress-teaser" id="progress-teaser" type="button">
-      <span id="progress-teaser-text">–</span>
-      <span class="flow-link" aria-hidden="true">View progress ›</span>
-    </button>
+    <section class="card today-progress-card">
+      <h2>Today Progress</h2>
+      <div id="today-progress-rich"></div>
+      <button class="flow-link" id="progress-teaser" type="button">View full report ›</button>
+    </section>
 
-    <div class="home-explore-row">
-      <button class="home-explore-link" id="home-explore-library" type="button">
-        <span class="home-explore-title">Need something specific?</span>
-        <span class="flow-link" aria-hidden="true">Browse Library ›</span>
-      </button>
-      <button class="home-explore-link" id="home-explore-hamdard" type="button">
-        <span class="home-explore-title">Want to talk it through?</span>
-        <span class="flow-link" aria-hidden="true">Ask Hamdard ›</span>
-      </button>
-    </div>
+    <section class="card hidden" id="hamdard-insight-card">
+      <div class="hamdard-insight-head">
+        <span class="hamdard-insight-badge">Hamdard</span>
+      </div>
+      <p class="hamdard-insight-text" id="hamdard-insight-text"></p>
+      <button class="flow-link" id="hamdard-insight-talk" type="button">Talk to Hamdard ›</button>
+    </section>
+
+    <section class="card hidden" id="library-context-card">
+      <p class="day-next-label">FROM YOUR LIBRARY</p>
+      <p class="prio-main" id="library-context-title"></p>
+      <p class="prio-sub" id="library-context-sub"></p>
+      <button class="btn btn-outline btn-full" id="library-context-btn" type="button"></button>
+    </section>
+
+    <button class="home-explore-link" id="home-explore-library" type="button">
+      <span class="home-explore-title">Need something else?</span>
+      <span class="flow-link" aria-hidden="true">Browse Library ›</span>
+    </button>
   </main>
 
   <!-- LIBRARY: everything NURA can do, organized by life need, not by Deen/Dunya. Secondary

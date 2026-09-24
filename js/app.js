@@ -780,13 +780,26 @@
   function progRecKey(r) { return r.categoryId + "|" + r.sectionId + "|" + r.actionId; }
   function progGroupOf(key) { return String(key).split("|")[0] === "deen" || String(key).indexOf("flow|quran|") === 0 ? "deen" : "dunya"; }
 
+  // Which of the 4 Home-facing buckets (Deen is separate/automatic) a categoryId belongs to.
+  // Matches the grouping Library/Dunya already use, just collapsed for a compact Home display —
+  // the detailed Progress screen can still show the finer Dunya groups.
+  var BUCKET_BY_CATEGORY = {
+    study_focus: "focus", productivity: "focus", phone_control: "focus",
+    fitness: "health", sleep: "health",
+    habits: "personal", money: "personal", career: "personal", personal_growth: "personal", wellbeing: "personal", todays_priority: "personal"
+  };
+  function bucketFor(key, group, explicit) {
+    if (group === "deen") return "deen";
+    return explicit || BUCKET_BY_CATEGORY[String(key).split("|")[0]] || "personal";
+  }
+
   function todayItems() {
     var d = todayKey(), items = [], seen = {}, covered = {};
-    function add(key, title, group, done, skipped, cover) {
+    function add(key, title, group, done, skipped, cover, bucket) {
       if (seen[key]) return;
       seen[key] = true;
       if (cover) covered[cover] = true;
-      items.push({ key: key, title: title, group: group, done: !!done, skipped: !!skipped });
+      items.push({ key: key, title: title, group: group, bucket: bucketFor(key, group, bucket), done: !!done, skipped: !!skipped });
     }
     var comps = getSalahCompletions();
     var log = getDaySunnahLog(d);
@@ -814,7 +827,7 @@
     getPlanActivities().forEach(function (a) {
       if (a.status === "skipped") return;
       var rk = progRecKey(planTaskRecord(a.name, d));
-      add("plan|" + a.id, a.name, "dunya", a.status === "done", false, rk);
+      add("plan|" + a.id, a.name, "dunya", a.status === "done", false, rk, "focus");
     });
     var hlog = getHabitLogToday();
     getHabits().forEach(function (h) {
@@ -826,7 +839,7 @@
     (titles || []).forEach(function (t, i) {
       if (!t) return;
       var rk = progRecKey(top3Record(i, t, d));
-      add("top3|" + i, t, "dunya", t3done[i], false, rk);
+      add("top3|" + i, t, "dunya", t3done[i], false, rk, "focus");
     });
     var p = getCurrentPriority();
     if (p && p.date === d) {
@@ -845,14 +858,21 @@
     return items;
   }
 
-  // Pure calculation over a list of {group, done, skipped}. Nothing here reads storage.
+  // Pure calculation over a list of {group, bucket, done, skipped}. Nothing here reads storage.
   function progressCalc(items) {
     var counted = items.filter(function (x) { return !x.skipped; });
-    var out = { items: items, total: counted.length, done: 0, percent: null, deen: { done: 0, total: 0 }, dunya: { done: 0, total: 0 } };
+    var out = {
+      items: items, total: counted.length, done: 0, percent: null,
+      deen: { done: 0, total: 0 }, dunya: { done: 0, total: 0 },
+      buckets: { deen: { done: 0, total: 0 }, focus: { done: 0, total: 0 }, health: { done: 0, total: 0 }, personal: { done: 0, total: 0 } }
+    };
     counted.forEach(function (x) {
       var g = x.group === "deen" ? out.deen : out.dunya;
       g.total++;
       if (x.done) { g.done++; out.done++; }
+      var b = out.buckets[x.bucket] || out.buckets.personal;
+      b.total++;
+      if (x.done) b.done++;
     });
     if (out.total) {
       var pct = Math.round((out.done / out.total) * 100);
@@ -1665,20 +1685,36 @@
     return 0;
   }
 
-  // Today's Progress comes from the central ProgressStore (see the formula there),
-  // not from Today's Priority alone.
-  // A one-line teaser on Home, not a card of its own — the real breakdown (Today, Week,
-  // Patterns) lives at Progress, reached through Library like everything else. Still the
-  // one real source of truth (progressToday()) and still saves today's snapshot for the
-  // weekly report; only where it's shown on Home changed.
+  // Today's Progress comes from the central ProgressStore (see the formula there), not from
+  // Today's Priority alone: completed eligible items / eligible items, real weighting (every
+  // item counts once, Salah's several real steps count as several real items — nothing here
+  // is invented or padded). Compact on Home — percent, the 4 buckets, one line of counts — the
+  // full breakdown (Today/Week/Patterns) stays at Progress, reached via Library. Still the one
+  // source of truth (progressToday()) and still saves today's snapshot for the weekly report.
   function renderProgressRing() {
     var ds = progressToday();
     var empty = ds.percent === null;
-    var text = document.getElementById("progress-teaser-text");
-    if (text) {
-      text.textContent = empty
-        ? "Add or start something to begin today's progress"
-        : ds.percent + "% today · " + ds.done + " of " + ds.total;
+    var el = document.getElementById("today-progress-rich");
+    if (el) {
+      el.innerHTML = "";
+      if (empty) {
+        el.appendChild(dfEl("p", "muted-line", "Add or start something to begin today's progress."));
+      } else {
+        var head = dfEl("div", "tprog-head");
+        head.appendChild(dfEl("span", "tprog-percent", ds.percent + "%"));
+        head.appendChild(dfEl("span", "tprog-count", ds.done + " of " + ds.total + " planned actions completed"));
+        el.appendChild(head);
+        var grid = dfEl("div", "tprog-grid");
+        [["Deen", "deen"], ["Focus", "focus"], ["Health", "health"], ["Personal", "personal"]].forEach(function (b) {
+          var bucket = ds.buckets[b[1]];
+          if (!bucket.total) return;
+          var row = dfEl("div", "tprog-row");
+          row.appendChild(dfEl("span", "tprog-row-label", b[0]));
+          row.appendChild(dfEl("span", "tprog-row-count", bucket.done + "/" + bucket.total));
+          grid.appendChild(row);
+        });
+        el.appendChild(grid);
+      }
     }
     saveDaySnapshot(ds);
   }
@@ -2988,6 +3024,10 @@
     });
     sec.appendChild(body);
     flowEl.appendChild(sec);
+    var rail = document.getElementById("day-rail");
+    if (rail) rail.innerHTML = "";
+    ["hamdard-insight-card", "library-context-card"].forEach(function (id) { var c = document.getElementById(id); if (c) c.classList.add("hidden"); });
+    renderTodaysPriorities(); // independent of prayer times (tasks, Deen priority, money, habits)
   }
 
   // ---- Set Prayer Times modal: the one place this form lives, reached from Home, Library
@@ -3130,9 +3170,14 @@
       }
       flowEl.appendChild(wrap);
     });
+    renderDayRail(DAY_SECTIONS, idx);
     startDayTimer();
     renderNextStep();
     renderProgressRing();
+    renderTodaysPriorities();
+    renderDayContext();
+    renderHamdardInsight();
+    renderLibraryContext();
   }
 
   function renderDayFlow() {
@@ -3731,6 +3776,170 @@
     el.appendChild(q);
   }
 
+  // =====================================================================
+  // TODAY'S PRIORITIES — a short real list (up to 4), not the single legacy
+  // priority alone. Each row comes from a real module; nothing here is
+  // invented, and an item only appears while it's genuinely still open.
+  // =====================================================================
+  function todaysPrioritiesList() {
+    var rows = [], d = todayKey();
+
+    var p = getCurrentPriority();
+    if (p && p.date === d && p.status === "pending" && ["study", "fitness", "phone"].indexOf(p.kind) !== -1) {
+      var running = focusState.linkedPriorityId === p.id && focusState.running;
+      rows.push({ icon: p.kind === "study" ? "📚" : p.kind === "fitness" ? "🏋️" : "📵", title: p.title, sub: "Today's priority",
+        btn: running ? "Running" : "Start", disabled: running, fn: function () { startFocusForPriority(); } });
+    }
+
+    getPlanActivities().filter(function (a) { return a.status === "pending"; })
+      .sort(function (a, b) { return (a.startTime || "99:99") < (b.startTime || "99:99") ? -1 : 1; })
+      .slice(0, 2).forEach(function (a) {
+        rows.push({ icon: "🗓️", title: a.name, sub: a.startTime ? "at " + dfClock(dayAt(a.startTime)) : "Today",
+          btn: "Done", fn: function () { setPlanActivityStatus(a.id, "done"); } });
+      });
+
+    var dp = getPriorityChoice("deen");
+    if (dp && rows.length < 4) {
+      if (dp.id === "quran" && !todayHasQuran()) rows.push({ icon: "📖", title: "Read a little Qur'an", sub: "Your Deen priority", btn: "Open", fn: function () { openQuranFromHome(null, true); } });
+      else if (dp.id === "learn" && !todayHasHadith()) rows.push({ icon: "📖", title: "Learn one hadith", sub: "Your Deen priority", btn: "Open", fn: function () { openFromHome("hadith"); } });
+      else if (dp.id === "sunnah" && !todayHasSunnah()) rows.push({ icon: "🕌", title: "Do today's Sunnah", sub: "Your Deen priority", btn: "Open", fn: function () { openFromHome("routine"); } });
+    }
+
+    if (rows.length < 4) {
+      var goals = getMoneyGoals().filter(function (g) { return !g.completedAt; });
+      if (goals.length) {
+        var weekAmt = weeklySum(getLastNDateKeys(7), "money").sum;
+        if (weekAmt > 0) rows.push({ icon: "💰", title: goals[0].name, sub: fmtRupee(weekAmt) + " saved this week", btn: "View", fn: function () { setActiveView("duniya-money"); } });
+      }
+    }
+
+    if (rows.length < 4) {
+      var log = getHabitLogToday();
+      var openHabit = getHabits().filter(function (h) { return log[h.id] !== "done"; })[0];
+      if (openHabit) rows.push({ icon: "✅", title: openHabit.name, sub: "Your habit", btn: "Done", fn: function () { setHabitStatus(openHabit.id, "done"); } });
+    }
+
+    return rows.slice(0, 4);
+  }
+  function renderTodaysPriorities() {
+    var card = document.getElementById("todays-priorities-card");
+    var el = document.getElementById("todays-priorities-list");
+    if (!el) return;
+    el.innerHTML = "";
+    var rows = todaysPrioritiesList();
+    if (!rows.length) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    rows.forEach(function (r) {
+      var row = dfEl("div", "tp-row");
+      row.appendChild(dfEl("span", "tp-icon", r.icon));
+      var box = dfEl("div", "tp-text");
+      box.appendChild(dfEl("span", "tp-title", r.title));
+      box.appendChild(dfEl("span", "tp-sub", r.sub));
+      row.appendChild(box);
+      var b = dfEl("button", "btn btn-outline tp-btn", r.btn);
+      b.type = "button";
+      if (r.disabled) b.disabled = true;
+      else b.addEventListener("click", function () { r.fn(); renderHome(); });
+      row.appendChild(b);
+      el.appendChild(row);
+    });
+  }
+
+  // ---- the compact "where am I" rail: one row, every stage, real state ----
+  function renderDayRail(secs, idx) {
+    var el = document.getElementById("day-rail");
+    if (!el) return;
+    el.innerHTML = "";
+    var currentItem = null;
+    secs.forEach(function (sec, i) {
+      var state = i < idx ? "past" : (i === idx ? "current" : "future");
+      var item = dfEl("div", "day-rail-item is-" + state);
+      item.appendChild(dfEl("span", "day-rail-dot", state === "past" ? "✓" : ""));
+      item.appendChild(dfEl("span", "day-rail-label", sec.title));
+      el.appendChild(item);
+      if (state === "current") currentItem = item;
+    });
+    if (currentItem) currentItem.scrollIntoView({ block: "nearest", inline: "center" });
+  }
+
+  // ---- a small, honest, real-data context line under the motivation line ----
+  var DAY_CONTEXT_LINES = {
+    fajr: "The day is just beginning.", morning: "Morning is underway.", dhuhr: "Midday — a good checkpoint.",
+    afternoon: "Afternoon.", asr: "The afternoon is winding down.", evening: "Evening — a calmer part of the day.",
+    maghrib: "The day is softening.", isha: "Closing in on the end of the day.", night: "Day almost complete.", tahajjud: "The quiet hours."
+  };
+  function renderDayContext() {
+    var el = document.getElementById("home-daycontext");
+    if (!el || !dayView.currentId) { if (el) el.textContent = ""; return; }
+    var ds = progressToday();
+    var open = ds.total ? ds.total - ds.done : 0;
+    var base = DAY_CONTEXT_LINES[dayView.currentId] || "";
+    var stagesWithRoom = ["morning", "afternoon", "evening"];
+    if (open > 0 && stagesWithRoom.indexOf(dayView.currentId) !== -1) {
+      el.textContent = base + " There's still time to finish what matters.";
+    } else if (ds.total && open === 0) {
+      el.textContent = "Everything planned for today is done.";
+    } else {
+      el.textContent = base;
+    }
+  }
+
+  // ---- Hamdard: a real status reflection, not a duplicate of the Right Now card ----
+  function renderHamdardInsight() {
+    var card = document.getElementById("hamdard-insight-card");
+    var textEl = document.getElementById("hamdard-insight-text");
+    if (!card) return;
+    var ds = progressToday();
+    if (!ds.total) { card.classList.add("hidden"); return; }
+    var text;
+    if (ds.done === 0) text = "Nothing marked yet today. Start with whatever's easiest.";
+    else if (ds.done === ds.total) text = "Everything planned for today is done. Well done.";
+    else text = "You've completed " + ds.done + " of " + ds.total + " today — " + (ds.total - ds.done) + " still open before the day ends.";
+    textEl.textContent = text;
+    card.classList.remove("hidden");
+  }
+
+  // ---- Library: only surfaced when there's a real, contextual reason (evening onward) ----
+  function renderLibraryContext() {
+    var card = document.getElementById("library-context-card");
+    if (!card) return;
+    var lateStages = ["maghrib", "isha", "night", "tahajjud"];
+    if (lateStages.indexOf(dayView.currentId) === -1) { card.classList.add("hidden"); return; }
+    var last = quranProgress().last;
+    var title = document.getElementById("library-context-title");
+    var sub = document.getElementById("library-context-sub");
+    var btn = document.getElementById("library-context-btn");
+    if (last) {
+      title.textContent = "Continue: " + quranSurahName(last.surah);
+      sub.textContent = "Ayah " + last.ayah;
+      btn.textContent = "Resume";
+      btn.onclick = function () { openQuranFromHome(null, true); };
+    } else {
+      title.textContent = "A little Qur'an before the day ends";
+      sub.textContent = "Even a few ayahs count";
+      btn.textContent = "Open";
+      btn.onclick = function () { setActiveView("sunnah"); switchSunnahSubtab("quran"); };
+    }
+    card.classList.remove("hidden");
+  }
+
+  // ---- Quick Actions: up to 4, real handlers, reused from elsewhere in the app ----
+  function renderQuickActions() {
+    var el = document.getElementById("quick-actions-row");
+    if (!el || el.childElementCount) return; // built once; these never change at runtime
+    [
+      { icon: "🎯", label: "Start Focus", fn: function () { startDuniyaQuickAction("study-prep"); } },
+      { icon: "🕌", label: "Log Salah", fn: function () { openQuickCapture(); } },
+      { icon: "➕", label: "Add Task", fn: function () { setActiveView("duniya-plan"); } },
+      { icon: "💬", label: "Ask Hamdard", fn: function () { setActiveView("chat"); } }
+    ].forEach(function (a) {
+      var b = dfEl("button", "quick-action-btn"); b.type = "button";
+      b.appendChild(dfEl("span", "quick-action-icon", a.icon));
+      b.appendChild(dfEl("span", "quick-action-label", a.label));
+      b.addEventListener("click", a.fn);
+      el.appendChild(b);
+    });
+  }
 
   // =====================================================================
   // QUICK CAPTURE (a few taps, real stores only)
@@ -4168,8 +4377,9 @@
     renderAvatars();
     document.getElementById("journey-badge-text").textContent = "DAY " + getJourneyDay() + " OF YOUR JOURNEY";
 
+    renderQuickActions();
     renderTodaysPriority();
-    renderDayFlow(); // sets dayView.currentId — read below, so the morning line matches today's real stage
+    renderDayFlow(); // sets dayView.currentId, and renders the rail/priorities/progress/Hamdard/Library cards that depend on it
     document.getElementById("home-motivation").textContent = morningSleepInsight() || HOME_MOTIVATION;
     renderNextStep();
     renderEnergyCheckin();
@@ -4223,7 +4433,7 @@
       updatePriorityCardHeader();
     });
     document.getElementById("home-explore-library").addEventListener("click", function () { setActiveView("library"); });
-    document.getElementById("home-explore-hamdard").addEventListener("click", function () { setActiveView("chat"); });
+    document.getElementById("hamdard-insight-talk").addEventListener("click", function () { setActiveView("chat"); });
   }
 
   // The Today's Priority card is collapsed by default — it opens on its own only when
