@@ -42,10 +42,13 @@
     <div id="priority-card-home-slot"></div>
 
     <section class="card priority-card" id="priority-card-el">
-      <div class="card-row">
-        <h2>Today's Priority</h2>
-      </div>
-
+      <button class="flow-head priority-card-head" id="priority-card-toggle" type="button" aria-expanded="false">
+        <span class="flow-dot" id="priority-card-dot"></span>
+        <span class="flow-title" id="priority-card-title">TODAY'S PRIORITY</span>
+        <span class="flow-meta" id="priority-card-meta"></span>
+        <span class="flow-chev" id="priority-card-chev">⌄</span>
+      </button>
+      <div id="priority-card-body" class="hidden">
       <div id="priority-content">
         <div id="priority-checkin" class="hidden">
           <p class="priority-checkin-text" id="priority-checkin-text"></p>
@@ -103,29 +106,24 @@
           <button class="priority-change-link" id="priority-change-btn">Choose a different priority</button>
         </div>
       </div>
+      </div>
     </section>
 
-    <section class="card" id="today-progress-card">
-      <div class="card-row">
-        <h2>Today's Progress</h2>
-      </div>
-      <div class="progress-ring-row">
-        <div class="progress-ring-wrap">
-          <svg viewBox="0 0 80 80" class="progress-ring-svg">
-            <circle cx="40" cy="40" r="34" class="progress-ring-track"/>
-            <circle cx="40" cy="40" r="34" class="progress-ring-fill" id="progress-ring-fill"/>
-          </svg>
-          <span class="progress-ring-percent" id="progress-ring-percent">–</span>
-        </div>
-        <div class="progress-ring-text">
-          <p class="progress-summary" id="progress-summary-line"></p>
-          <p class="hidden" id="progress-line"></p>
-        </div>
-      </div>
-      <div class="progress-groups" id="progress-groups"></div>
-      <button class="btn btn-outline btn-full" id="open-progress-details" type="button">View details</button>
-      <button class="flow-link" id="open-weekly-report" type="button">See weekly report</button>
-    </section>
+    <button class="progress-teaser" id="progress-teaser" type="button">
+      <span id="progress-teaser-text">–</span>
+      <span class="flow-link" aria-hidden="true">View progress ›</span>
+    </button>
+
+    <div class="home-explore-row">
+      <button class="home-explore-link" id="home-explore-library" type="button">
+        <span class="home-explore-title">Need something specific?</span>
+        <span class="flow-link" aria-hidden="true">Browse Library ›</span>
+      </button>
+      <button class="home-explore-link" id="home-explore-hamdard" type="button">
+        <span class="home-explore-title">Want to talk it through?</span>
+        <span class="flow-link" aria-hidden="true">Ask Hamdard ›</span>
+      </button>
+    </div>
   </main>
 
   <!-- LIBRARY: everything NURA can do, organized by life need, not by Deen/Dunya. Secondary
@@ -715,6 +713,12 @@
     <button class="btn btn-primary btn-full" id="focus-check-done">Yes, I finished it</button>
     <button class="btn btn-outline btn-full" id="focus-check-notdone">No, still working on it</button>
   </div>
+</div>
+
+<!-- PRAYER TIMES MODAL: reused from Home, Library (Pray) and Profile — editing prayer times
+     never takes over a whole screen anymore, it's this one modal everywhere. -->
+<div class="modal-overlay hidden" id="modal-prayer-times">
+  <div class="modal-sheet" id="prayer-times-modal-content"></div>
 </div>
 
 <!-- PROGRESS DETAILS MODAL -->

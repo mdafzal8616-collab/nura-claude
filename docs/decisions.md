@@ -2,6 +2,23 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-24 — Home decluttering: prayer-time setup as a modal, collapsible Priority card, slim progress teaser, Explore row
+
+The owner's message named five problems and was cut off before a numbered requirements list (ended right after "Prayer-time setup keeps occupying the Home screen"). Treated the five named problems themselves as the requirements rather than waiting, since each was concrete enough to act on; said so in the reply so it can be corrected if the real ask was different.
+
+**Prayer-time setup no longer occupies Home.** `renderTimesForm` (which used to replace both the Next Salah card AND the whole day-flow timeline on Home whenever "Edit prayer times" was tapped) is now `renderPrayerTimesModal`, opened in a real modal (`#modal-prayer-times`) over whatever screen the user is already on — same fields, same "suggest from location" link, same validation, same `saveManualTimes`. Fixed the same way at all three places that used to force a detour to Home: Home's own "Edit prayer times" link, Library → Pray → Salah's "Set/Edit prayer times" buttons, and Profile's "Edit prayer times" button — all three now call one `openPrayerTimesModal()`. Home without prayer times set shows a compact one-line prompt + the five prayers as a flat checklist (`renderNoTimesYet`), not a form. Verified all three entry points open the modal in place (URL/view unchanged underneath), save correctly, and refresh both Home and the Library Salah panel.
+
+**Today's Priority card is collapsed by default.** It's genuinely redundant most of the time now — the Next Step Engine (built two sessions ago) already surfaces the same priority with a Start button above it. New collapsible header (`updatePriorityCardHeader`, reusing the day-flow's existing `.flow-head`/`.flow-dot`/`.flow-chev` pattern) shows a one-line status (title, "Not set", "Done", or "— running") and opens on its own only when something there needs real attention: a session actually running, or yesterday's check-in waiting — verified both trigger conditions and that a plain "priority chosen, not started" state stays collapsed. A manual toggle always overrides the auto rule for the rest of that page load. Nothing about the card's own functionality changed, including its own picker, timer and check-in flow.
+
+**Today's Progress is a one-line teaser, not a card.** Replaced the ring + Deen/Dunya breakdown + two buttons with a single tappable row ("N% today · X of Y — View progress ›"). The real breakdown (Today/Week/Patterns, including last week's comparative numbers) already lives at Progress via Library — this stopped duplicating a weaker version of it on Home. `renderProgressRing()` keeps its name and still calls `saveDaySnapshot()` (the weekly-report source), only what it writes to changed.
+
+**A small Explore row** ("Need something specific? → Browse Library", "Want to talk it through? → Ask Hamdard") sits near the bottom of Home so both are discoverable from the screen people actually stay on, not just the bottom nav.
+
+**Study & Focus feels less like a blank slate.** The duration-picker step now shows real numbers when they exist ("45 min today · 3 sessions this week", from the same `weeklySum`/`todayStudyMinutes` helpers Progress uses) and highlights whatever length was used last time (`getFocusDurationMinutes()`) as a "same as last time" suggestion — no new storage, both were already saved.
+
+**Tested** (real data, cleared localStorage + IndexedDB backup for a true fresh state): the no-times-yet compact state; the modal from all three entry points, including that Home and the Library Salah panel both refresh after saving; the priority card's default-collapsed state, its two auto-expand conditions, live meta updates on Start/Pause/Finish, and that a manual toggle sticks; the progress teaser's real numbers; the Explore row's two links; the study duration step's real today/week numbers and the "last time" highlight. Swept all 3 nav tabs and all 17 Library destinations with the console open — no errors. Not tested on a phone.
+
+
 ## 2026-09-22 — Life Companion redesign: Life / Library / Hamdard, Day Rescue, sleep-aware sizing, learned session length
 
 **Audit given to the owner in chat first** (conflicts with the new model, what to preserve, what navigation changes, which files) before any code changed, per the brief's own instruction.

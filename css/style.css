@@ -1115,3 +1115,16 @@ html, body {
 .library-group-grid { display: flex; flex-wrap: wrap; gap: 8px; }
 .library-item { }
 #library-empty { display: none; text-align: center; color: var(--muted); padding: 24px 0; }
+
+/* ---------- Home decluttering: collapsible priority card, progress teaser, explore row ---------- */
+.priority-card-head { margin: -2px -2px 0; }
+.flow-dot.done { background: var(--mint); border-color: var(--mint); }
+.priority-card .card-row { display: none; } /* legacy heading row, unused now the header button carries the title */
+#priority-card-body { padding-top: 4px; }
+.progress-teaser { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin: 0 0 12px; font: inherit; font-size: 14px; color: var(--text); cursor: pointer; text-align: left; }
+.home-explore-row { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
+.home-explore-link { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 16px; font: inherit; cursor: pointer; text-align: left; }
+.home-explore-title { font-size: 13.5px; color: var(--muted); }
+
+/* ---------- Study & Focus: highlight the last-used duration ---------- */
+.duration-chip.suggested { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; }

@@ -1250,14 +1250,15 @@
     return list;
   }
 
-  function buildDurationChipPicker(options, onPick) {
+  function buildDurationChipPicker(options, onPick, preselect) {
     var wrap = document.createElement("div");
     wrap.className = "focus-duration-row";
     options.forEach(function (mins) {
       var chip = document.createElement("button");
       chip.type = "button";
-      chip.className = "duration-chip";
+      chip.className = "duration-chip" + (mins === preselect ? " suggested" : "");
       chip.textContent = mins;
+      if (mins === preselect) chip.title = "Same as last time";
       chip.addEventListener("click", function () { onPick(mins); });
       wrap.appendChild(chip);
     });
@@ -1324,12 +1325,24 @@
       t1.className = "picker-step-title";
       t1.textContent = "How long do you want to study?";
       stepEl.appendChild(t1);
+      var doneToday = todayStudyMinutes();
+      var week = weeklySum(getLastNDateKeys(7), "study_focus");
+      if (doneToday > 0 || week.count > 0) {
+        var soFar = document.createElement("p");
+        soFar.className = "muted-line";
+        soFar.style.marginBottom = "10px";
+        var bits = [];
+        if (doneToday > 0) bits.push(doneToday + " min today");
+        if (week.count > 0) bits.push(week.count + " session" + (week.count === 1 ? "" : "s") + " this week");
+        soFar.textContent = bits.join(" · ");
+        stepEl.appendChild(soFar);
+      }
       stepEl.appendChild(buildDurationChipPicker([15, 25, 30, 45, 60], function (mins) {
         setTodaysStudyPriority(mins);
         pendingAdjustmentNote = null;
         pickerStep = { view: "main", bodyPart: null };
         renderHome();
-      }));
+      }, getFocusDurationMinutes()));
       var studyHint = memStudyHint();
       if (studyHint) {
         var hintEl = document.createElement("p");
@@ -1654,27 +1667,18 @@
 
   // Today's Progress comes from the central ProgressStore (see the formula there),
   // not from Today's Priority alone.
+  // A one-line teaser on Home, not a card of its own — the real breakdown (Today, Week,
+  // Patterns) lives at Progress, reached through Library like everything else. Still the
+  // one real source of truth (progressToday()) and still saves today's snapshot for the
+  // weekly report; only where it's shown on Home changed.
   function renderProgressRing() {
     var ds = progressToday();
-    var circumference = 213.6;
     var empty = ds.percent === null;
-    document.getElementById("progress-ring-fill").style.strokeDashoffset = circumference * (1 - (empty ? 0 : ds.percent) / 100);
-    document.getElementById("progress-ring-percent").textContent = empty ? "–" : ds.percent + "%";
-    document.getElementById("progress-summary-line").textContent = empty
-      ? "Add or start an activity to begin today's progress."
-      : ds.done + " of " + ds.total + " activit" + (ds.total === 1 ? "y" : "ies") + " completed";
-    var groups = document.getElementById("progress-groups");
-    groups.innerHTML = "";
-    if (!empty) {
-      [["Deen & Sunnah", ds.deen], ["Dunya", ds.dunya]].forEach(function (g) {
-        if (!g[1].total) return;
-        var row = document.createElement("div");
-        row.className = "progress-group-row";
-        var a = document.createElement("span"); a.textContent = g[0];
-        var b = document.createElement("span"); b.className = "progress-group-count"; b.textContent = g[1].done + " / " + g[1].total;
-        row.appendChild(a); row.appendChild(b);
-        groups.appendChild(row);
-      });
+    var text = document.getElementById("progress-teaser-text");
+    if (text) {
+      text.textContent = empty
+        ? "Add or start something to begin today's progress"
+        : ds.percent + "% today · " + ds.done + " of " + ds.total;
     }
     saveDaySnapshot(ds);
   }
@@ -2154,6 +2158,7 @@
   }
 
   function renderTodaysPriority() {
+    updatePriorityCardHeader();
     var checkinEl = document.getElementById("priority-checkin");
     var pickerEl = document.getElementById("priority-picker");
     var activeEl = document.getElementById("priority-active");
@@ -2179,7 +2184,6 @@
       document.getElementById("priority-done-text").classList.add("hidden");
       document.getElementById("priority-change-btn").classList.add("hidden");
       updateFocusUI();
-      document.getElementById("progress-line").textContent = focusState.running ? "In progress — timer running." : "Paused — pick up when ready.";
       return;
     }
     document.getElementById("priority-change-btn").classList.remove("hidden");
@@ -2958,18 +2962,53 @@
     if (note) el.appendChild(dfEl("p", "day-note day-note-warn", note));
     var change = dfEl("button", "flow-link day-change", getManualTimes() ? "Edit prayer times" : "Set Prayer Times");
     change.type = "button";
-    change.addEventListener("click", function () { dayView.setup = true; renderDayFlow(); });
+    change.addEventListener("click", openPrayerTimesModal);
     el.appendChild(change);
   }
 
   // ---- Set Prayer Times: the user's own times, saved on the device ----
-  function renderTimesForm(statusEl, flowEl, hasTimes) {
+  // No prayer times yet: Home still tracks the five prayers directly (no countdown, no
+  // Fajr-based day boundary) instead of forcing setup before anything works. The full form
+  // lives in its own modal (below) so it never takes over the Home screen.
+  function renderNoTimesYet(statusEl, flowEl) {
     statusEl.innerHTML = "";
+    statusEl.appendChild(dfEl("p", "day-next-label", "PRAYER TIMES NOT SET"));
+    statusEl.appendChild(dfEl("p", "muted-line", "Add the times you follow so NURA can follow your day around Salah."));
+    var b = dfEl("button", "btn btn-primary btn-full", "Set Prayer Times");
+    b.type = "button";
+    b.addEventListener("click", openPrayerTimesModal);
+    statusEl.appendChild(b);
     flowEl.innerHTML = "";
-    statusEl.appendChild(dfEl("p", "day-next-label", "SET PRAYER TIMES"));
-    statusEl.appendChild(dfEl("p", "muted-line", hasTimes
+    var sec = dfEl("div", "flow-sec is-current");
+    sec.appendChild(dfEl("div", "flow-head-static", "Salah today"));
+    var body = dfEl("div", "flow-body");
+    var comps = getSalahCompletions();
+    PRAYER_ORDER.forEach(function (n) {
+      renderStepRow({ label: n + " Salah", done: !!comps[n], toggle: function () { if (comps[n]) setSalahIncomplete(n); else setSalahComplete(n); } }, body);
+    });
+    sec.appendChild(body);
+    flowEl.appendChild(sec);
+  }
+
+  // ---- Set Prayer Times modal: the one place this form lives, reached from Home, Library
+  // (Pray -> Salah) and Profile alike, so editing a time never takes over a whole screen.
+  function closePrayerTimesModal() {
+    dayView.setup = false;
+    document.getElementById("modal-prayer-times").classList.add("hidden");
+  }
+  function renderPrayerTimesModal() {
+    var el = document.getElementById("prayer-times-modal-content");
+    el.innerHTML = "";
+    var hasTimes = !!getManualTimes();
+    var head = dfEl("div", "modal-header-row");
+    head.appendChild(dfEl("h2", "", hasTimes ? "Edit prayer times" : "Set prayer times"));
+    var x = dfEl("button", "icon-btn", "✕"); x.type = "button"; x.setAttribute("aria-label", "Close");
+    x.addEventListener("click", closePrayerTimesModal);
+    head.appendChild(x);
+    el.appendChild(head);
+    el.appendChild(dfEl("p", "muted-line", hasTimes
       ? "Your times, your mosque. Change them any time — they stay saved."
-      : "Enter the prayer times you follow (your mosque's jama'ah times are fine). You only do this once. Until then NURA changes day at midnight."));
+      : "Enter the prayer times you follow (your mosque's jama'ah times are fine). You only do this once."));
     var cur = getManualTimes() || dayView.timings || {};
     var inputs = {};
     PRAYER_ORDER.forEach(function (n) {
@@ -2981,7 +3020,7 @@
       inp.setAttribute("aria-label", n + " time");
       inputs[n] = inp;
       row.appendChild(inp);
-      statusEl.appendChild(row);
+      el.appendChild(row);
     });
     var msg = dfEl("p", "day-note", "");
     var save = dfEl("button", "btn btn-primary btn-full", "Save prayer times");
@@ -2992,11 +3031,12 @@
       var bad = validatePrayerInputs(vals);
       if (bad) { msg.textContent = bad; return; }
       if (!saveManualTimes(vals)) { msg.textContent = "Couldn't save on this device. Please try again."; return; }
-      dayView.setup = false;
+      closePrayerTimesModal();
       showToast("Prayer times saved");
       renderHome();
+      renderSalahPanel();
     });
-    statusEl.appendChild(save);
+    el.appendChild(save);
     var suggest = dfEl("button", "flow-link", "Suggest times from my location (optional)");
     suggest.type = "button";
     suggest.addEventListener("click", function () {
@@ -3011,25 +3051,13 @@
           }).catch(function () { msg.textContent = "Couldn't fetch suggestions. Enter your times by hand."; });
       }, function () { msg.textContent = "Location not allowed. Enter your times by hand."; }, { timeout: 10000 });
     });
-    statusEl.appendChild(suggest);
-    statusEl.appendChild(msg);
-    if (hasTimes) {
-      var cancel = dfEl("button", "flow-link", "Cancel");
-      cancel.type = "button";
-      cancel.addEventListener("click", function () { dayView.setup = false; renderDayFlow(); });
-      statusEl.appendChild(cancel);
-    } else {
-      // Tracking still works without times: the five prayers, no countdown.
-      var sec = dfEl("div", "flow-sec is-current");
-      sec.appendChild(dfEl("div", "flow-head-static", "Salah today"));
-      var body = dfEl("div", "flow-body");
-      var comps = getSalahCompletions();
-      PRAYER_ORDER.forEach(function (n) {
-        renderStepRow({ label: n + " Salah", done: !!comps[n], toggle: function () { if (comps[n]) setSalahIncomplete(n); else setSalahComplete(n); } }, body);
-      });
-      sec.appendChild(body);
-      flowEl.appendChild(sec);
-    }
+    el.appendChild(suggest);
+    el.appendChild(msg);
+  }
+  function openPrayerTimesModal() {
+    dayView.setup = true; // keeps the 1s Home timer from re-rendering underneath the modal
+    renderPrayerTimesModal();
+    document.getElementById("modal-prayer-times").classList.remove("hidden");
   }
 
   // ---- build ----
@@ -3113,7 +3141,8 @@
     if (!statusEl || !flowEl) return;
     var settings = getPrayerSettings();
     var hasTimes = !!getManualTimes() || !!settings;
-    if (!hasTimes || dayView.setup) { renderTimesForm(statusEl, flowEl, hasTimes); return; }
+    if (!hasTimes) { renderNoTimesYet(statusEl, flowEl); return; }
+    if (dayView.setup) return; // the prayer-times modal is open; don't rebuild underneath it
     var token = ++dayView.token;
     var keyAtStart = todayKey();
     var sync = cachedTimingsForToday();
@@ -3159,6 +3188,7 @@
       // a "Not now" snooze expiring) without rebuilding the whole flow.
       nsTickCount = (nsTickCount + 1) % 15;
       if (focusState.running || nsTickCount === 0) renderNextStep();
+      if (focusState.running) updatePriorityCardHeader();
     }, 1000);
   }
   var nsTickCount = 0;
@@ -3811,7 +3841,7 @@
       card.appendChild(dfEl("h2", "", "Set your prayer times"));
       card.appendChild(dfEl("p", "muted-line", "Your own times (your mosque's are fine) drive the countdown and your day."));
       var s = dfEl("button", "btn btn-primary btn-full", "Set Prayer Times"); s.type = "button";
-      s.addEventListener("click", function () { dayView.setup = true; setActiveView("home"); });
+      s.addEventListener("click", openPrayerTimesModal);
       card.appendChild(s);
       box.appendChild(card);
     } else {
@@ -3843,7 +3873,7 @@
         list.appendChild(row);
       });
       var edit = dfEl("button", "flow-link", "Edit prayer times"); edit.type = "button";
-      edit.addEventListener("click", function () { dayView.setup = true; setActiveView("home"); });
+      edit.addEventListener("click", openPrayerTimesModal);
       list.appendChild(edit);
       list.appendChild(dfEl("p", "muted-line", "Sunnah, tasbihat and Qur'an after each prayer are on Today."));
       box.appendChild(list);
@@ -4187,10 +4217,40 @@
 
     document.getElementById("priority-change-btn").addEventListener("click", chooseDifferentPriority);
 
-    document.getElementById("open-weekly-report").addEventListener("click", openProgressDetails);
-    document.getElementById("open-progress-details").addEventListener("click", openProgressDetails);
-    document.getElementById("today-progress-card").querySelector(".progress-ring-row").addEventListener("click", openProgressDetails);
+    document.getElementById("progress-teaser").addEventListener("click", openProgressDetails);
+    document.getElementById("priority-card-toggle").addEventListener("click", function () {
+      priorityCardUserExpanded = document.getElementById("priority-card-body").classList.contains("hidden");
+      updatePriorityCardHeader();
+    });
+    document.getElementById("home-explore-library").addEventListener("click", function () { setActiveView("library"); });
+    document.getElementById("home-explore-hamdard").addEventListener("click", function () { setActiveView("chat"); });
+  }
 
+  // The Today's Priority card is collapsed by default — it opens on its own only when
+  // something there genuinely needs attention (a session running, a check-in waiting).
+  // Otherwise the Next Step card above already surfaces the same priority with a Start
+  // button, so this card doesn't need to sit open by default too.
+  var priorityCardUserExpanded = null; // null = follow the auto rule; true/false = the user's own choice this session
+  function priorityCardAutoInfo() {
+    if (focusState.adhocLabel) return { meta: "Session running", auto: true, dot: "●" };
+    var p = getCurrentPriority();
+    var today = todayKey();
+    if (p && p.date !== today && p.status === "pending") return { meta: "Check-in needed", auto: true, dot: "!" };
+    if (!p || p.date !== today) return { meta: "Not set", auto: false, dot: "" };
+    if (p.status !== "pending") return { meta: "Done", auto: false, dot: "✓" };
+    if (focusState.linkedPriorityId === p.id && focusState.running) return { meta: p.title + " — running", auto: true, dot: "●" };
+    return { meta: p.title, auto: false, dot: "" };
+  }
+  function updatePriorityCardHeader() {
+    var info = priorityCardAutoInfo();
+    var expanded = priorityCardUserExpanded !== null ? priorityCardUserExpanded : info.auto;
+    document.getElementById("priority-card-meta").textContent = info.meta;
+    var dot = document.getElementById("priority-card-dot");
+    dot.textContent = info.dot;
+    dot.classList.toggle("done", info.dot === "✓");
+    document.getElementById("priority-card-chev").textContent = expanded ? "⌃" : "⌄";
+    document.getElementById("priority-card-toggle").setAttribute("aria-expanded", expanded ? "true" : "false");
+    document.getElementById("priority-card-body").classList.toggle("hidden", !expanded);
   }
 
   // ---------- FOCUS TIMER ----------
@@ -4289,6 +4349,7 @@
     if (p.planKey === "study") memLog("study_started", "study", { minutes: p.minutes });
     if (p.planKey === "study") NuraEvents.log("STUDY_STARTED", { source: "priority", duration: p.minutes || undefined });
     beginFocusInterval();
+    updatePriorityCardHeader();
     var clock = document.getElementById("focus-clock");
     if (clock) clock.scrollIntoView({ block: "center", behavior: "smooth" });
   }
@@ -4305,6 +4366,7 @@
     focusState.running = false;
     stopFocusInterval();
     updateFocusUI();
+    updatePriorityCardHeader();
   }
 
   function stopFocus() {
@@ -4313,6 +4375,7 @@
     focusState.remaining = focusSecondsTotal();
     focusState.adhocLabel = null;
     updateFocusUI();
+    updatePriorityCardHeader();
   }
 
   function openFocusCheckModal() {
@@ -6616,10 +6679,7 @@
   function initMore() {
     document.getElementById("edit-name-btn").addEventListener("click", function () { window.nuraEditName(); });
     document.getElementById("edit-priorities-btn").addEventListener("click", function () { window.nuraEditPriorities(); });
-    document.getElementById("edit-times-btn").addEventListener("click", function () {
-      dayView.setup = true;
-      setActiveView("home");
-    });
+    document.getElementById("edit-times-btn").addEventListener("click", openPrayerTimesModal);
     document.getElementById("reset-journey-btn").addEventListener("click", function () {
       if (!window.confirm("Restart your journey from Day 1? Your saved progress and history stay; only the day counter restarts.")) return;
       AppData.resetJourney();
