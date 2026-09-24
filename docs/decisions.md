@@ -2,6 +2,22 @@
 
 Record decisions here as they're made, newest first.
 
+## 2026-09-24 — Gold/green theme on Home, approved from a design preview
+
+The owner shared 7 mockup images ("AETHEL"/"NURA" concept renders) as inspiration. Built a private Artifact design preview first (one phone-sized artboard, real NURA Home content — not the mockups' fictional screens or nav) so the owner could approve the actual look before any real code changed. Flagged two things in the mockups I won't build as shown: an "AES Local Device Encryption Active" badge (Hamdard/Vault isn't actually encrypted — that would be a false security claim) and a voice AI that listens and narrates inferred patterns (no speech recognition or LLM exists in NURA; a real version would need its own consent screen since Android speech-to-text isn't on-device). Owner chose, for those two: build real encryption before any such badge, and treat voice as a documented future phase, not built now — noted here, not implemented this pass. Owner then approved the visual preview and asked to implement it.
+
+**What changed** (`css/style.css`, `index.html` — Home only, scoped so no other screen is affected):
+- Home's header (`#view-home .top-header`) is now a gold-to-emerald gradient banner with rounded bottom corners, bled to the screen edges; moved the greeting/avatar row into a `.top-header-row` wrapper and moved the motivation line and journey badge inside `<header>` (pure markup move, same elements, same ids, nothing JS touches changed) so all three sit on the gradient together, matching the preview.
+- The Next Step card (`#today-priorities-card`, "Right now") gets a warm gold-tinted gradient background instead of plain white — the "hero recommendation" treatment from the mockups.
+- The day flow's current section (`.flow-sec.is-current`) uses the same gold accent (border, dot, soft fill) instead of the previous plain mint border — this rule only ever applies to the Home timeline, confirmed nowhere else uses `.flow-sec`.
+- The active bottom-nav tab gets a small gold underline (`.nav-btn.active::after`) alongside its existing mint color.
+- Reused the project's existing color tokens (`--gold`, `--gold-soft`, `--mint`) throughout — no new palette introduced.
+
+**Deliberately not touched**: nav structure, screen content, any real data/logic, and every other screen's header (Library, Progress, Hamdard, Profile) — confirmed by computed-style check that their headers are unaffected.
+
+**Tested**: fresh onboarding through to Home, gradient header rendering with real data (name, journey day, real Next Salah), the current-section gold accent on a real "Afternoon" state, the gold nav underline, all other screens' headers confirmed unchanged, and the theme surviving a reload (localStorage-backed, nothing about persistence changed). One test-tooling snag along the way: a background tab the harness auto-opens after file edits made a couple of scroll-position screenshots come back blank; confirmed via direct DOM measurement that the page itself was correct throughout and the blank frames were a stale-paint artifact of screenshotting a non-fronted tab, not a real rendering bug — not something a real user would ever see. Not tested on a phone.
+
+
 ## 2026-09-24 — Home decluttering: prayer-time setup as a modal, collapsible Priority card, slim progress teaser, Explore row
 
 The owner's message named five problems and was cut off before a numbered requirements list (ended right after "Prayer-time setup keeps occupying the Home screen"). Treated the five named problems themselves as the requirements rather than waiting, since each was concrete enough to act on; said so in the reply so it can be corrected if the real ask was different.
